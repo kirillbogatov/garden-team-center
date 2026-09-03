@@ -1,0 +1,316 @@
+// Журнал — быстрые заметки, идеи, проблемы и договоренности с упоминаниями через @.
+
+Views._journalFilter = Views._journalFilter || 'all';
+Views._journalComposerKind = Views._journalComposerKind || 'note';
+Views._journalQuery = Views._journalQuery || '';
+Views._journalSearchOpen = Views._journalSearchOpen || false;
+
+Views.journal = async function () {
+  const requestedKind = Router.queryParam('kind');
+  const requestedEntry = Router.queryParam('entry');
+  const allowedKinds = ['note', 'idea', 'problem', 'agreement'];
+  if (requestedEntry) {
+    Views._journalFilter = 'all';
+    Views._journalQuery = '';
+    Views._journalSearchOpen = false;
+  } else if (allowedKinds.includes(requestedKind)) {
+    Views._journalFilter = requestedKind;
+    Views._journalComposerKind = requestedKind;
+    // Параметр нужен только для входа в преднастроенный журнал. После применения
+    // убираем его из URL, чтобы пользователь мог свободно менять фильтр вручную.
+    Router.replace('/journal');
+  }
+
+  setTopbar(`<h1>Журнал</h1>`);
+  const view = document.getElementById('view');
+  view.innerHTML = `<div class="tiny">Загрузка…</div>`;
+
+  const entries = (await Resources.journal.list()).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  const kinds = ['all', 'note', 'idea', 'problem', 'agreement'];
+  const kindLabels = { all: 'Все', note: 'Заметки', idea: 'Идеи', problem: 'Проблемы', agreement: 'Договоренности' };
+
+  const byKind = Views._journalFilter === 'all' ? entries : entries.filter((e) => e.kind === Views._journalFilter);
+  const journalQuery = (Views._journalQuery || '').trim().toLocaleLowerCase('ru');
+  const filtered = journalQuery ? byKind.filter((e) => (e.text || '').toLocaleLowerCase('ru').includes(journalQuery)) : byKind;
+
+  view.innerHTML = `
+    <div class="view-narrow">
+      <div class="journal-composer" id="composer">
+        <div id="journal-text" class="je-editable" contenteditable="true" data-placeholder="Что произошло? Упомяните @человека или @проект."></div>
+        <div class="composer-footer journal-composer-footer">
+          <div class="journal-kind-switch meeting-filterbar journal-composer-type-selector" id="journal-kind-switch" aria-label="Тип записи">
+            ${['note', 'idea', 'problem', 'agreement']
+              .map((k) => `<button type="button" class="ui-segmented-item meeting-filter kind-btn ${k === Views._journalComposerKind ? 'active' : ''}" data-kind="${k}"><span>${JOURNAL_KIND_LABEL[k]}</span></button>`)
+              .join('')}
+          </div>
+          <button class="ui-button ui-button--primary btn btn-primary" id="journal-submit" style="margin-left:auto">Записать</button>
+        </div>
+      </div>
+
+      <div class="journal-history">
+        <div class="journal-history-tools">
+          <div class="ui-tab tabs journal-tabs">
+            ${kinds.map((k) => `<div class="ui-tab tab ${Views._journalFilter === k ? 'active' : ''}" data-view-state="_journalFilter" data-view-value="${k}" data-view-render="journal">${kindLabels[k]}</div>`).join('')}
+          </div>
+          <button type="button" class="journal-search-toggle ${Views._journalSearchOpen ? 'active' : ''}" id="journal-search-toggle" title="Поиск по журналу" aria-label="Поиск по журналу">${icon('search',14)}</button>
+        </div>
+        ${Views._journalSearchOpen ? `<div class="journal-inline-search"><input id="journal-search-input" type="search" placeholder="Поиск по записям" value="${escapeHtml(Views._journalQuery || '')}" /><button type="button" class="ui-button ui-button--sm btn btn-sm" id="journal-search-close">Закрыть</button></div>` : ''}
+
+        <div id="journal-feed">
+          ${filtered.length ? filtered.map(journalEntryHtml).join('') : emptyState('Записей пока нет', 'Добавьте первую запись выше', 'journal')}
+        </div>
+      </div>
+    </div>
+  `;
+
+  if (requestedEntry) {
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const target = document.getElementById(`journal-entry-${requestedEntry}`);
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        target.classList.add('journal-entry-target');
+        setTimeout(() => target.classList.remove('journal-entry-target'), 1800);
+      }
+      Router.replace('/journal');
+    }));
+  }
+
+  const journalSearchToggle = document.getElementById('journal-search-toggle');
+  if (journalSearchToggle) journalSearchToggle.onclick = () => { Views._journalSearchOpen = !Views._journalSearchOpen; if (!Views._journalSearchOpen) Views._journalQuery = ''; Views.journal(); };
+  const journalSearchInput = document.getElementById('journal-search-input');
+  if (journalSearchInput) {
+    journalSearchInput.focus();
+    journalSearchInput.oninput = () => { Views._journalQuery = journalSearchInput.value; const feed = document.getElementById('journal-feed'); const q = Views._journalQuery.trim().toLocaleLowerCase('ru'); const shown = (Views._journalFilter === 'all' ? entries : entries.filter((e) => e.kind === Views._journalFilter)).filter((e) => !q || (e.text || '').toLocaleLowerCase('ru').includes(q)); feed.innerHTML = shown.length ? shown.map(journalEntryHtml).join('') : emptyState('Ничего не найдено', 'Попробуйте другой запрос', 'search'); };
+  }
+  const journalSearchClose = document.getElementById('journal-search-close');
+  if (journalSearchClose) journalSearchClose.onclick = () => { Views._journalSearchOpen = false; Views._journalQuery = ''; Views.journal(); };
+
+  const editable = document.getElementById('journal-text');
+  editable.dataset.submitOnEnter = 'true';
+  attachMentionAutocompleteCE(editable, document.getElementById('composer'));
+
+  let selectedKind = Views._journalComposerKind;
+  let kindManuallySelected = false;
+  document.querySelectorAll('#journal-kind-switch .kind-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      selectedKind = btn.dataset.kind;
+      kindManuallySelected = true;
+      Views._journalComposerKind = selectedKind;
+      document.querySelectorAll('#journal-kind-switch .kind-btn').forEach((b) => b.classList.toggle('active', b.dataset.kind === selectedKind));
+    });
+  });
+
+  const applyDetectedKind = () => {
+    const currentText = serializeEditableToText(editable);
+    if (!currentText.trim()) kindManuallySelected = false;
+    if (kindManuallySelected) return;
+    const detected = detectJournalKindFromText(currentText);
+    if (!detected || detected === selectedKind) return;
+    selectedKind = detected;
+    Views._journalComposerKind = detected;
+    document.querySelectorAll('#journal-kind-switch .kind-btn').forEach((b) => b.classList.toggle('active', b.dataset.kind === detected));
+  };
+  editable.addEventListener('input', applyDetectedKind);
+
+  document.getElementById('journal-submit').addEventListener('click', async () => {
+    const text = serializeEditableToText(editable).trim();
+    if (!text) return;
+    const payload = { text, kind: selectedKind, createdAt: new Date().toISOString() };
+    const journalEntry = await Resources.journal.create(payload);
+
+    if (selectedKind === 'idea') {
+      // Идея всегда остаётся в личном журнале. Публикация в The Labs — дополнительное действие.
+      await Views.journal();
+      const destination = await askJournalIdeaDestination();
+      if (destination === 'labs') {
+        const labIdea = await publishJournalIdeaToLabs(text, journalEntry.id);
+        await Resources.journal.update(journalEntry.id, { labId: labIdea.id });
+        toast('Идея сохранена в журнале и опубликована в The Labs');
+        Views.journal();
+      } else if (destination === 'journal') {
+        toast('Идея сохранена в журнале');
+      }
+      return;
+    }
+
+    toast('Запись добавлена в журнал');
+    Views.journal();
+  });
+
+  editable.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.shiftKey || e.defaultPrevented) return;
+    e.preventDefault();
+    document.getElementById('journal-submit').click();
+  });
+};
+
+
+
+function detectJournalKindFromText(text) {
+  const normalized = String(text || '')
+    .toLocaleLowerCase('ru')
+    .replace(/ё/g, 'е')
+    .replace(/^[\s\-–—:;,.!?]+/, '')
+    .trim();
+  if (!normalized) return null;
+
+  const rules = [
+    ['problem', /^(?:проблем(?:а|ы|е|у|ой|ою))\b/],
+    ['agreement', /^(?:договоренн(?:ость|ости|остью|остям|остями)|договорились|договорился|договорилась)\b/],
+    ['idea', /^(?:иде(?:я|и|ю|ей|е))\b/],
+    ['note', /^(?:заметк(?:а|и|у|ой|е))\b/],
+  ];
+  return rules.find(([, pattern]) => pattern.test(normalized))?.[0] || null;
+}
+
+
+function askJournalIdeaDestination() {
+  return new Promise((resolve) => {
+    Modal.open(`<h2>Как сохранить идею</h2>
+      <p class="muted" style="margin:0 0 4px">Добавить идею в <a class="modal-inline-link" href="/labs" target="_blank" rel="noopener">The Labs</a> или оставить в личном журнале?</p>
+      <div class="ui-modal-actions modal-actions">
+        <button class="ui-button btn" id="journal-idea-keep">Оставить в журнале</button>
+        <button class="ui-button ui-button--primary btn btn-primary" id="journal-idea-publish">Добавить в The Labs</button>
+      </div>`);
+    document.getElementById('journal-idea-keep').onclick = () => { Modal.close(); resolve('journal'); };
+    document.getElementById('journal-idea-publish').onclick = () => { Modal.close(); resolve('labs'); };
+  });
+}
+
+async function publishJournalIdeaToLabs(text, sourceJournalId) {
+  const clean = String(text || '').trim();
+  const firstLine = clean.split(/\r?\n/)[0].trim();
+  const title = firstLine.length > 80 ? `${firstLine.slice(0, 77)}…` : firstLine;
+  return Resources.labs.create({
+    entityType: 'idea',
+    title: title || 'Идея из журнала',
+    description: clean,
+    authorId: Auth.user?.personId || null,
+    sourceJournalId: sourceJournalId || null,
+  });
+}
+
+
+function openJournalEditModal(j) {
+  Modal.open(
+    `<h2>Редактировать запись</h2>
+    <div class="ui-field field">
+      <span class="ui-field-label field-label">Текст</span>
+      <div id="jef-text" class="je-editable" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Текст записи" tabindex="0">${mentionsToEditableHtml(j.text)}</div>
+    </div>
+    <div class="ui-field field">
+      <span class="ui-field-label field-label">Тип</span>
+      <div class="kind-select" id="jef-kind-select" role="radiogroup" aria-label="Тип записи">
+        ${['note', 'idea', 'problem', 'agreement']
+          .map((k) => `<button type="button" class="ui-segmented-item kind-btn ${k === j.kind ? 'active' : ''}" role="radio" aria-checked="${k === j.kind}" data-kind="${k}">${JOURNAL_KIND_LABEL[k]}</button>`)
+          .join('')}
+      </div>
+    </div>
+    <div class="ui-field field">
+      <label class="ui-field-label field-label" for="jef-date">Дата</label>
+      <input id="jef-date" type="datetime-local" value="${toDatetimeLocalValue(j.createdAt)}" />
+    </div>
+    <div class="ui-modal-actions modal-actions">
+      <button class="ui-button ui-button--danger btn btn-danger btn-push-left" id="jef-delete">${icon('trash', 14)} Удалить</button>
+      <button class="ui-button btn" id="jef-cancel">Отмена</button>
+      <button class="ui-button ui-button--primary btn btn-primary" id="jef-save">Сохранить</button>
+    </div>`,
+    { onMount: (panel) => attachMentionAutocompleteCE(document.getElementById('jef-text'), panel) }
+  );
+
+  let selectedKind = ['note', 'idea', 'problem', 'agreement'].includes(j.kind) ? j.kind : 'note';
+  document.querySelectorAll('#jef-kind-select .kind-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      selectedKind = btn.dataset.kind;
+      document.querySelectorAll('#jef-kind-select .kind-btn').forEach((b) => {
+        const k = b.dataset.kind;
+        b.classList.toggle('active', k === selectedKind);
+        b.setAttribute('aria-checked', String(k === selectedKind));
+      });
+    });
+  });
+
+  document.getElementById('jef-cancel').onclick = () => Modal.close();
+  document.getElementById('jef-delete').onclick = async () => {
+    Modal.close();
+    await deleteJournalEntry(j);
+  };
+  document.getElementById('jef-save').onclick = async () => {
+    const text = serializeEditableToText(document.getElementById('jef-text')).trim();
+    if (!text) { toast('Текст не может быть пустым'); return; }
+    const payload = { text, kind: selectedKind };
+    const dateVal = document.getElementById('jef-date').value;
+    if (dateVal) payload.createdAt = new Date(dateVal).toISOString();
+    const updated = await Resources.journal.update(j.id, payload);
+    Modal.close();
+
+    if (selectedKind === 'idea' && !updated.labId) {
+      const destination = await askJournalIdeaDestination();
+      if (destination === 'labs') {
+        const labIdea = await publishJournalIdeaToLabs(text, updated.id);
+        await Resources.journal.update(updated.id, { labId: labIdea.id });
+        toast('Идея сохранена в журнале и опубликована в The Labs');
+        Router.render();
+        return;
+      }
+    }
+    toast('Сохранено');
+    Router.render();
+  };
+}
+
+function askDeleteLinkedJournalEntity(kind) {
+  const isProblem = kind === 'problem';
+  const noun = isProblem ? 'проблему' : 'договорённость';
+  const section = isProblem ? 'Проблемы' : 'Договорённости';
+  return new Promise((resolve) => {
+    Modal.open(
+      `<h2>Связанная ${isProblem ? 'проблема' : 'договорённость'}</h2>
+       <p class="muted" style="margin:0 0 4px">Удалить также ${noun} из раздела «${section}»?</p>
+       <div class="ui-modal-actions modal-actions">
+         <button class="ui-button btn" id="jdel-keep">Оставить</button>
+         <button class="ui-button ui-button--danger btn btn-danger-primary" id="jdel-linked">Удалить вместе</button>
+       </div>`
+    );
+    document.getElementById('jdel-keep').onclick = () => { Modal.close(); resolve(false); };
+    document.getElementById('jdel-linked').onclick = () => { Modal.close(); resolve(true); };
+  });
+}
+
+async function deleteJournalEntry(j) {
+  const ok = await confirmAction('Удалить эту запись из журнала?');
+  if (!ok) return;
+
+  const linkedType = j.kind === 'problem' && j.issueId
+    ? 'problem'
+    : j.kind === 'agreement' && j.agreementId
+      ? 'agreement'
+      : null;
+  const linkedId = linkedType === 'problem' ? j.issueId : linkedType === 'agreement' ? j.agreementId : null;
+  const deleteLinked = linkedType ? await askDeleteLinkedJournalEntity(linkedType) : false;
+
+  await Resources.journal.remove(j.id);
+
+  if (linkedType && linkedId) {
+    const endpoint = linkedType === 'problem' ? '/api/issues/' : '/api/agreements/';
+    try {
+      if (deleteLinked) {
+        await api.del(endpoint + linkedId);
+      } else {
+        await api.put(endpoint + linkedId, { sourceJournalId: null });
+      }
+    } catch (err) {
+      console.warn('Не удалось обновить связанную сущность после удаления записи журнала', err);
+      toast(deleteLinked ? 'Запись удалена, связанную сущность удалить не удалось' : 'Запись удалена');
+      Router.render();
+      return;
+    }
+  }
+
+  toast(deleteLinked ? 'Запись и связанная сущность удалены' : 'Запись удалена');
+  Router.render();
+}
+
+// Public feature commands used by the declarative command layer.
+FeatureLoader.register({ openJournalEditModal, deleteJournalEntry });

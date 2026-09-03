@@ -1,0 +1,114 @@
+// Линейные иконки Garden (в духе Linear) — inline SVG, нарисованные вручную.
+// Никаких внешних библиотек и сетевых запросов: всё работает офлайн.
+//
+// Правила рисования (важны для чёткости на 11–16 px):
+//  1. Сетка 24×24, «живая» область 2…22 — все иконки оптически одного размера.
+//  2. Координаты по сетке 0.5 — меньше размытия на дробных пикселях.
+//  3. Между параллельными линиями минимум 3.5 единицы, иначе штрихи слипаются.
+//  4. Не больше двух мелких деталей внутри фигуры: на 13 px остальное превращается в кашу.
+//  5. Толщина штриха задаётся не константой, а функцией от размера (см. iconStrokeWidth).
+
+const ICONS = {
+  // --- Навигация -----------------------------------------------------------
+  overview: '<path d="M3.5 10.2 12 3.5l8.5 6.7V19a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 19v-8.8Z"/><path d="M9.5 20.5V15a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v5.5"/>',
+  star: '<path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.2 1 5.9-5.2-2.8-5.2 2.8 1-5.9-4.3-4.2 5.9-.9L12 3.5Z"/>',
+  journal: '<rect x="4" y="3" width="16" height="18" rx="2.5"/><path d="M8.5 3v18"/><path d="M12 9h4.5M12 13.5h3"/>',
+  team: '<circle cx="9.5" cy="7.5" r="3.5"/><path d="M3 20.5v-1a5 5 0 0 1 5-5h3a5 5 0 0 1 5 5v1"/><path d="M16 4.6a3.5 3.5 0 0 1 0 5.8"/><path d="M17.5 14.4a5 5 0 0 1 3.5 4.8v1.3"/>',
+  stakeholders: '<circle cx="12" cy="8" r="3.75"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/>',
+  meetings: '<path d="M17.5 3.5h-11A2.5 2.5 0 0 0 4 6v7a2.5 2.5 0 0 0 2.5 2.5H8v4.5l5.5-4.5h4A2.5 2.5 0 0 0 20 13V6a2.5 2.5 0 0 0-2.5-2.5Z"/>',
+  calendar: '<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17"/><path d="M8 3v4M16 3v4"/>',
+  work: '<rect x="3" y="7" width="18" height="13" rx="2.5"/><path d="M8.5 7V6a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v1"/><path d="M3 12.5h18"/>',
+  goals: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.25"/><circle cx="12" cy="12" r="1.05" fill="currentColor" stroke="none"/>',
+  projects: '<path d="M3.5 6.5A2 2 0 0 1 5.5 4.5h3.1a2 2 0 0 1 1.6.8l1.3 1.7h7A2 2 0 0 1 20.5 9v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V6.5Z"/>',
+  workload: '<path d="M4.5 20.5h15"/><path d="M7.5 20.5V13M12 20.5V7.5M16.5 20.5v-10"/>',
+  labs: '<path d="M8.8 3.5h6.4"/><path d="M10 3.5v5.8l-4.7 8.4A1.8 1.8 0 0 0 6.9 20.5h10.2a1.8 1.8 0 0 0 1.6-2.8L14 9.3V3.5"/><path d="M7.6 15.2h8.8"/>',
+  ideas: '<path d="M9.3 18.5h5.4"/><path d="M10 21h4"/><path d="M8.2 14.8c-1.5-1.1-2.4-2.9-2.4-4.8a6.2 6.2 0 0 1 12.4 0c0 1.9-.9 3.7-2.4 4.8-.8.6-1.3 1.2-1.5 1.9h-2.6c-.2-.7-.7-1.3-1.5-1.9Z"/>',
+  tasks: '<rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M8 12.3l2.9 2.9L16.2 9.8"/>',
+  issues: '<path d="M10.3 4.4 3 17.4a2 2 0 0 0 1.7 3.1h14.6a2 2 0 0 0 1.7-3.1L13.7 4.4a2 2 0 0 0-3.4 0Z"/><path d="M12 10v4"/><circle cx="12" cy="17.1" r="1.05" fill="currentColor" stroke="none"/>',
+  agreements: '<path d="M2.5 12.5 7 17 17.5 5.5"/><path d="M21.5 9.5 14 18l-1.6-1.6"/>',
+  documents: '<path d="M13 3.5H7A2 2 0 0 0 5 5.5v13A2 2 0 0 0 7 20.5h10a2 2 0 0 0 2-2V9.5L13 3.5Z"/><path d="M13 3.5v6h6"/><path d="M8.5 13h7M8.5 16.5h4.5"/>',
+  tools: '<path d="M14.6 6.4a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.4-3.4a5.8 5.8 0 0 1-7.7 7.7l-6.8 6.8a2.1 2.1 0 0 1-3-3l6.8-6.8a5.8 5.8 0 0 1 7.7-7.7l-3.4 3.4Z"/>',
+  processes: '<circle cx="6.5" cy="6" r="2.5"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="12" r="2.5"/><path d="M9 7.4 15.3 10.8M9 16.6 15.3 13.2"/>',
+  search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/>',
+  admin: '<path d="M12 3.2 19.5 5.9v5.4c0 4.4-3 8.1-7.5 9.5-4.5-1.4-7.5-5.1-7.5-9.5V5.9L12 3.2Z"/><path d="M9.2 12.1 11.1 14l3.7-4"/>',
+  settings: '<path d="M3.5 8.5h9.2M17.3 8.5h3.2M3.5 15.5h3.2M11.3 15.5h9.2"/><circle cx="15" cy="8.5" r="2.3"/><circle cx="9" cy="15.5" r="2.3"/>',
+
+  // --- Действия ------------------------------------------------------------
+  plus: '<path d="M12 4.5v15M4.5 12h15"/>',
+  close: '<path d="M6.5 6.5 17.5 17.5M17.5 6.5 6.5 17.5"/>',
+  maximize: '<path d="M8.5 4H4v4.5M15.5 4H20v4.5M8.5 20H4v-4.5M15.5 20H20v-4.5"/>',
+  minimize: '<path d="M9 9H4V4M15 9h5V4M9 15H4v5M15 15h5v5"/>',
+  edit: '<path d="M4 20h4.2L19.1 9.1a2.2 2.2 0 0 0 0-3.1L18 4.9a2.2 2.2 0 0 0-3.1 0L4 15.8V20Z"/>',
+  trash: '<path d="M4.5 7h15"/><path d="M9.5 7V5.5A1.5 1.5 0 0 1 11 4h2a1.5 1.5 0 0 1 1.5 1.5V7"/><path d="M6.5 7.5l.7 11.6A1.5 1.5 0 0 0 8.7 20.5h6.6a1.5 1.5 0 0 0 1.5-1.4L17.5 7.5"/>',
+  archive: '<rect x="2.5" y="3.5" width="19" height="4.5" rx="1.5"/><path d="M4.5 8v10.5a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V8"/><path d="M9.75 12.5h4.5"/>',
+  refresh: '<path d="M20.5 12a8.5 8.5 0 1 1-8.5-8.5 8.5 8.5 0 0 1 6.4 2.9l2.1 2"/><path d="M20.5 3.9v4.5h-4.5"/>',
+  external: '<path d="M14.5 4h5.5v5.5"/><path d="M20 4 11.5 12.5"/><path d="M18 14.5v4A1.5 1.5 0 0 1 16.5 20h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6h4"/>',
+  logout: '<path d="M10 4.5H5.5A1.5 1.5 0 0 0 4 6v12a1.5 1.5 0 0 0 1.5 1.5H10"/><path d="M15.5 8 19.5 12l-4 4"/><path d="M9.5 12h10"/>',
+  eyeOff: '<path d="M3.5 3.5 20.5 20.5"/><path d="M9.4 5.6A9.4 9.4 0 0 1 12 5.2c5.6 0 9 6.8 9 6.8a17.5 17.5 0 0 1-3.4 4.3"/><path d="M6.3 7.9A17.5 17.5 0 0 0 3 12s3.4 6.8 9 6.8a9 9 0 0 0 3.6-.8"/>',
+  camera: '<path d="M4 9.5A2.5 2.5 0 0 1 6.5 7h1.6l1.3-2.3h5.2L15.9 7h1.6A2.5 2.5 0 0 1 20 9.5V18a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 18V9.5Z"/><circle cx="12" cy="13.5" r="3.4"/>',
+  filter: '<path d="M3.5 5h17L14 12.5v5.3l-4 2.2v-7.5L3.5 5Z"/>',
+
+  // --- Служебные -----------------------------------------------------------
+  chevronRight: '<path d="M9.5 5.5 16 12l-6.5 6.5"/>',
+  chevronLeft: '<path d="M14.5 5.5 8 12l6.5 6.5"/>',
+  dotsHorizontal: '<circle cx="6" cy="12" r="1.35" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.35" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.35" fill="currentColor" stroke="none"/>',
+  board: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15M15 4.5v15"/>',
+  list: '<path d="M8.5 6.5h11M8.5 12h11M8.5 17.5h11"/><circle cx="4.5" cy="6.5" r="1.15" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.15" fill="currentColor" stroke="none"/><circle cx="4.5" cy="17.5" r="1.15" fill="currentColor" stroke="none"/>',
+  sidebar: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5.2l3.6 2.1"/>',
+  pin: '<path d="M8 3h8l-1.8 5.2 2.8 2.8v1H13v6l-1 2-1-2v-6H7v-1l2.8-2.8L8 3Z"/>',
+  bookmark: '<path d="M7 3.5h10a1.5 1.5 0 0 1 1.5 1.5v16L12 17l-6.5 4V5A1.5 1.5 0 0 1 7 3.5Z"/>',
+  bell: '<path d="M5.5 17.5h13l-1.6-2.2V10a4.9 4.9 0 0 0-9.8 0v5.3L5.5 17.5Z"/><path d="M9.7 19.1a2.5 2.5 0 0 0 4.6 0"/>',
+  bellOff: '<path d="M5.5 17.5h10.8"/><path d="M7.1 14.8V10a4.9 4.9 0 0 1 7.5-4.1"/><path d="M16.9 8.5V15l1.6 2.5"/><path d="M9.8 19.1a2.5 2.5 0 0 0 4.4 0"/><path d="M4 4l16 16"/>',
+  sun: '<circle cx="12" cy="12" r="4.25"/><path d="M12 2.5v2.2M12 19.3v2.2M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.9 19.1l1.6-1.6M17.5 6.5l1.6-1.6"/>',
+  moon: '<path d="M20.4 14.3A8.7 8.7 0 0 1 9.7 3.6a8.7 8.7 0 1 0 10.7 10.7Z"/>',
+  birthday: '<path d="M3.5 20.5h17"/><path d="M5.5 20.5v-6.2a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v6.2"/><path d="M12 12.3V8.8"/><path d="M12 6.6c-1.2 0-1.8-1-1.3-2 .3-.7 1-1.1 1.3-1.9.3.8 1 1.2 1.3 1.9.5 1-.1 2-1.3 2Z"/>',
+  medical: '<circle cx="12" cy="12" r="8.5"/><path d="M12 8v8M8 12h8"/>',
+  menu: '<path d="M3.5 6.5h17M3.5 12h17M3.5 17.5h17"/>',
+  help: '<circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.5A2.5 2.5 0 0 1 12 7.6c1.5 0 2.5 1 2.5 2.2 0 1.5-1.7 1.9-2.2 2.7-.2.3-.2.7-.2 1.1"/><circle cx="12" cy="16.6" r=".95" fill="currentColor" stroke="none"/>',
+  // --- Обзор: тренд-стрелки для KPI-плашек ---------------------------------
+  trendUp: '<path d="M4 16.5 10 10.5l3.2 3.2L20 6.5"/><path d="M14.5 6.5H20v5.5"/>',
+  trendDown: '<path d="M4 7.5 10 13.5l3.2-3.2L20 17.5"/><path d="M14.5 17.5H20V12"/>',
+};
+
+// Синонимы: имена, которыми иконки вызываются в коде исторически.
+const ICON_ALIASES = {
+  people: 'team',
+  users: 'team',
+  user: 'stakeholders',
+  person: 'stakeholders',
+  columns: 'board',
+  kanban: 'board',
+  home: 'overview',
+  target: 'goals',
+  folder: 'projects',
+  gear: 'settings',
+  pencil: 'edit',
+  check: 'tasks',
+  warning: 'issues',
+  chart: 'workload',
+  briefcase: 'work',
+  wrench: 'tools',
+  flask: 'labs',
+  shield: 'admin',
+  book: 'journal',
+  chat: 'meetings',
+};
+
+// Оптическая компенсация: чем меньше иконка, тем толще штрих в координатах
+// сетки 24, чтобы на экране линия всегда была примерно 1.1–1.3 CSS-пикселя.
+// Без этого иконка на 12 px рисуется штрихом 0.85 px и выглядит блёкло-размытой.
+function iconStrokeWidth(size) {
+  if (size >= 26) return 1.3;
+  if (size >= 20) return 1.6;
+  if (size >= 16) return 1.85;
+  if (size >= 14) return 2;
+  if (size >= 12) return 2.2;
+  return 2.4;
+}
+
+function icon(name, size = 16) {
+  const key = ICONS[name] ? name : (ICON_ALIASES[name] || 'dotsHorizontal');
+  const body = ICONS[key];
+  return `<svg class="icon icon-${key}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${iconStrokeWidth(size)}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${body}</svg>`;
+}

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Garden</title>
+<script>
+  // Применяем сохранённую тему ещё до отрисовки страницы, чтобы избежать "вспышки" неверной темы.
+  try {
+    // Список и режимы должны совпадать с GARDEN_THEMES в js/lib/interactions.js.
+    const THEME_MODES = {
+      'chernika': 'light', 'myata': 'light', 'lavanda': 'light', 'tuman': 'light',
+      'grafit': 'dark', 'khvoya': 'dark', 'noch': 'dark',
+      'anuppuccin-latte': 'light', 'anuppuccin-mocha': 'dark',
+    };
+    const THEMES = Object.keys(THEME_MODES);
+    // Темы с настраиваемым акцентом — должно совпадать с ACCENT_THEMES в js/lib/interactions.js.
+    const ACCENT_THEMES = ['anuppuccin-latte', 'anuppuccin-mocha'];
+    const ACCENT_NAMES = ['rosewater', 'flamingo', 'pink', 'mauve', 'red', 'maroon', 'peach', 'yellow', 'green', 'teal', 'sky', 'lavender'];
+    // Без сохранённого выбора у нового пользователя ориентируемся на системную тему
+    // (prefers-color-scheme), а не всегда открываем светлый «Туман» — тот, кто пришёл
+    // с тёмной ОС, не должен первым делом видеть яркий экран.
+    const systemPrefersDark = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
+    const defaultTheme = systemPrefersDark ? 'noch' : 'tuman';
+    let savedTheme = localStorage.getItem('garden-theme') || defaultTheme;
+    if (!THEMES.includes(savedTheme)) savedTheme = defaultTheme;
+    localStorage.setItem('garden-theme', savedTheme);
+    // Все пользовательские темы применяются явным классом; базовые :root-токены служат только fallback.
+    document.documentElement.classList.add(`theme-${savedTheme}`);
+    if (THEME_MODES[savedTheme] === 'dark') document.documentElement.classList.add('theme-dark');
+    // Акцентный цвет применяем тем же способом, что и тему — до отрисовки, чтобы
+    // не мигать цветом по умолчанию для тем с поддержкой настройки акцента.
+    if (ACCENT_THEMES.includes(savedTheme)) {
+      let savedAccent = localStorage.getItem('garden-accent');
+      if (!ACCENT_NAMES.includes(savedAccent)) savedAccent = null;
+      if (savedAccent) document.documentElement.classList.add(`accent-${savedAccent}`);
+    }
+  } catch (e) {}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700&display=swap" />
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/detail-page.css" />
+<link rel="stylesheet" href="/css/focus-labs.css" />
+<link rel="stylesheet" href="/css/system.css" />
+</head>
+<body>
+<a class="skip-link" href="#main">Перейти к содержимому</a>
+<div id="auth-root" class="auth-root"></div>
+<div id="app">
+  <button type="button" class="nav-backdrop" id="nav-backdrop" hidden aria-label="Закрыть меню" data-close-mobile-nav></button>
+  <aside class="sidebar" id="sidebar" aria-label="Боковое меню"></aside>
+  <main class="main" id="main" tabindex="-1">
+    <div class="app-header" id="app-header"></div>
+    <div class="topbar" id="topbar"></div>
+    <div class="view" id="view"></div>
+  </main>
+</div>
+
+<div id="modal-root"></div>
+<div id="toast-wrap" class="toast-wrap"></div>
+
+<script src="/js/lib/icons.js"></script>
+<script src="/js/domain/constants.js"></script>
+<script src="/js/lib/util.js"></script>
+<script src="/js/lib/api.js"></script>
+<script src="/js/lib/state.js"></script>
+<script src="/js/lib/services.js"></script>
+<script src="/js/lib/relations.js"></script>
+<script src="/js/lib/entity-ui.js"></script>
+<script src="/js/lib/modal.js"></script>
+<script src="/js/lib/ui-helpers.js"></script>
+<script src="/js/lib/components.js"></script>
+<script src="/js/lib/comments.js"></script>
+<script src="/js/lib/version-history.js"></script>
+<script src="/js/lib/detail-page.js"></script>
+<script src="/js/lib/entity-form.js"></script>
+<script src="/js/lib/resource-form.js"></script>
+<script src="/js/lib/resource-folders.js"></script>
+<script src="/js/lib/mentions.js"></script>
+<script src="/js/domain/project-load.js"></script>
+<script src="/js/domain/meeting.js"></script>
+<script src="/js/domain/goal-tree.js"></script>
+<script src="/js/domain/entity-renderers.js"></script>
+
+<script src="/js/lib/view-loader.js"></script>
+<script src="/js/lib/auth.js"></script>
+<script src="/js/app.js"></script>
+<script src="/js/lib/router.js"></script>
+<script src="/js/lib/interactions.js"></script>
+<script src="/js/bootstrap.js"></script>
+</body>
+</html>

@@ -1,0 +1,592 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const ROOT = path.join(__dirname, '..');
+const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8');
+
+function jsFiles(dir) {
+  const out = [];
+  for (const name of fs.readdirSync(path.join(ROOT, dir))) {
+    const full = path.join(ROOT, dir, name);
+    const stat = fs.statSync(full);
+    if (stat.isDirectory()) out.push(...jsFiles(path.join(dir, name)));
+    else if (name.endsWith('.js')) out.push(path.join(dir, name));
+  }
+  return out;
+}
+
+test('views are lazy-loaded modules rather than eager script tags', () => {
+  const html = read('public/index.html');
+  assert.equal(/<script[^>]+src=["']js\/views\//.test(html), false);
+  const loader = read('public/js/lib/view-loader.js');
+  assert.match(loader, /import\(url\.href\)/);
+  assert.equal(loader.includes('VIEW_DEPENDENCIES'), false);
+});
+
+test('task create form is schema-driven and keeps edit-only relations out of create', () => {
+  const tasks = read('public/js/views/tasks.js');
+  const start = tasks.indexOf('async function openTaskCreateModal');
+  const end = tasks.indexOf('function taskDebounce', start);
+  const block = tasks.slice(start, end);
+  assert.match(block, /EntityForm\.open/);
+  assert.match(block, /create:\s*false/);
+  assert.match(block, /type:\s*'people'/);
+  assert.equal(block.includes('tf-title'), false);
+});
+
+test('views use resource facade for standard CRUD instead of duplicating base URLs', () => {
+  const allowedSpecial = new Set(['admin.js', 'settings.js', 'search.js']);
+  for (const file of jsFiles('public/js/views')) {
+    const name = path.basename(file);
+    if (allowedSpecial.has(name)) continue;
+    const source = fs.readFileSync(path.join(ROOT, file), 'utf8');
+    const matches = source.match(/api\.(?:get|post|put|del)\(['"]\/api\/(tasks|labs|projects|goals|issues|meetings|people|agreements|journal|documents|tools|processes|vacations)(?:['"/])/g) || [];
+    assert.equal(matches.length, 0, `${name} still contains direct standard CRUD calls: ${matches.join(', ')}`);
+  }
+});
+
+test('shared relation and comment facades exist', () => {
+  assert.match(read('public/js/lib/relations.js'), /const Relations/);
+  assert.match(read('public/js/lib/services.js'), /const Comments/);
+  assert.match(read('server/routes/comments.js'), /\/api\/comments\/:entityType\/:entityId/);
+});
+
+test('generated UI has no inline onclick attributes', () => {
+  for (const file of [...jsFiles('public/js'), 'public/index.html']) {
+    const source = fs.readFileSync(path.join(ROOT, file), 'utf8');
+    assert.equal(/onclick\s*=\s*["']/.test(source), false, `${file} contains an inline onclick attribute`);
+  }
+});
+
+test('domain labels live in one constants module loaded before utility code', () => {
+  const html = read('public/index.html');
+  assert.ok(html.indexOf('js/domain/constants.js') < html.indexOf('js/lib/util.js'));
+  const constants = read('public/js/domain/constants.js');
+  for (const name of ['TASK_STATUS_LABEL', 'LAB_STATUS_LABEL', 'PROJECT_STATUS_LABEL', 'GOAL_STATUS_LABEL']) assert.match(constants, new RegExp(`const ${name}`));
+  assert.equal(read('public/js/lib/util.js').includes('const TASK_STATUS_LABEL'), false);
+});
+
+test('common goal and agreement forms are schema-driven', () => {
+  assert.match(read('public/js/views/goals.js'), /function openGoalModal[\s\S]*?EntityForm\.open/);
+  assert.match(read('public/js/views/agreements.js'), /function openAgreementModal[\s\S]*?EntityForm\.open/);
+});
+
+test('server bootstrap stays thin and domain workflows are extracted', () => {
+  const index = read('server/index.js');
+  assert.ok(index.split('\n').length <= 250, `server/index.js grew to ${index.split('\n').length} lines`);
+  assert.match(index, /createJournalSync/);
+  assert.match(index, /createRecurringMeetings/);
+  assert.match(read('server/domain/journal-sync.js'), /syncJournalDerivedEntity/);
+  assert.match(read('server/domain/recurring-meetings.js'), /syncRecurringMeetingsForPerson/);
+});
+
+
+test('legacy HTTP and UI compatibility layers are removed', () => {
+  const comments = read('server/routes/comments.js');
+  const collaboration = read('server/routes/collaboration.js');
+  const services = read('public/js/lib/services.js');
+  const commentUi = read('public/js/lib/comments.js');
+  assert.equal(comments.includes('/api/labs/:id/comments'), false);
+  assert.equal(comments.includes('/api/task-comments/:id'), false);
+  assert.equal(collaboration.includes("'/api/tasks/:id/personal-note'"), false);
+  assert.equal(services.includes('/personal-note`'), false);
+  assert.equal(commentUi.includes('bindCommentComposer'), false);
+  assert.equal(commentUi.includes('renderCommentThread'), false);
+});
+
+test('calendar uses the shared action registry instead of a dedicated global callback registry', () => {
+  const calendar = read('public/js/views/calendar.js');
+  assert.equal(calendar.includes('__calGo'), false);
+  assert.equal(calendar.includes('evGoRegistry'), false);
+  assert.match(calendar, /registerAction\(/);
+});
+
+
+test('legacy data migrations are absent from runtime storage', () => {
+  const db = read('server/db.js');
+  const crud = read('server/routes/crud.js');
+  assert.equal(/\n\s*'taskComments',/.test(db), false);
+  assert.equal(/\n\s*'labComments',/.test(db), false);
+  assert.equal(crud.includes('db.taskComments'), false);
+  assert.equal(crud.includes('db.labComments'), false);
+  assert.match(crud, /db\.comments\.related\(`task:/);
+  assert.match(crud, /db\.comments\.related\(`lab:/);
+  assert.equal(db.includes('ALTER TABLE records ADD COLUMN'), false);
+  assert.equal(db.includes('migrateUnifiedComments'), false);
+  assert.equal(db.includes('legacyWorkspaceRows'), false);
+  assert.equal(db.includes('GLAB-'), false);
+});
+
+test('view-local state is not leaked onto window unnecessarily', () => {
+  assert.equal(read('public/js/views/knowledge-base.js').includes('window._kbFolderNameMap'), false);
+  const app = read('public/js/app.js');
+  assert.equal(app.includes('window.GardenSettings'), false);
+  assert.equal(app.includes('window.GARDEN_NAV_GROUPS'), false);
+  assert.equal(app.includes('window.toggleNavSection'), false);
+});
+
+
+test('lazy feature communication uses FeatureLoader instead of window globals', () => {
+  const loader = read('public/js/lib/view-loader.js');
+  assert.match(loader, /register\(commands\)/);
+  assert.match(loader, /async run\(name, \.\.\.args\)/);
+  assert.equal(loader.includes('window[actionName]'), false);
+  for (const file of jsFiles('public/js/views')) {
+    const source = fs.readFileSync(path.join(ROOT, file), 'utf8');
+    assert.equal(/Object\.assign\(window/.test(source), false, `${file} exports commands through window`);
+  }
+});
+
+test('task and Labs detail pages use autosave without legacy save footers', () => {
+  const tasks = read('public/js/views/tasks.js');
+  const labs = read('public/js/views/labs.js');
+  assert.doesNotMatch(tasks, /id=["']tf-save["']/);
+  assert.doesNotMatch(labs, /id=["']lab-detail-save["']/);
+  assert.match(tasks, /createAutosave\(/);
+  assert.match(labs, /createAutosave\(/);
+});
+
+test('version history is shared by tasks and Labs projects', () => {
+  const index = read('public/index.html');
+  const versions = read('public/js/lib/version-history.js');
+  assert.match(index, /js\/lib\/version-history\.js/);
+  assert.match(versions, /Versions\.restore/);
+  assert.match(versions, /Versions\.remove/);
+  assert.match(versions, /data-version-delete/);
+});
+
+test('settings view references the current NAV_GROUPS constant, not the removed global', () => {
+  // Регрессия: после удаления window.GARDEN_NAV_GROUPS (см. тест выше про view-local
+  // state) settings.js остался со ссылкой на старое имя и падал с ReferenceError на
+  // каждом заходе в /settings. NAV_GROUPS объявлен как обычная переменная в app.js
+  // и виден settings.js как классическому <script>, без window.* моста.
+  const settings = read('public/js/views/settings.js');
+  assert.equal(settings.includes('GARDEN_NAV_GROUPS'), false);
+  assert.match(settings, /\bNAV_GROUPS\b/);
+});
+
+test('meeting type label always falls back instead of leaking "undefined" into markup', () => {
+  const meetings = read('public/js/views/meetings.js');
+  assert.equal(/MEETING_TYPE_LABEL\[[^\]]+\]\s*\}/.test(meetings), false, 'MEETING_TYPE_LABEL lookup without a || fallback would render "undefined" for unrecognized meeting types');
+});
+
+test('avatar photo has a delegated error fallback to initials', () => {
+  const entityUi = read('public/js/lib/entity-ui.js');
+  assert.match(entityUi, /data-avatar-fallback-text/);
+  const interactions = read('public/js/lib/interactions.js');
+  assert.match(interactions, /addEventListener\('error'/);
+});
+
+test('title-edit DOM refs are re-declared in every canEdit block that uses them (tasks.js)', () => {
+  // Регрессия: titleShell/titleDisplay/titleInput были объявлены как const внутри
+  // ПЕРВОГО `if (canEdit) { ... }`, а второй, отдельный `if (canEdit) { ... }` (со
+  // save/autosave-обвязкой) читал те же имена без собственного объявления — блочная
+  // область видимости JS такое не пробрасывает, и открытие любой редактируемой задачи
+  // падало с ReferenceError: titleInput is not defined.
+  const tasks = read('public/js/views/tasks.js');
+  const idx = tasks.indexOf("titleShell.classList.remove('is-editing')");
+  assert.notEqual(idx, -1, 'expected to find the Enter-to-commit title handler in tasks.js');
+  const preceding = tasks.slice(Math.max(0, idx - 1500), idx);
+  assert.match(preceding, /const titleShell\s*=\s*document\.getElementById\('tf-title-shell'\)/);
+  assert.match(preceding, /const titleDisplay\s*=\s*document\.getElementById\('tf-title-display'\)/);
+  assert.match(preceding, /const titleInput\s*=\s*document\.getElementById\('tf-title'\)/);
+});
+
+test('index.html references assets with root-absolute paths, not relative ones', () => {
+  // Регрессия: относительные href/src (`css/style.css`, `js/lib/icons.js`, ...) резолвятся
+  // от текущего URL страницы. Поскольку index.html отдаётся по SPA-фоллбэку на любом
+  // вложенном маршруте (/tasks/:key, /labs/:id, ...), браузер пытался грузить
+  // /tasks/css/style.css и получал 404 — жёсткая перезагрузка или прямой заход по
+  // ссылке на вложенный маршрут давали полностью пустую страницу.
+  const html = read('public/index.html');
+  const relativeLinkOrScript = /(?:href|src)=["'](?!https?:|\/|#|data:|mailto:)[^"']+\.(?:css|js)["']/;
+  assert.equal(relativeLinkOrScript.test(html), false, 'index.html has a relative css/js href or src that will 404 on nested routes');
+});
+
+test('detail textareas commit on Enter and keep Shift+Enter for new lines', () => {
+  const detail = read('public/js/lib/detail-page.js');
+  const tasks = read('public/js/views/tasks.js');
+  const labs = read('public/js/views/labs.js');
+  assert.match(detail, /function bindDetailCommitOnEnter/);
+  assert.match(detail, /event\.shiftKey/);
+  assert.match(tasks, /bindDetailCommitOnEnter\(descriptionField/);
+  assert.match(labs, /bindDetailCommitOnEnter\(descriptionField/);
+  assert.match(labs, /bindDetailCommitOnEnter\(linksField/);
+});
+
+test('task notes drawer does not default to open below the overlay breakpoint (tasks.js)', () => {
+  // Регрессия: setNotesDrawerOpen(true) вызывался безусловно при каждом открытии
+  // задачи. На десктопе панель заметок сдвигает контент через margin-right, но
+  // ниже 940px (см. detail-page.css "@media (max-width: 940px)") она становится
+  // fixed-оверлеем на весь экран — то есть на телефоне пользователь при каждом
+  // открытии задачи сначала видел на весь экран пустую панель заметок, а не саму
+  // задачу.
+  const tasks = read('public/js/views/tasks.js');
+  assert.doesNotMatch(tasks, /setNotesDrawerOpen\(true\)/);
+  assert.match(tasks, /setNotesDrawerOpen\(window\.innerWidth > 940\)/);
+});
+
+test('short task descriptions do not get a min-height taller than the JS auto-resize floor (detail-page.css)', () => {
+  // Регрессия: CSS задавал min-height: 92px для textarea описания, тогда как
+  // resizeTaskDescription() в tasks.js сам держит пол в 52px (Math.max(scrollHeight, 52)).
+  // Разница создавала пустой "воздух" под короткими однострочными описаниями.
+  const css = read('public/css/detail-page.css');
+  const match = css.match(/\.task-detail-description-section \.task-detail-description \{\s*[^}]*min-height:\s*(\d+)px/);
+  assert.ok(match, 'expected a min-height rule for .task-detail-description-section .task-detail-description');
+  assert.equal(Number(match[1]), 52);
+});
+
+test('description field uses the shared calm field focus ring, details-grid fields keep their native outline suppressed (detail-page.css)', () => {
+  const css = read('public/css/detail-page.css');
+  assert.match(css, /\.task-inline-edit-description \.task-detail-description:focus\s*\{[^}]*outline:\s*1px solid var\(--field-focus-ring/);
+  // The details grid suppresses the native control outline; the shared page-level
+  // focus-visible rule supplies the same ring color to all editable fields.
+  assert.match(css, /\.task-detail-property \.task-inline-edit input,\s*\n\.task-detail-property \.task-inline-edit select \{[^}]*outline:\s*0 !important/);
+  const globalCss = read('public/css/style.css');
+  assert.match(globalCss, /--field-focus-ring:\s*color-mix/);
+  assert.match(globalCss, /input:focus-visible, textarea:focus-visible, select:focus-visible\s*\{[^}]*outline:\s*1px solid var\(--field-focus-ring\)/);
+});
+
+test('project chip keeps its ellipsis visible when truncated on narrow screens (system.css)', () => {
+  // Регрессия: .task-labels-group задаёт flex-wrap, поэтому project-chip (inline-flex)
+  // блокифицируется в `flex` как flex-item — text-overflow: ellipsis для такого элемента
+  // не рисует "…", текст просто обрывается без визуальной подсказки, что он обрезан.
+  // inline-block блокифицируется в обычный `block` и возвращает стандартное поведение
+  // однострочного текста с ellipsis.
+  const css = read('public/css/system.css');
+  const match = css.match(/\.task-labels-group \.ui-tag--project,\s*\n\s*\.task-labels-group \.project-chip \{([^}]*)\}/);
+  assert.ok(match, 'expected the narrow-screen .project-chip truncation rule in system.css');
+  assert.match(match[1], /display:\s*inline-block\s*!important/);
+});
+
+test('meetings get their own addressable MEET-XXXX instances, mirroring tasks (entity-identifiers.js, entity-keys.js)', () => {
+  const identifiers = read('server/entity-identifiers.js');
+  assert.match(identifiers, /function nextMeetingKey\(\)/);
+  assert.match(identifiers, /prefix:\s*'MEET'/);
+  assert.match(identifiers, /function ensureMeetingKeys\(\)/);
+  // resolveEntity must accept a MEET-XXXX key the same way it accepts task/lab keys.
+  assert.match(identifiers, /if \(name === 'meetings'\) \{/);
+});
+
+test('meeting context drawer does not default to open below the overlay breakpoint (meetings.js)', () => {
+  // Та же регрессия, что и для панели заметок в задачах (см. тест выше для
+  // tasks.js): ниже 940px detail-page.css превращает .task-detail-side в
+  // fixed-оверлей на весь экран, поэтому раскрывать его по умолчанию на
+  // телефоне нельзя — сначала видно только пустую панель, а не встречу.
+  const meetings = read('public/js/views/meetings.js');
+  assert.doesNotMatch(meetings, /setContextDrawerOpen\(true\)/);
+  assert.match(meetings, /setContextDrawerOpen\(window\.innerWidth > 940\)/);
+});
+
+test('existing meetings open as a routed page instead of the edit modal (meetings.js, router.js)', () => {
+  // "Отдельные экземпляры встреч, по аналогии с задачами": открытие существующей
+  // встречи должно вести на /meetings/MEET-XXXX, а не в модалку редактирования —
+  // модалка остаётся только для создания новой встречи.
+  const router = read('public/js/lib/router.js');
+  assert.match(router, /\/\^\\\/meetings\\\/\(\[\^\/\]\+\)\\\/\?\$\//);
+  const meetings = read('public/js/views/meetings.js');
+  assert.match(meetings, /function openMeetingModal\(existing\) \{\s*\n\s*if \(existing && existing\.id\) \{ Router\.go\(meetingPath\(existing\)\); return; \}/);
+});
+
+test('all registered themes are wired everywhere a theme must be listed (style.css, interactions.js, index.html, server settings), and the excluded ones stay out', () => {
+  // История токена: базовый набор тем был расширен новыми палитрами (Алмаз/Опал/Графит/Оникс/Нефрит/
+  // 2×Zendesk), заменённых двумя темами UI Kit Minimal. Позже поверх текущей геометрии/типографики Minimal, а затем дополнен новыми светлыми палитрами. Нефрит и оба Zendesk остаются осознанно не перенесёнными.
+  const style = read('public/css/style.css');
+  const interactions = read('public/js/lib/interactions.js');
+  const indexHtml = read('public/index.html');
+  const settingsJs = read('server/routes/settings.js');
+
+  const activeThemes = [
+    'chernika', 'myata', 'lavanda', 'tuman',
+    'grafit', 'khvoya', 'noch',
+    'anuppuccin-latte', 'anuppuccin-mocha',
+  ];
+  assert.match(style, /:root\s*\{/, 'базовые fallback-токены задаются в :root');
+  for (const name of activeThemes) {
+    assert.match(style, new RegExp(`html\\.theme-${name}\\s*\\{`), `style.css: нет блока токенов для темы "${name}"`);
+    assert.match(interactions, new RegExp(`value:\\s*'${name}'`), `interactions.js: тема "${name}" не зарегистрирована в GARDEN_THEMES`);
+    assert.match(indexHtml, new RegExp(`'${name}'`), `index.html: тема "${name}" не в анти-FOUC списке THEME_MODES`);
+    assert.match(settingsJs, new RegExp(`'${name}'`), `routes/settings.js: тема "${name}" не в серверном THEME_VALUES — сохранённое значение будет отброшено`);
+  }
+
+  // Обобщённый переключатель тёмного режима для форм-контролов (стрелка select,
+  // иконка календаря) не должен зависеть от конкретного имени тёмной темы.
+  assert.match(interactions, /classList\.toggle\('theme-dark',\s*isDarkTheme\(theme\)\)/);
+  assert.doesNotMatch(read('public/css/system.css'), /html\.theme-khvoya\b/, 'system.css: форм-контролы должны переключаться по общему .theme-dark, а не по конкретной теме');
+
+  const excludedThemeNames = ['garden', 'zendesk-light', 'zendesk-dark'];
+  for (const name of excludedThemeNames) {
+    const needle = new RegExp(`theme-${name}\\b|'${name}'`);
+    assert.doesNotMatch(style, needle, `тема "${name}" осознанно не перенесена, но встречается в style.css`);
+    assert.doesNotMatch(interactions, needle, `тема "${name}" осознанно не перенесена, но встречается в interactions.js`);
+    assert.doesNotMatch(indexHtml, needle, `тема "${name}" осознанно не перенесена, но встречается в index.html`);
+    assert.doesNotMatch(settingsJs, needle, `тема "${name}" осознанно не перенесена, но встречается в routes/settings.js`);
+  }
+});
+
+test('removed themes are absent from appearance settings', () => {
+  const settingsView = read('public/js/views/settings.js');
+  for (const name of ['minimal-light','ocean','provence','home-garden','greece','mountain-dawn','mountain-road','fog','clarity','clarity-dark','rime','pastel','forest-mushrooms','spring','anuppuccin-light','anuppuccin-dark','sumerki-sada','len','pergament','shipovnik','ten','cupertino','cupertino-dark','cupertino-forest','cupertino-forest-dark','anuppuccin-frappe','anuppuccin-macchiato']) {
+    assert.doesNotMatch(settingsView, new RegExp(`value:\s*'${name}'`));
+  }
+});
+
+test('«Прожектор», «Рейнисфьяра» и «Полдень» are fully removed, not just hidden from the picker', () => {
+  // Убраны по просьбе пользователя, чтобы упростить список тем. Проверяем все
+  // места, куда обычно регистрируется тема (см. первый тест в этом файле) —
+  // и отдельно public/js/views/settings.js, у которого свой самодостаточный
+  // список тем (appearanceThemes), не совпадающий по структуре с GARDEN_THEMES.
+  const style = read('public/css/style.css');
+  const interactions = read('public/js/lib/interactions.js');
+  const indexHtml = read('public/index.html');
+  const settingsRoute = read('server/routes/settings.js');
+  const settingsView = read('public/js/views/settings.js');
+  for (const name of ['prozhektor', 'reynisfjara', 'polden']) {
+    const needle = new RegExp(`theme-${name}\\b|'${name}'`);
+    assert.doesNotMatch(style, needle, `тема "${name}" должна быть удалена из style.css`);
+    assert.doesNotMatch(interactions, needle, `тема "${name}" должна быть удалена из interactions.js`);
+    assert.doesNotMatch(indexHtml, needle, `тема "${name}" должна быть удалена из index.html`);
+    assert.doesNotMatch(settingsRoute, needle, `тема "${name}" должна быть удалена из routes/settings.js`);
+    assert.doesNotMatch(settingsView, needle, `тема "${name}" должна быть удалена из views/settings.js`);
+  }
+});
+
+test('server-side settings whitelist accepts all registered theme values, so the choice actually persists (routes/settings.js)', () => {
+  // Регрессия, которую поймал ручной прогон в прошлой фазе: THEME_VALUES на
+  // сервере не был обновлён при добавлении новых тем — /api/settings молча
+  // откатывал выбор пользователя на дефолт при следующей загрузке страницы
+  // (bootstrap.js грузит настройки с сервера и переприменяет тему).
+  const settings = read('server/routes/settings.js');
+  const match = settings.match(/const THEME_VALUES = \[([^\]]*)\]/);
+  assert.ok(match, 'THEME_VALUES не найден в server/routes/settings.js');
+  assert.match(match[1], /'anuppuccin-mocha'/);
+  assert.match(match[1], /'khvoya'/);
+  const defaultMatch = settings.match(/theme:\s*'([^']+)'/);
+  assert.ok(defaultMatch, 'DEFAULT_USER_SETTINGS.theme не найден');
+  assert.strictEqual(defaultMatch[1], 'tuman', 'тема по умолчанию должна быть tuman');
+});
+
+test('khvoya keeps a strictly brighter base < elevated < elevated-2 < hover < active surface order (style.css)', () => {
+  // В тёмных темах каждая следующая поверхность читается как более
+  // «приподнятая» и потому светлее предыдущей — hover/active обязаны быть
+  // светлее --bg-elevated-2, иначе подсветка строки выглядит темнее самой
+  // строки (визуальный баг, который эта проверка ловит для любой будущей
+  // тёмной темы, не только текущей).
+  const style = read('public/css/style.css');
+  const block = style.match(/html\.theme-khvoya\s*\{([^}]*)\}/);
+  assert.ok(block, 'блок html.theme-khvoya не найден');
+  const vars = {};
+  for (const [, name, hex] of block[1].matchAll(/--(bg-[a-z0-9-]+):\s*(#[0-9a-fA-F]{6})/g)) vars[name] = hex;
+  const luminance = (hex) => {
+    const n = parseInt(hex.slice(1), 16);
+    return ((n >> 16) & 255) * 0.2126 + ((n >> 8) & 255) * 0.7152 + (n & 255) * 0.0722;
+  };
+  const order = ['bg-base', 'bg-elevated', 'bg-elevated-2', 'bg-hover', 'bg-active'];
+  const lums = order.map((name) => luminance(vars[name]));
+  for (let i = 1; i < lums.length; i++) {
+    assert.ok(lums[i] > lums[i - 1], `${order[i]} (${vars[order[i]]}) должен быть светлее ${order[i - 1]} (${vars[order[i - 1]]})`);
+  }
+});
+
+test('khvoya text tiers clear 4.5:1 AA against every real background they render on, including --bg-elevated-2 (style.css)', () => {
+  // Регрессия: буквальные --text-tertiary/--text-disabled (#8592A0/#818D99)
+  // проходили AA на --bg-base/--bg-elevated, но давали только 4.10/3.84:1 на
+  // --bg-elevated-2 — а именно на нём сидят, например, счётчик в .nav-item
+  // .count и статусные чипы. Подняты до значений, которые проходят везде,
+  // сохраняя порядок secondary > tertiary > disabled.
+  const style = read('public/css/style.css');
+  const block = style.match(/html\.theme-khvoya\s*\{([^}]*)\}/);
+  assert.ok(block, 'блок html.theme-khvoya не найден');
+  const vars = {};
+  for (const [, name, hex] of block[1].matchAll(/--(text-[a-z]+|bg-elevated-2):\s*(#[0-9a-fA-F]{6})/g)) vars[name] = hex;
+  const relLum = (hex) => {
+    const n = parseInt(hex.slice(1), 16);
+    const toLin = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+    return 0.2126 * toLin((n >> 16) & 255) + 0.7152 * toLin((n >> 8) & 255) + 0.0722 * toLin(n & 255);
+  };
+  const ratio = (a, b) => { const [l1, l2] = [relLum(a), relLum(b)].sort((x, y) => y - x); return (l1 + 0.05) / (l2 + 0.05); };
+  const bg = vars['bg-elevated-2'];
+  for (const tier of ['text-secondary', 'text-tertiary', 'text-disabled']) {
+    const r = ratio(vars[tier], bg);
+    assert.ok(r >= 4.5, `${tier} (${vars[tier]}) на bg-elevated-2 (${bg}) даёт только ${r.toFixed(2)}:1, нужно 4.5:1`);
+  }
+  const secondaryRatio = ratio(vars['text-secondary'], bg);
+  const tertiaryRatio = ratio(vars['text-tertiary'], bg);
+  const disabledRatio = ratio(vars['text-disabled'], bg);
+  assert.ok(secondaryRatio >= tertiaryRatio, 'text-secondary должен быть не темнее text-tertiary');
+  assert.ok(tertiaryRatio >= disabledRatio, 'text-tertiary должен быть не темнее text-disabled');
+});
+
+test('The Labs ideas render as task-like list rows and default to ideas without projects (labs.js)', () => {
+  const labs = read('public/js/views/labs.js');
+  const start = labs.indexOf('function labIdeaRowHtml');
+  const end = labs.indexOf('\n}', start);
+  const block = labs.slice(start, end);
+  assert.match(block, /task-list-row/, 'labIdeaRowHtml должен выглядеть как строка списка задач');
+  assert.equal(/\blab-card\b/.test(block), false, 'идея не должна рендериться карточкой проекта');
+  assert.equal(labs.includes('labs-ideas-list'), true, 'для списка идей должен использоваться отдельный модификатор списка');
+  assert.match(labs, /Views\._labOnlyUnassignedIdeas = Views\._labOnlyUnassignedIdeas !== false;/, 'флаг «только задачи без проектов» должен быть включён по умолчанию');
+  assert.match(labs, /!idea\.labProjectId/, 'при включённом флаге идеи, уже связанные с проектом, должны скрываться');
+});
+
+test('task/meeting/labs detail pages use a neutral "Назад" label, not a fixed destination (tasks.js, meetings.js, labs.js)', () => {
+  // taskDetailGoBack/meetingDetailGoBack/data-router-back все вызывают Router.back(),
+  // то есть возврат по истории браузера на тот экран, откуда открыли задачу/встречу/
+  // проект (список, «Обзор», поиск, карточка человека и т.д.) — а не жёстко на список
+  // задач/встреч/лабов. Подпись кнопки не должна называть конкретный пункт назначения
+  // (это было ошибочно сделано в одном из предыдущих проходов и исправлено здесь).
+  for (const file of ['public/js/views/tasks.js', 'public/js/views/meetings.js', 'public/js/views/labs.js']) {
+    const source = read(file);
+    assert.match(source, /task-detail-topbar-btn"[^>]*(?:data-command="\w+"|data-router-back)>Назад</, `${file}: кнопка возврата должна называться «Назад», без привязки к конкретному экрану`);
+  }
+});
+
+test('sidebar scrolls the active nav item into view after render (app.js)', () => {
+  // Пункты меню сайдбара по высоте не всегда помещаются в окно (особенно когда
+  // развёрнута одна из последних групп — «Развитие»/«Знания»): .nav-sections-stacked
+  // прокручивается, но по умолчанию не показывает индикатор прокрутки. Без явного
+  // scrollIntoView активный пункт (например, «База знаний» на /knowledge-base) мог
+  // оказаться почти полностью обрезан снизу, а соседние пункты группы — вовсе не
+  // видны, без какой-либо подсказки, что список нужно прокрутить.
+  const source = read('public/js/app.js');
+  assert.match(source, /function ensureActiveNavItemVisible\(sidebar\)/, 'app.js: должна быть функция, подкручивающая активный пункт меню в видимую область');
+  assert.match(source, /ensureActiveNavItemVisible\(sidebar\);\s*\n\s*renderAppHeader\(\);/, 'app.js: ensureActiveNavItemVisible должна вызываться при каждой отрисовке сайдбара');
+});
+
+test('Документы и Инструменты открываются без фатальной ошибки (router.js, documents.js, tools.js)', () => {
+  // Было два независимых бага, оба валили страницу целиком:
+  // 1) router.js лениво грузил 'resource-folders' через loadViewScripts — но
+  //    resource-folders.js подключён обычным <script> в index.html (общая функция,
+  //    а не ES-модуль представления) и файла views/resource-folders.js не существует,
+  //    поэтому import 404-ился и вся страница падала с "Не удалось загрузить feature".
+  // 2) resourceFolderLayoutHtml(kind, folders, items, selected, selectedFolder, filtered,
+  //    rowRenderer, one, two, five) ожидает функцию-рендерер строки седьмым аргументом,
+  //    а documents.js/tools.js передавали туда строку словоформы ('документ'/'инструмент'),
+  //    из-за чего filtered.map(rowRenderer) падал с "string ... is not a function".
+  const routerSource = read('public/js/lib/router.js');
+  assert.doesNotMatch(routerSource, /loadViewScripts\(\['resource-folders'/, 'router.js: resource-folders.js не является ленивым view-модулем, его нельзя грузить через loadViewScripts');
+  assert.match(routerSource, /await loadViewScript\('documents'\); return Views\.documents\(\);/, 'router.js: маршрут /documents должен лениво грузить только documents.js');
+  assert.match(routerSource, /await loadViewScript\('tools'\); return Views\.tools\(\);/, 'router.js: маршрут /tools должен лениво грузить только tools.js');
+
+  const rendererSource = read('public/js/domain/entity-renderers.js');
+  assert.match(rendererSource, /function documentRowHtml\(/, 'entity-renderers.js: должна быть функция documentRowHtml для рендера строки документа');
+  assert.match(rendererSource, /function toolRowHtml\(/, 'entity-renderers.js: должна быть функция toolRowHtml для рендера строки инструмента');
+
+  const docsSource = read('public/js/views/documents.js');
+  assert.match(docsSource, /resourceFolderLayoutHtml\('documents', folders, docs, selected, selectedFolder, filtered, documentRowHtml,/, 'documents.js: resourceFolderLayoutHtml должен получать documentRowHtml как rowRenderer, а не строку словоформы');
+
+  const toolsSource = read('public/js/views/tools.js');
+  assert.match(toolsSource, /resourceFolderLayoutHtml\('tools', folders, tools, selected, selectedFolder, filtered, toolRowHtml,/, 'tools.js: resourceFolderLayoutHtml должен получать toolRowHtml как rowRenderer, а не строку словоформы');
+});
+
+test('checkins is registered as a first-class collection end-to-end (server)', () => {
+  // db.js и index.js держат две ОТДЕЛЬНЫЕ копии COLLECTIONS — добавление коллекции
+  // только в одном месте даёт db.checkins, но не регистрирует REST-маршруты.
+  const dbSource = read('server/db.js');
+  assert.match(dbSource, /'checkins',\n\];/, 'db.js: checkins должен быть в основном массиве COLLECTIONS');
+  assert.match(dbSource, /checkins:\s*'chk'/, 'db.js: у checkins должен быть префикс id');
+
+  const indexSource = read('server/index.js');
+  assert.match(indexSource, /'toolFolders',\n  'checkins',\n\];/, 'index.js: checkins должен быть в COLLECTIONS, иначе registerCrudRoutes не создаст /api/checkins');
+
+  const authCore = read('server/auth-core.js');
+  assert.match(authCore, /'checkins\.manage_all':/, 'auth-core.js: должно быть право checkins.manage_all — иначе оно не появится в admin.js/admin.js UI');
+
+  const access = read('server/access-control.js');
+  assert.match(access, /OWNER_COLLECTIONS = \[[^\]]*'checkins'/, 'access-control.js: checkins должен быть в OWNER_COLLECTIONS, чтобы createdByUserId проставлялся автоматически');
+  assert.match(access, /checkins:'checkins'/, 'access-control.js: checkins должен быть сопоставлен области прав checkins');
+  assert.match(access, /'checkins'\]\)\.has\(name\)/, 'access-control.js: canCreate должен разрешать checkins рядовым пользователям (свою запись)');
+  assert.match(access, /if \(name === 'checkins'\) return owns\(item, user\) \|\| Boolean\(user\.personId && item\.personId === user\.personId\)/, 'access-control.js: свои checkins должны определяться по автору записи или самому сотруднику');
+});
+
+test('checkins view is wired into router, sidebar and resource facade (client)', () => {
+  const router = read('public/js/lib/router.js');
+  assert.match(router, /\/\^\\\/checkins\\\/\?\$\//, 'router.js: должен быть маршрут /checkins');
+
+  const app = read('public/js/app.js');
+  assert.match(app, /key: 'checkins', path: '\/checkins', label: 'Check-in'/, "app.js: пункт Check-in должен быть в группе «Работа» (NAV_GROUPS)");
+
+  const services = read('public/js/lib/services.js');
+  assert.match(services, /'checkins'/, 'services.js: Resources.checkins должен быть объявлен через общую фабрику api.resource');
+
+});
+
+test('spinning off a Task/Issue from a Check-in cell stamps a one-way sourceCheckinId back-reference', () => {
+  // Тот же приём, что и sourceJournalId в journal.js: обратная ссылка живёт только
+  // на новой сущности, без поля в исходном Check-in.
+  const checkins = read('public/js/views/checkins.js');
+  assert.match(checkins, /sourceCheckinId:\s*c\.id/, 'checkins.js: spin-off должен передавать sourceCheckinId в prefill и для задачи, и для проблемы');
+  assert.match(checkins, /FeatureLoader\.run\('openTaskModal', null, \{/);
+  assert.match(checkins, /FeatureLoader\.run\('openIssueModal', null, \{/);
+
+  const tasks = read('public/js/views/tasks.js');
+  assert.match(tasks, /if \(opts\.prefill\?\.sourceCheckinId\) payload\.sourceCheckinId = opts\.prefill\.sourceCheckinId;/, 'tasks.js: openTaskCreateModal должен прокидывать sourceCheckinId в payload (EntityForm.read его не знает — схема его не объявляет)');
+
+  const issues = read('public/js/views/issues.js');
+  assert.match(issues, /if \(!isEdit && opts\.prefill\?\.sourceCheckinId\) payload\.sourceCheckinId = opts\.prefill\.sourceCheckinId;/, 'issues.js: openIssueModal должен прокидывать sourceCheckinId в payload при создании из Check-in');
+});
+
+test('the «Check-in недели» overview widget is fully removed, not just hidden from the catalog', () => {
+  const overview = read('public/js/views/overview.js');
+  assert.doesNotMatch(overview, /'checkin-week':/, 'overview.js: checkin-week не должен остаться в OVERVIEW_WIDGET_LABELS/overviewCatalogIcon');
+  assert.doesNotMatch(overview, /\['goals','team-workload','priority-tasks','unresolved-issues','week-events','checkin-week'\]/, 'overview.js: checkin-week не должен остаться в каталоге виджетов сигналов (overviewCatalogTypes)');
+  assert.doesNotMatch(overview, /widget\.type === 'checkin-week'/, 'overview.js: ветка рендера checkin-week должна быть удалена');
+  assert.doesNotMatch(overview, /Resources\.checkins\.list\(\)/, 'overview.js: Обзор больше не должен запрашивать checkins — эти данные нужны были только удалённому виджету');
+  // Строка ниже — намеренное исключение: разовая чистка уже сохранённых у
+  // пользователей конфигураций от ссылок на удалённый виджет, а не сам виджет.
+  assert.match(overview, /config\.signals\.filter\(\(item\) => item\.type !== 'checkin-week'\)/, 'overview.js: у уже сохранённых пользовательских конфигураций нужно вычищать ссылки на удалённый виджет');
+
+  const settingsRoute = read('server/routes/settings.js');
+  assert.doesNotMatch(settingsRoute, /checkin-week/, "routes/settings.js: checkin-week не должен остаться в списке допустимых типов сигналов Обзора");
+
+  // Сам раздел Check-in (страница, роут, пункт меню, право доступа) остаётся —
+  // просьба была убрать только карточку на Обзоре, а не саму фичу.
+  const router = read('public/js/lib/router.js');
+  assert.match(router, /\/\^\\\/checkins\\\/\?\$\//, 'router.js: маршрут /checkins должен остаться');
+});
+
+test('week navigation always snaps to the Monday of the ISO week (mondayOf helper)', () => {
+  const util = read('public/js/lib/util.js');
+  assert.match(util, /function mondayOf\(date\)/, 'util.js: должен быть общий помощник mondayOf, используемый и Check-in, и Обзором');
+});
+
+test('role access policies expose six visibility/management scenarios and are editable in admin', () => {
+  const authCore = read('server/auth-core.js');
+  for (const level of ['none','own_read','own_manage','all_read','all_own_manage','all_manage']) {
+    assert.match(authCore, new RegExp(`id:'${level}'`), `auth-core.js: должен быть уровень ${level}`);
+  }
+  assert.match(authCore, /accessLevelFromCapabilities/, 'комбинация нескольких ролей должна объединять видимость и управление, а не выбирать один уровень вслепую');
+  assert.match(authCore, /role_access_policies/, 'auth-core.js: политика ролей должна храниться в workspace meta');
+  assert.match(authCore, /role === 'admin' \|\| role === 'teamlead' \? 'all_manage' : 'all_own_manage'/, 'по умолчанию тимлид управляет всем, сотрудник видит все данные и управляет своими');
+  const access = read('server/access-control.js');
+  assert.match(access, /caps\.view >= 2 \|\| isOwnItem/, 'просмотр должен различать свои данные и все данные');
+  assert.match(access, /caps\.manage >= 2/, 'управление должно различать свои данные и все данные');
+  const adminRoute = read('server/routes/admin.js');
+  assert.match(adminRoute, /\/api\/admin\/role-policies/, 'admin API должен сохранять права ролей');
+  const adminView = read('public/js/views/admin.js');
+  assert.match(adminView, /Права ролей/, 'в админке должна быть настройка прав ролей');
+  assert.match(adminView, /data-role-access-role/, 'матрица ролей должна рендерить редактируемые уровни доступа');
+});
+
+test('aggregate detail endpoints reuse permission filters instead of bypassing access control', () => {
+  const source = read('server/routes/aggregates.js');
+  assert.match(source, /canReadItem\('projects', project, req\.auth\.user\)/, 'карточка проекта должна проверять право просмотра');
+  assert.match(source, /canReadItem\('goals', goal, req\.auth\.user\)/, 'карточка цели должна проверять право просмотра');
+  assert.match(source, /visibleItems\('tasks', req\.auth\.user/, 'агрегаты задач должны проходить через visibleItems');
+});
+
+test('employee first overview uses focused personal dashboard defaults', () => {
+  const overview = read('public/js/views/overview.js');
+  assert.match(overview, /function overviewDefaultDashboardForCurrentUser\(\)/);
+  assert.match(overview, /!Auth\.isAdmin\(\) && !Auth\.isTeamlead\(\)/);
+  assert.match(overview, /project\?\.status === 'active' && \(project\.memberIds \|\| \[\]\)\.includes\(personId\)/);
+  assert.match(overview, /\{ id: 'my-journal', type: 'my-journal', breakBefore: true \}/);
+  assert.match(overview, /linkKey: 'knowledge', breakBefore: true/);
+  assert.match(overview, /linkKey: 'labs-projects'/);
+  assert.match(overview, /signals: \[\{ id: 'week-events', type: 'week-events' \}, \{ id: 'attention-notes', type: 'attention-notes' \}\]/);
+  assert.match(overview, /GardenSettings\.update\(\{ overviewDashboard: config \}\)/);
+});
