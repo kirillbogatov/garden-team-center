@@ -820,24 +820,6 @@ async function openTaskCreateModal(opts) {
   });
 }
 
-function taskDebounce(fn, wait) {
-  let timer = null;
-  let args = [];
-  const wrapped = (...nextArgs) => {
-    args = nextArgs;
-    clearTimeout(timer);
-    timer = setTimeout(() => { timer = null; fn(...args); }, wait);
-  };
-  wrapped.flush = () => {
-    if (!timer) return;
-    clearTimeout(timer);
-    timer = null;
-    fn(...args);
-  };
-  return wrapped;
-}
-
-
 async function archiveTask(id, currentStatus) {
   const ok = await new Promise((resolve) => {
     Modal.open(

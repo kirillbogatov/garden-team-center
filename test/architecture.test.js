@@ -596,17 +596,17 @@ test('employee first overview uses focused personal dashboard defaults', () => {
   assert.match(overview, /GardenSettings\.update\(\{ overviewDashboard: config \}\)/);
 });
 
-test('meetings support Club type and expose it in the meeting type filter', () => {
+test('meeting types are centralized and reused by filters and forms', () => {
   const constants = read('public/js/domain/constants.js');
+  const meetingDomain = read('public/js/domain/meeting.js');
   const meetings = read('public/js/views/meetings.js');
-  assert.match(constants, /club:\s*'Клаб'/, 'MEETING_TYPE_LABEL should define the Clab meeting type');
-  assert.match(constants, /retro:\s*'Ретро'/, 'MEETING_TYPE_LABEL should define the Retro meeting type');
-  assert.match(constants, /project:\s*'Проектные'/, 'MEETING_TYPE_LABEL should define the Project meeting type');
-  assert.match(meetings, /\['all', '1:1', 'pr', 'club', 'retro', 'project', 'other'\]/, 'meeting type filter should include club, retro and project meetings');
-  assert.match(meetings, /club:\s*'Клаб'/, 'the meetings page should label the club filter as «Клаб»');
-  assert.ok((meetings.match(/<option value="club"/g) || []).length >= 2, 'Club should be selectable both when creating and editing a meeting');
-  assert.ok((meetings.match(/<option value="retro"/g) || []).length >= 2, 'Retro should be selectable both when creating and editing a meeting');
-  assert.ok((meetings.match(/<option value="project"/g) || []).length >= 2, 'Project meetings should be selectable both when creating and editing a meeting');
+  assert.match(constants, /club:\s*'Клаб'/);
+  assert.match(constants, /retro:\s*'Ретро'/);
+  assert.match(constants, /project:\s*'Проектные'/);
+  assert.match(constants, /MEETING_TYPE_ORDER = \['1:1', 'pr', 'club', 'retro', 'project', 'other'\]/);
+  assert.match(meetingDomain, /function meetingTypeOptionsHtml/);
+  assert.match(meetingDomain, /includeAll \? \['all', \.\.\.MEETING_TYPE_ORDER\] : MEETING_TYPE_ORDER/);
+  assert.ok((meetings.match(/meetingTypeOptionsHtml\(/g) || []).length >= 3, 'filter, create and edit should reuse shared meeting options');
 });
 
 test('processes use task-like list/detail flow with autosave, archive and fix option statuses', () => {
@@ -664,15 +664,16 @@ test('meeting rows render up to five overlapping participant avatars with an ove
 test('repository includes a README describing Garden Team Center capabilities', () => {
   const readme = read('README.md');
   assert.match(readme, /Garden Team Center/);
-  assert.match(readme, /## Возможности/);
+  assert.match(readme, /## Что умеет Garden/);
   assert.match(readme, /### Встречи/);
   assert.match(readme, /### Процессы/);
+  assert.match(readme, /## Лицензия/);
 });
 
 test('work area width adapts to large screens while detail and table views keep suitable widths', () => {
   const css = fs.readFileSync(path.join(ROOT, 'public/css/system.css'), 'utf8');
-  assert.match(css, /--content-max:\s*clamp\(980px,\s*68vw,\s*1280px\)/);
-  assert.match(css, /--detail-content-max:\s*clamp\(880px,\s*58vw,\s*1060px\)/);
+  assert.match(css, /--content-max:\s*clamp\(980px,\s*64vw,\s*1240px\)/);
+  assert.match(css, /--detail-content-max:\s*clamp\(880px,\s*54vw,\s*1020px\)/);
   assert.match(css, /\.view\.task-detail-page-view\s*\{[\s\S]*?--detail-content-max/);
   assert.match(css, /\.view\.gcal-wide,\s*\n\.view\.checkins-wide\s*\{[\s\S]*?--wide-content-gutter/);
 });
@@ -743,12 +744,14 @@ test('Office demo data exercises current Garden entities, including Check-in, Pr
 
 test('personal and team task widgets rank up to five tasks with configurable strategies', () => {
   const overview = read('public/js/views/overview.js');
+  const constants = read('public/js/domain/constants.js');
   const settingsView = read('public/js/views/settings.js');
   const settingsRoute = read('server/routes/settings.js');
-  assert.match(overview, /const TASK_PRIORITY_MODES = \{/);
-  assert.match(overview, /balanced:[\s\S]*overdue: 40[\s\S]*today: 50/);
-  assert.match(overview, /importance:[\s\S]*important: 60/);
-  assert.match(overview, /overdue:[\s\S]*overdue: 70/);
+  assert.match(constants, /const TASK_PRIORITY_STRATEGIES = \{/);
+  assert.match(constants, /balanced:[\s\S]*overdue: 40[\s\S]*today: 50/);
+  assert.match(constants, /importance:[\s\S]*important: 60/);
+  assert.match(constants, /overdue:[\s\S]*overdue: 70/);
+  assert.match(overview, /TASK_PRIORITY_STRATEGIES\[mode\]/);
   assert.match(overview, /'priority-tasks': 'Мои задачи'/);
   assert.match(overview, /'team-priority-tasks': 'Задачи команды'/);
   assert.match(overview, /widget\.type === 'priority-tasks' \|\| widget\.type === 'team-priority-tasks'/);
@@ -761,14 +764,11 @@ test('personal and team task widgets rank up to five tasks with configurable str
   assert.match(overview, /Просрочено \$\{overdueDays\} дн\./);
   assert.match(overview, /Auth\.isTeamlead\(\)[\s\S]*team-priority-tasks/);
   assert.match(settingsView, /name="task-priority-mode"/);
-  assert.match(settingsView, /Сбалансированный/);
-  assert.match(settingsView, /По дедлайнам/);
-  assert.match(settingsView, /По важности/);
-  assert.match(settingsView, /Разгребание долгов/);
-  assert.match(settingsView, /Смотрим на срок и важность задачи\. Ближайшие задачи обычно важнее просроченных\./);
-  assert.match(settingsView, /Акцент на ближайших задачах\. Важность влияет на порядок, но не так сильно\./);
-  assert.match(settingsView, /Поднимает важные задачи, сортирует их по сроку\./);
-  assert.match(settingsView, /Чем дольше задача просрочена, тем выше она в списке\./);
+  assert.match(settingsView, /Object\.entries\(TASK_PRIORITY_STRATEGIES\)/);
+  assert.match(constants, /Сбалансированный/);
+  assert.match(constants, /По дедлайнам/);
+  assert.match(constants, /По важности/);
+  assert.match(constants, /Разгребание долгов/);
   assert.match(settingsRoute, /taskPriorityMode: 'balanced'/);
   assert.match(settingsRoute, /team-priority-tasks/);
   assert.match(settingsRoute, /\['balanced', 'deadline', 'importance', 'overdue'\]/);
@@ -826,27 +826,46 @@ test('obvious unused legacy helpers are removed', () => {
   ].forEach((name) => assert.doesNotMatch(source, new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))));
 });
 
-test('task priority strategy descriptions explain each strategy', () => {
-  const settings = fs.readFileSync(path.join(ROOT, 'public/js/views/settings.js'), 'utf8');
-  assert.match(settings, /Смотрим на срок и важность задачи\. Ближайшие задачи обычно важнее просроченных\./);
-  assert.match(settings, /Акцент на ближайших задачах\. Важность влияет на порядок, но не так сильно\./);
-  assert.match(settings, /Поднимает важные задачи, сортирует их по сроку\./);
-  assert.match(settings, /Чем дольше задача просрочена, тем выше она в списке\./);
+test('package manifest contains only runtime dependencies that are used', () => {
+  const pkg = JSON.parse(read('package.json'));
+  assert.deepEqual(Object.keys(pkg.dependencies || {}).sort(), ['express']);
+  assert.ok(pkg.scripts?.['test:client'], 'package.json should expose a dependency-free client test command');
+  assert.ok(pkg.scripts?.['test:api'], 'package.json should expose an explicit API test command');
+});
+
+test('removed UI generations do not leave dead CSS or helper functions behind', () => {
+  const css = [read('public/css/style.css'), read('public/css/system.css'), read('public/css/detail-page.css')].join('\n');
+  const js = [read('public/js/views/tasks.js'), read('public/js/views/people.js')].join('\n');
+  ['dash-kpi', 'dash-widget-', 'focus-attention', 'meeting-period-tabs', 'meeting-details', 'task-detail-footer', 'week-row', 'sidebar-search-empty'].forEach((token) => {
+    assert.doesNotMatch(css, new RegExp(token));
+  });
+  assert.doesNotMatch(js, /function taskDebounce\(/);
+  assert.doesNotMatch(js, /function taskGroup\(/);
+});
+
+test('task priority strategy descriptions are centralized with their weights', () => {
+  const constants = read('public/js/domain/constants.js');
+  const settings = read('public/js/views/settings.js');
+  assert.match(constants, /Смотрим на срок и важность задачи\. Ближайшие задачи обычно важнее просроченных\./);
+  assert.match(constants, /Акцент на ближайших задачах\. Важность влияет на порядок, но не так сильно\./);
+  assert.match(constants, /Поднимает важные задачи, сортирует их по сроку\./);
+  assert.match(constants, /Чем дольше задача просрочена, тем выше она в списке\./);
+  assert.match(settings, /strategy\.description/);
 });
 
 test('meetings expose missed follow-up state, outcome tabs and a top type filter', () => {
   const meetings = read('public/js/views/meetings.js');
+  const meetingDomain = read('public/js/domain/meeting.js');
   const css = read('public/css/style.css');
-  assert.match(meetings, /function meetingHasOutcomeRecords\(meeting\)/);
-  assert.match(meetings, /meetingIsPast\(meeting, todayKey\).*?!meetingHasOutcomeRecords\(meeting\)/s);
+  assert.match(meetingDomain, /function meetingHasOutcomeRecords\(meeting\)/);
+  assert.match(meetingDomain, /meetingIsPast\(meeting, todayKey\) && !meetingHasOutcomeRecords\(meeting\)/);
   assert.match(meetings, /нет записей по итогам/);
   assert.match(meetings, /data-command-arg="upcoming">Будущие/);
   assert.match(meetings, /data-command-arg="completed">Завершённые/);
   assert.match(meetings, /data-command-arg="missed">Без итогов/);
   assert.match(meetings, /data-command-arg="all">Все/);
   assert.match(meetings, /id="meeting-type-filter"/);
-  assert.match(meetings, /all: 'Все встречи'/);
-  assert.match(meetings, /<option value="\$\{value\}"/);
+  assert.match(meetings, /meetingTypeOptionsHtml\(Views\._meetingFilter, \{ includeAll: true \}\)/);
   assert.match(css, /\.meeting-missed-label/);
 });
 

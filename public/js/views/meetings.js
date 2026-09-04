@@ -4,29 +4,6 @@ Views._meetingFilter = 'all';
 Views._meetingPeriod = 'upcoming';
 Views._meetingMonthState = {};
 
-function meetingHasOutcomeRecords(meeting) {
-  const hasNotes = String(meeting?.notes || '').trim().length > 0;
-  const hasDocuments = Array.isArray(meeting?.documentLinks) && meeting.documentLinks.some((doc) => String(doc?.title || doc?.url || '').trim());
-  return hasNotes || hasDocuments;
-}
-
-function meetingIsPast(meeting, todayKey = todayStr()) {
-  const dateKey = String(meeting?.date || '').slice(0, 10);
-  return !!dateKey && dateKey < todayKey;
-}
-
-function meetingIsMissed(meeting, todayKey = todayStr()) {
-  return meetingIsPast(meeting, todayKey) && !meetingHasOutcomeRecords(meeting);
-}
-
-function meetingMissedDays(meeting, todayKey = todayStr()) {
-  if (!meetingIsMissed(meeting, todayKey)) return 0;
-  const [ty, tm, td] = String(todayKey).split('-').map(Number);
-  const [my, mm, md] = String(meeting.date || '').slice(0, 10).split('-').map(Number);
-  if (![ty, tm, td, my, mm, md].every(Number.isFinite)) return 0;
-  return Math.max(1, Math.floor((Date.UTC(ty, tm - 1, td) - Date.UTC(my, mm - 1, md)) / 86400000));
-}
-
 function meetingPeriodLists(meetings) {
   const today = todayStr();
   const filteredByType = Views._meetingFilter === 'all' ? meetings : meetings.filter((meeting) => meeting.type === Views._meetingFilter);
@@ -50,7 +27,6 @@ function meetingEmptyText(period) {
 function renderMeetingsWorkspace(meetings) {
   const view = document.getElementById('view');
   if (!view) return;
-  const filterLabel = { all: 'Все встречи', '1:1': '1:1', pr: 'PR', club: 'Клаб', retro: 'Ретро', project: 'Проектные', other: 'Другое' };
   const periodLists = meetingPeriodLists(meetings);
   const activeMeetings = periodLists[Views._meetingPeriod] || periodLists.upcoming;
   const emptyText = meetingEmptyText(Views._meetingPeriod);
@@ -64,7 +40,7 @@ function renderMeetingsWorkspace(meetings) {
 
   const typeFilter = `<div class="meeting-filter-controls">
     <select id="meeting-type-filter" class="task-filter-select meeting-type-filter" aria-label="Фильтр по типу встречи">
-      ${['all', '1:1', 'pr', 'club', 'retro', 'project', 'other'].map((value) => `<option value="${value}" ${Views._meetingFilter === value ? 'selected' : ''}>${filterLabel[value]}</option>`).join('')}
+      ${meetingTypeOptionsHtml(Views._meetingFilter, { includeAll: true })}
     </select>
   </div>`;
 
@@ -236,12 +212,7 @@ function openMeetingCreateModal(prefill) {
       <div class="ui-field-row field-row">
         <div class="ui-field field"><label class="ui-field-label field-label" for="mf-type">Тип</label>
           <select id="mf-type">
-            <option value="1:1" ${m.type === '1:1' ? 'selected' : ''}>1:1</option>
-            <option value="pr" ${m.type === 'pr' ? 'selected' : ''}>PR</option>
-            <option value="club" ${m.type === 'club' ? 'selected' : ''}>Клаб</option>
-            <option value="retro" ${m.type === 'retro' ? 'selected' : ''}>Ретро</option>
-            <option value="project" ${m.type === 'project' ? 'selected' : ''}>Проектные</option>
-            <option value="other" ${m.type === 'other' ? 'selected' : ''}>Другое</option>
+            ${meetingTypeOptionsHtml(m.type)}
           </select>
         </div>
         <div class="ui-field field"><label class="ui-field-label field-label" for="mf-date">Дата</label><input id="mf-date" type="date" value="${dt}" /></div>
@@ -333,12 +304,7 @@ ${detailPageHeaderHtml({ title: meetingDisplayTitle(m), eyebrow: m.meetingKey, i
             <div class="task-detail-details-grid">
               <div class="task-detail-details-column">
                 <label class="task-detail-property"><span>Тип</span><span class="task-inline-edit is-editable"><select id="mf-type">
-                  <option value="1:1" ${m.type === '1:1' ? 'selected' : ''}>1:1</option>
-                  <option value="pr" ${m.type === 'pr' ? 'selected' : ''}>PR</option>
-                  <option value="club" ${m.type === 'club' ? 'selected' : ''}>Клаб</option>
-                  <option value="retro" ${m.type === 'retro' ? 'selected' : ''}>Ретро</option>
-                  <option value="project" ${m.type === 'project' ? 'selected' : ''}>Проектные</option>
-                  <option value="other" ${!m.type || m.type === 'other' ? 'selected' : ''}>Другое</option>
+                  ${meetingTypeOptionsHtml(m.type)}
                 </select><span class="task-inline-edit-icon" aria-hidden="true">${icon('edit', 11)}</span></span></label>
                 <label class="task-detail-property"><span>Дата</span><span class="task-inline-edit is-editable"><input id="mf-date" type="date" value="${dt}" /><span class="task-inline-edit-icon" aria-hidden="true">${icon('edit', 11)}</span></span></label>
               </div>

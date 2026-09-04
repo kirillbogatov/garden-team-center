@@ -122,30 +122,8 @@ function overviewEmpty(text) { return `<div class="overview-widget-empty">${esca
 function overviewList(items) { return `<div class="overview-mini-list">${items.join('')}</div>`; }
 
 
-function overviewMeetingHasOutcomeRecords(meeting) {
-  const hasNotes = String(meeting?.notes || '').trim().length > 0;
-  const hasDocuments = Array.isArray(meeting?.documentLinks) && meeting.documentLinks.some((doc) => String(doc?.title || doc?.url || '').trim());
-  return hasNotes || hasDocuments;
-}
-
-function overviewMeetingMissedDays(meeting, todayKey = todayStr()) {
-  const dateKey = String(meeting?.date || '').slice(0, 10);
-  if (!dateKey || dateKey >= todayKey || overviewMeetingHasOutcomeRecords(meeting)) return 0;
-  const [ty, tm, td] = String(todayKey).split('-').map(Number);
-  const [my, mm, md] = dateKey.split('-').map(Number);
-  if (![ty, tm, td, my, mm, md].every(Number.isFinite)) return 0;
-  return Math.max(1, Math.floor((Date.UTC(ty, tm - 1, td) - Date.UTC(my, mm - 1, md)) / 86400000));
-}
-
-const TASK_PRIORITY_MODES = {
-  balanced: { important: 35, overdue: 40, overduePerDay: 2, overdueCap: 15, today: 50, tomorrow: 30, soon3: 20, soon7: 10 },
-  deadline: { important: 20, overdue: 55, overduePerDay: 2, overdueCap: 20, today: 60, tomorrow: 45, soon3: 30, soon7: 15 },
-  importance: { important: 60, overdue: 35, overduePerDay: 1, overdueCap: 10, today: 40, tomorrow: 25, soon3: 15, soon7: 5 },
-  overdue: { important: 25, overdue: 70, overduePerDay: 3, overdueCap: 25, today: 50, tomorrow: 35, soon3: 20, soon7: 10 },
-};
-
 function taskPriorityInfo(task, mode = 'balanced', todayKey = todayStr()) {
-  const weights = TASK_PRIORITY_MODES[mode] || TASK_PRIORITY_MODES.balanced;
+  const weights = (TASK_PRIORITY_STRATEGIES[mode] || TASK_PRIORITY_STRATEGIES.balanced).weights;
   const dueKey = String(task?.dueDate || '').slice(0, 10);
   let score = task?.priority === 'high' ? weights.important : 0;
   const reasons = [];
@@ -466,7 +444,7 @@ Views.overview = async function () {
     }
     if (widget.type === 'missed-meetings') {
       const missedMeetings = meetings
-        .map((meeting) => ({ meeting, days: overviewMeetingMissedDays(meeting, today) }))
+        .map((meeting) => ({ meeting, days: meetingMissedDays(meeting, today) }))
         .filter((item) => item.days > 0)
         .sort((a, b) => b.days - a.days || String(a.meeting.date || '').localeCompare(String(b.meeting.date || '')));
       const rows = missedMeetings.slice(0, 7).map(({ meeting, days }) => overviewMiniRow({

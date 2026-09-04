@@ -428,10 +428,7 @@ html.theme-dark .modal-panel.modal-task-detail select {
   z-index: 8;
   background: var(--bg-base);
 }
-.view.task-detail-page-view .task-detail-footer {
-  position: static;
-  background: transparent;
-}
+
 @media (max-width: 980px) {
   .view.task-detail-page-view .task-detail-layout { grid-template-columns: 1fr; }
   .view.task-detail-page-view .task-detail-side {
@@ -602,11 +599,7 @@ html.theme-dark .modal-panel.modal-task-detail select {
   padding-top: 12px;
 }
 
-.view.task-detail-page-view .task-detail-footer {
-  margin-top: 4px;
-  padding: 12px 0 0;
-  border-top: 1px solid var(--border-soft);
-}
+
 
 .view.task-detail-page-view .task-detail-page-close {
   margin-top: 0;
@@ -727,10 +720,7 @@ html.theme-dark .modal-panel.modal-task-detail select {
   }
 }
 
-.view.task-detail-page-view {
-  padding-top: 8px !important;
-  padding-bottom: 56px !important;
-}
+
 
 .view.task-detail-page-view > .modal-panel.modal-task-detail.task-detail-page {
   width: 100% !important;
@@ -876,14 +866,7 @@ html.theme-dark .modal-panel.modal-task-detail select {
   border-color: var(--border-hover);
 }
 
-.view.task-detail-page-view .task-detail-footer {
-  width: 100%;
-  min-height: 44px;
-  margin: 0;
-  padding: 7px 10px 7px 16px;
-  border-top: 1px solid var(--border-soft);
-  background: transparent;
-}
+
 
 .view.task-detail-page-view #tf-save[hidden] {
   display: none !important;
@@ -1595,11 +1578,7 @@ html.theme-dark .modal-panel.modal-task-detail select {
   visibility: hidden;
   pointer-events: none;
 }
-.view.task-detail-page-view .task-detail-page.notes-open .task-detail-side {
-  transform: translateX(0);
-  visibility: visible;
-  pointer-events: auto;
-}
+
 .view.task-detail-page-view .task-detail-note-head {
   padding-top: 3px;
 }
@@ -1801,7 +1780,7 @@ html.theme-dark .modal-panel.modal-task-detail select {
     padding-right: var(--content-gutter);
   }
 }
-\n\n\n.task-detail-topbar-actions {\n  margin-left: auto;\n}\n.task-detail-topbar-actions .task-notes-sidebar-toggle {\n  order: 99;\n  width: 28px;\n  height: 28px;\n  display: inline-grid;\n  place-items: center;\n  flex: 0 0 28px;\n  padding: 0;\n  margin-left: 6px;\n  color: var(--text-secondary);\n}\n.task-detail-topbar-actions .task-notes-sidebar-toggle:hover,\n.task-detail-topbar-actions .task-notes-sidebar-toggle.is-active {\n  background: var(--bg-hover);\n  color: var(--text-primary);\n}\n\n\n.view.task-detail-page-view .task-detail-side {\n  box-sizing: border-box;\n  padding: 10px 8px 12px;\n  background: var(--bg-sidebar);\n  border: 0 !important;\n  border-left: 1px solid var(--border-soft) !important;\n}\n.view.task-detail-page-view .task-detail-note-head {\n  min-height: 34px;\n  padding: 5px 8px 10px;\n}\n\n\n.view.task-detail-page-view .task-personal-notes-list {\n  display: grid;\n  gap: 8px;\n  padding: 0 4px 16px;\n}\n.view.task-detail-page-view .task-personal-note-item {\n  position: relative;\n  min-height: 112px;\n  border: 1px solid var(--border-soft);\n  border-radius: 4px;\n  background: var(--bg-elevated);\n  transition: transform .12s ease, border-color .12s ease, opacity .12s ease;\n}\n.view.task-detail-page-view .task-personal-note-item.is-dragging { opacity: .45; }\n.view.task-detail-page-view .task-personal-note-item.drag-over-before::before,\n.view.task-detail-page-view .task-personal-note-item.drag-over-after::after {\n  content: '';\n  position: absolute;\n  z-index: 3;\n  left: 0;\n  right: 0;\n  height: 2px;\n  background: var(--text-tertiary);\n}\n.view.task-detail-page-view .task-personal-note-item.drag-over-before::before { top: -5px; }\n.view.task-detail-page-view .task-personal-note-item.drag-over-after::after { bottom: -5px; }\n.view.task-detail-page-view .task-personal-note-item .task-detail-note {\n  width: 100%;\n  min-height: 110px;\n  padding: 28px 30px 12px 12px;\n  border: 0 !important;\n  border-radius: 3px;\n  background: transparent !important;\n  box-shadow: none !important;\n  resize: vertical;\n}\n.view.task-detail-page-view .task-personal-note-item .task-detail-note:hover,\n.view.task-detail-page-view .task-personal-note-item .task-detail-note:focus {\n  border: 0 !important;\n  background: transparent !important;\n  box-shadow: none !important;\n  outline: none;\n}\n.view.task-detail-page-view .task-personal-note-drag {\n  position: absolute;\n  z-index: 2;\n  top: 6px;\n  left: 7px;\n  width: 24px;\n  height: 20px;\n  display: inline-grid;\n  place-items: center;\n  padding: 0;\n  border: 0;\n  border-radius: 4px;\n  background: transparent;\n  color: var(--text-disabled);\n  cursor: grab;\n}\n.view.task-detail-page-view .task-personal-note-drag:hover {\n  background: var(--bg-hover);\n  color: var(--text-secondary);\n}\n.view.task-detail-page-view .task-personal-note-drag:active { cursor: grabbing; }\n.view.task-detail-page-view .task-personal-note-remove { top: 5px; right: 5px; }\n
+nnn.task-detail-topbar-actions {n  margin-left: auto;n}n.task-detail-topbar-actions .task-notes-sidebar-toggle {n  order: 99;n  width: 28px;n  height: 28px;n  display: inline-grid;n  place-items: center;n  flex: 0 0 28px;n  padding: 0;n  margin-left: 6px;n  color: var(--text-secondary);n}n.task-detail-topbar-actions .task-notes-sidebar-toggle:hover,n.task-detail-topbar-actions .task-notes-sidebar-toggle.is-active {n  background: var(--bg-hover);n  color: var(--text-primary);n}nnn.view.task-detail-page-view .task-detail-side {n  box-sizing: border-box;n  padding: 10px 8px 12px;n  background: var(--bg-sidebar);n  border: 0 !important;n  border-left: 1px solid var(--border-soft) !important;n}n.view.task-detail-page-view .task-detail-note-head {n  min-height: 34px;n  padding: 5px 8px 10px;n}nnn.view.task-detail-page-view .task-personal-notes-list {n  display: grid;n  gap: 8px;n  padding: 0 4px 16px;n}n.view.task-detail-page-view .task-personal-note-item {n  position: relative;n  min-height: 112px;n  border: 1px solid var(--border-soft);n  border-radius: 4px;n  background: var(--bg-elevated);n  transition: transform .12s ease, border-color .12s ease, opacity .12s ease;n}n.view.task-detail-page-view .task-personal-note-item.is-dragging { opacity: .45; }n.view.task-detail-page-view .task-personal-note-item.drag-over-before::before,n.view.task-detail-page-view .task-personal-note-item.drag-over-after::after {n  content: "";n  position: absolute;n  z-index: 3;n  left: 0;n  right: 0;n  height: 2px;n  background: var(--text-tertiary);n}n.view.task-detail-page-view .task-personal-note-item.drag-over-before::before { top: -5px; }n.view.task-detail-page-view .task-personal-note-item.drag-over-after::after { bottom: -5px; }n.view.task-detail-page-view .task-personal-note-item .task-detail-note {n  width: 100%;n  min-height: 110px;n  padding: 28px 30px 12px 12px;n  border: 0 !important;n  border-radius: 3px;n  background: transparent !important;n  box-shadow: none !important;n  resize: vertical;n}n.view.task-detail-page-view .task-personal-note-item .task-detail-note:hover,n.view.task-detail-page-view .task-personal-note-item .task-detail-note:focus {n  border: 0 !important;n  background: transparent !important;n  box-shadow: none !important;n  outline: none;n}n.view.task-detail-page-view .task-personal-note-drag {n  position: absolute;n  z-index: 2;n  top: 6px;n  left: 7px;n  width: 24px;n  height: 20px;n  display: inline-grid;n  place-items: center;n  padding: 0;n  border: 0;n  border-radius: 4px;n  background: transparent;n  color: var(--text-disabled);n  cursor: grab;n}n.view.task-detail-page-view .task-personal-note-drag:hover {n  background: var(--bg-hover);n  color: var(--text-secondary);n}n.view.task-detail-page-view .task-personal-note-drag:active { cursor: grabbing; }n.view.task-detail-page-view .task-personal-note-remove { top: 5px; right: 5px; }n
 
 .topbar:has(~ .view.task-detail-page-view) {
   position: relative;
@@ -2047,9 +2026,7 @@ html.theme-dark .modal-panel.modal-task-detail select {
 .view.task-detail-page-view .task-detail-property .task-inline-edit:has(select):focus-within::after {
   opacity: .9;
 }
-.view.task-detail-page-view .task-detail-property .task-inline-edit:has(select) .task-inline-edit-icon {
-  display: none !important;
-}
+
 .view.task-detail-page-view select option,
 .view.task-detail-page-view select optgroup {
   padding-left: 12px;

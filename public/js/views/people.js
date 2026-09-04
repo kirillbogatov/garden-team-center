@@ -275,12 +275,7 @@ function personDevelopmentHtml(p, data) {
     </div>`;
   }
 
-  function taskGroup(label, items, emptyText) {
-    return `<div class="development-task-group">
-      <div class="development-subhead"><span>${label}</span><span>${items.length}</span></div>
-      <div class="development-task-surface">${items.length ? items.map(developmentTaskRow).join('') : `<div class="development-group-empty">${emptyText}</div>`}</div>
-    </div>`;
-  }
+
 
   const developmentItems = [...developmentTasks]
     .sort((a, b) => {

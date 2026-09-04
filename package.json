@@ -1,16 +1,17 @@
 {
   "name": "garden",
   "version": "1.0.0",
-  "description": "Garden — локальный трекер для тимлида на Node.js и SQLite.",
+  "description": "Garden Team Center — локальный командный центр для тимлида и команды.",
   "private": true,
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
-    "test": "node --test"
+    "test": "node --test",
+    "test:client": "node --test test/architecture.test.js test/search-natural-language.test.js test/theme-contrast.test.js",
+    "test:api": "node --test test/api.test.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
-    "grapesjs": "^0.23.6"
+    "express": "^4.19.2"
   },
   "engines": {
     "node": ">=22.5"
