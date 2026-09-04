@@ -99,13 +99,6 @@ Views.goalDetail = async function (id) {
   `;
 };
 
-async function linkTaskToGoal(taskId) {
-  const g = Views._lastGoal;
-  await Resources.tasks.update(taskId, { goalId: g.id });
-  toast('Задача добавлена к цели');
-  Views.goalDetail(g.id);
-}
-
 async function linkIssueToGoal(issueId) {
   const g = Views._lastGoal;
   await Resources.issues.update(issueId, { goalId: g.id });

@@ -104,7 +104,7 @@ const identifiers = createEntityIdentifiers({ db, nextNumericKey });
 const {
   SLUG_COLLECTIONS, uniqueSlug, resolveEntity, normalizeProjectTaskCode, uniqueProjectTaskCode,
   ensureSlugs, ensureProjectTaskCodes, taskKeyPrefix, nextTaskKey, assignTaskKey, nextLabKey, ensureLabKeys, ensureTaskKeys,
-  nextMeetingKey, assignMeetingKey, ensureMeetingKeys,
+  nextMeetingKey, assignMeetingKey, ensureMeetingKeys, nextProcessKey, assignProcessKey, ensureProcessKeys,
 } = identifiers;
 
 const COLLECTIONS = [
@@ -128,7 +128,7 @@ const COLLECTIONS = [
   'checkins',
 ];
 
-const normalizeWorkspaceIdentifiers = () => { ensureSlugs(); ensureProjectTaskCodes(); ensureTaskKeys(); ensureLabKeys(); ensureMeetingKeys(); };
+const normalizeWorkspaceIdentifiers = () => { ensureSlugs(); ensureProjectTaskCodes(); ensureTaskKeys(); ensureLabKeys(); ensureMeetingKeys(); ensureProcessKeys(); };
 registerAuthRoutes(app, { db, COLLECTIONS, demoSeed, cleanUsername, failedLogins, passwordMatches, createSession, safeUser, authenticate, clearSessionCookie, validatePassword, PASSWORD_MIN_LENGTH, hashPassword, generatePassword, normalizeWorkspaceIdentifiers });
 
 
@@ -186,7 +186,7 @@ registerAdminRoutes(app, { db, requireAdmin, isDemoUser, safeUser, ACCESS_ROLES,
 
 // ---------- Resource CRUD routes ----------
 registerCrudRoutes(app, {
-  COLLECTIONS, db, autoArchiveCompletedTasks, canReadItem, sanitizeItem, visibleItems, resolveEntity, denied, canCreate, withOwnership, taskLifecyclePatch, sanitizeKnowledgeHtmlServer, isTeamlead, canManageCollection, normalizeProjectTaskCode, uniqueProjectTaskCode, syncJournalDerivedEntity, assignTaskKey, SLUG_COLLECTIONS, uniqueSlug, nextLabKey, syncRecurringMeetingsForPerson, syncRecurringMeetingsForMeeting, canUpdate, nextTaskKey, taskKeyPrefix, teamleadOwnsPerson, memberPersonPatch, OWNER_COLLECTIONS, canDelete, assignMeetingKey, nextMeetingKey,
+  COLLECTIONS, db, autoArchiveCompletedTasks, canReadItem, sanitizeItem, visibleItems, resolveEntity, denied, canCreate, withOwnership, taskLifecyclePatch, sanitizeKnowledgeHtmlServer, isTeamlead, canManageCollection, normalizeProjectTaskCode, uniqueProjectTaskCode, syncJournalDerivedEntity, assignTaskKey, SLUG_COLLECTIONS, uniqueSlug, nextLabKey, syncRecurringMeetingsForPerson, syncRecurringMeetingsForMeeting, canUpdate, nextTaskKey, taskKeyPrefix, teamleadOwnsPerson, memberPersonPatch, OWNER_COLLECTIONS, canDelete, assignMeetingKey, nextMeetingKey, assignProcessKey, nextProcessKey,
 });
 
 // ---------- Collaboration routes ----------

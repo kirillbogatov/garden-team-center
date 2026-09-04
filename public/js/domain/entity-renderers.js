@@ -39,24 +39,18 @@ function issueCardHtml(i) {
 
 
 function processCardHtml(p) {
-  const owner = store.person(p.ownerId);
   const status = p.status || 'ok';
   const statusMeta = status === 'broken'
     ? { label:'Сломан', color:'var(--red)' }
     : status === 'attention'
-      ? { label:'Есть замечания', color:'var(--orange)' }
+      ? { label:'Есть проблемы', color:'var(--orange)' }
       : { label:'Работает', color:'var(--green)' };
-  return `<div class="ui-surface card clickable" style="margin-bottom:10px" data-command="openProcessModal" data-command-arg="${p.id}">
-    <div class="flex justify-between items-center" style="margin-bottom:6px">
-      <span class="entity-card-title">${escapeHtml(p.title)}</span>
-      <span class="ui-tag badge" style="--ui-tag-dot:${statusMeta.color}">${statusMeta.label}</span>
-    </div>
-    <div class="tiny formatted-text" style="margin-bottom:8px">${escapeHtml(p.description || '')}</div>
-    ${status !== 'ok' ? `
-      ${p.brokenNote ? `<div class="tiny formatted-text" style="color:${status === 'broken' ? 'var(--red)' : 'var(--orange)'};margin-bottom:4px">Проблема: ${escapeHtml(p.brokenNote || '')}</div>` : ''}
-      ${p.fixPlan ? `<div class="tiny formatted-text" style="color:var(--green)">Как чиним: ${escapeHtml(p.fixPlan || '')}</div>` : ''}
-    ` : ''}
-    <div class="flex gap-8" style="margin-top:8px">${owner ? personChip(owner) : ''}</div>
+  const summary = p.currentBehavior || p.brokenNote || p.expectedBehavior || p.description || '';
+  const openIdx = registerAction(() => Router.go(`/processes/${encodeURIComponent(p.id)}`));
+  return `<div class="ui-row list-row task-list-row process-list-row" data-action-id="${openIdx}">
+    <span class="process-list-status"><span class="process-status-dot ${status === 'broken' ? 'process-status-broken' : status === 'attention' ? 'process-status-attention' : 'process-status-ok'}"></span><span class="process-status-label">${escapeHtml(statusMeta.label)}</span></span>
+    <span class="tl-title">${escapeHtml(p.title || 'Без названия')}</span>
+    <div class="tl-right process-list-right">${summary ? `<span class="process-list-summary">${escapeHtml(summary)}</span>` : ''}<span class="ui-tag badge process-code-tag">PROCESS</span></div>
   </div>`;
 }
 

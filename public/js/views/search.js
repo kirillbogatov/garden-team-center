@@ -5,7 +5,7 @@ Views.search = async function (q) {
   const view = document.getElementById('view');
   view.innerHTML = `
     <div class="ui-field field" style="max-width:480px;margin-bottom:20px">
-      <input id="search-input" value="${escapeHtml(q || '')}" placeholder="Например: задачи, закрытые задачи, наблюдения, задачи Кирилла…" />
+      <input id="search-input" value="${escapeHtml(q || '')}" placeholder="Например: мои задачи, встречи без итогов 1:1, процессы с проблемами…" />
     </div>
     <div id="search-results"><div class="tiny">Введите запрос</div></div>
   `;
@@ -26,9 +26,13 @@ async function runSearch(q) {
   const data = await api.get('/api/search?q=' + encodeURIComponent(q));
   const g = data.groups;
   const vacations = g.vacations || [];
-  const totalCount = g.people.length + g.projects.length + g.tasks.length + g.issues.length + g.meetings.length + g.journal.length + g.goals.length + g.agreements.length + g.documents.length + (g.tools || []).length + (g.labs || []).length + g.processes.length + vacations.length;
+  const totalCount = g.people.length + g.projects.length + g.tasks.length + g.issues.length + g.meetings.length + g.journal.length + g.goals.length + g.agreements.length + g.documents.length + (g.tools || []).length + (g.labs || []).length + g.processes.length + vacations.length + (g.checkins || []).length;
 
-  if (!totalCount) { results.innerHTML = emptyState('Ничего не найдено', `По запросу «${q}» ничего нет`, 'search'); return; }
+  if (!totalCount) {
+    const sectionRoute = typeof searchSectionRoute === 'function' ? searchSectionRoute(q) : null;
+    if (sectionRoute) { results.innerHTML = `<div class="ui-row list-row" data-route="${escapeHtml(sectionRoute)}"><span class="title">Открыть раздел</span><span class="meta">${escapeHtml(q)}</span></div>`; return; }
+    results.innerHTML = emptyState('Ничего не найдено', `По запросу «${q}» ничего нет`, 'search'); return;
+  }
 
   let html = data.command ? `<div class="search-command-hint">${icon('search', 13)} Команда: ${escapeHtml(q)}</div>` : '';
 
@@ -75,6 +79,7 @@ async function runSearch(q) {
   html += simpleSection('Инструменты', g.tools || [], 'tools', (d) => toolRowHtml(d));
   html += simpleSection('The Labs', g.labs || [], 'tasks', (d) => `<div class="ui-row list-row" data-action-id="${registerAction(() => d.entityType === 'idea' ? FeatureLoader.run('openLabIdeaModal', d) : Router.go(`/labs/${encodeURIComponent(d.id)}`))}"><span class="title">${escapeHtml(d.title)}</span><span class="meta">The Labs</span></div>`);
   html += simpleSection('Процессы', g.processes, 'processes', (p) => processCardHtml(p));
+  html += simpleSection('Check-in', g.checkins || [], 'checkins', (c) => { const p = store.person(c.personId); return `<div class="ui-row list-row" data-route="/checkins?person=${encodeURIComponent(c.personId || '')}"><span class="title">${p ? escapeHtml(p.name) : 'Check-in'}</span><span class="meta">${escapeHtml(c.weekStart || '')}</span></div>`; });
 
   results.innerHTML = html;
 }

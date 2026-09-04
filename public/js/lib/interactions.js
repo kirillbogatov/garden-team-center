@@ -46,9 +46,8 @@ const ACCENT_COLORS = [
   { value: 'lavender', label: 'Лавандовый', latte: '#7287FD', mocha: '#B4BEFE' },
 ];
 const ACCENT_VALUES = ACCENT_COLORS.map((a) => a.value);
-// Мальва — исходный акцент обеих тем AnuPpuccin (значения --accent в их базовых
-// блоках в style.css), поэтому она же служит акцентом по умолчанию.
-const DEFAULT_ACCENT = 'mauve';
+// Зелёный — акцент по умолчанию для AnuPpuccin Latte/Mocha у новых пользователей.
+const DEFAULT_ACCENT = 'green';
 
 function themeMeta(value) {
   return GARDEN_THEMES.find((t) => t.value === value) || GARDEN_THEMES[0];
@@ -56,8 +55,8 @@ function themeMeta(value) {
 
 function currentTheme() {
   const root = document.documentElement;
-  // По умолчанию используем «Туман».
-  return THEME_VALUES.find((name) => root.classList.contains(`theme-${name}`)) || 'tuman';
+  // По умолчанию используем AnuPpuccin Latte.
+  return THEME_VALUES.find((name) => root.classList.contains(`theme-${name}`)) || 'anuppuccin-latte';
 }
 
 function isDarkTheme(value) {
@@ -66,15 +65,6 @@ function isDarkTheme(value) {
 
 function themeSupportsAccent(theme) {
   return ACCENT_THEMES.has(theme);
-}
-
-function accentMeta(value) {
-  return ACCENT_COLORS.find((a) => a.value === value) || ACCENT_COLORS.find((a) => a.value === DEFAULT_ACCENT);
-}
-
-function currentAccent() {
-  const root = document.documentElement;
-  return ACCENT_VALUES.find((name) => root.classList.contains(`accent-${name}`)) || DEFAULT_ACCENT;
 }
 
 // Применяет акцентный класс (accent-<name>) для тем, которые это поддерживают.
@@ -158,14 +148,24 @@ const SEARCH_SECTION_ROUTES = {
   'документы': '/knowledge-base',
   'инструменты': '/tools',
   'процессы': '/processes',
+  'идеи': '/labs?tab=ideas',
+  'the labs': '/labs?tab=projects',
+  'проекты the labs': '/labs?tab=projects',
 };
 
 function searchSectionRoute(query) {
-  const normalized = String(query || '')
+  let normalized = String(query || '')
     .toLowerCase()
     .trim()
     .replace(/ё/g, 'е')
     .replace(/\s+/g, ' ');
+  const wrappers = [
+    'покажи мне ', 'покажи ', 'показать ', 'найди мне ', 'найди ', 'найти ', 'открой мне ', 'открой ', 'открыть ',
+    'перейди в ', 'перейти в ', 'хочу открыть ', 'хочу посмотреть ', 'где ',
+  ];
+  for (const prefix of wrappers) {
+    if (normalized.startsWith(prefix)) { normalized = normalized.slice(prefix.length).trim(); break; }
+  }
   return SEARCH_SECTION_ROUTES[normalized] || null;
 }
 
@@ -175,7 +175,7 @@ function openPalette() {
   if (!Auth.user) return;
   Modal.root.innerHTML = `<div class="ui-overlay overlay" id="palette-overlay">
     <div class="palette">
-      <input id="palette-input" placeholder="Поиск: задачи, наблюдения, закрытые задачи, задачи Кирилла…" autocomplete="off" />
+      <input id="palette-input" placeholder="Поиск: мои задачи, встречи без итогов 1:1, процессы с проблемами…" autocomplete="off" />
       <div class="palette-results" id="palette-results"></div>
       <div class="palette-hint">
         <span>↑↓ навигация</span><span>Enter выбрать</span><span>Esc закрыть</span><span>? горячие клавиши</span>
@@ -294,8 +294,11 @@ function renderPaletteResults(data) {
   const toolItems = (groups.tools || []).map((d) => ({ ...d, _go: () => window.open(d.url, '_blank') }));
   html += section('Инструменты', toolItems, (d) => `${icon('tools')}<span>${escapeHtml(d.title)}</span>`);
 
-  const procItems = groups.processes.map((p) => ({ ...p, _go: () => FeatureLoader.run('openProcessModal', p.id) }));
+  const procItems = groups.processes.map((p) => ({ ...p, _go: () => Router.go(`/processes/${encodeURIComponent(p.id)}`) }));
   html += section('Процессы', procItems, (p) => `${icon('processes')}<span>${escapeHtml(p.title)}</span>`);
+
+  const checkinItems = (groups.checkins || []).map((c) => ({ ...c, _go: () => Router.go(`/checkins?person=${encodeURIComponent(c.personId || '')}`) }));
+  html += section('Check-in', checkinItems, (c) => { const p = store.person(c.personId); return `${icon('checkins')}<span>${p ? escapeHtml(p.name) : 'Check-in'}</span><span class="pi-sub">${escapeHtml(c.weekStart || '')}</span>`; });
 
   const sectionRoute = searchSectionRoute(data.query);
   if (sectionRoute) {

@@ -37,6 +37,7 @@ const Router = {
     // попытка его лениво загрузить валила всю страницу с "Не удалось загрузить feature".
     [/^\/documents\/?$/, async () => { await loadViewScript('documents'); return Views.documents(); }],
     [/^\/tools\/?$/, async () => { await loadViewScript('tools'); return Views.tools(); }],
+    [/^\/processes\/([^/]+)\/?$/, async (m) => { await loadViewScript('processes'); return Views.processDetailPage(m[1]); }],
     [/^\/processes\/?$/, async () => { await loadViewScript('processes'); return Views.processes(); }],
     [/^\/search\/?$/, async () => { await loadViewScripts(['meetings','tasks','issues','agreements','journal','labs','search']); return Views.search(Router.queryParam('q')); }],
     [/^\/admin\/roles\/?$/, async () => { await loadViewScript('admin'); return Auth.isAdmin() ? Views.adminRoleAccess() : Router.go('/overview'); }],
@@ -130,7 +131,7 @@ const Router = {
     renderSidebar(path);
     const view = document.getElementById('view');
     const topbar = document.getElementById('topbar');
-    view.classList.remove('task-board-wide', 'task-page', 'gcal-wide', 'gcal-fit-height', 'labs-page-view', 'task-detail-page-view', 'checkins-wide', 'overview-wide', 'overview-comments-open');
+    view.classList.remove('task-board-wide', 'task-page', 'gcal-wide', 'gcal-fit-height', 'labs-page-view', 'task-detail-page-view', 'process-detail-page-view', 'checkins-wide', 'overview-wide', 'overview-comments-open');
     topbar.classList.remove('task-board-wide', 'task-list-toolbar-wide');
     for (const [pattern, handler] of Router.routes) {
       const m = path.match(pattern);

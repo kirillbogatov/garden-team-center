@@ -2055,3 +2055,49 @@ html.theme-dark .modal-panel.modal-task-detail select {
   padding-left: 12px;
   padding-right: 12px;
 }
+
+/* Process detail/list ------------------------------------------------------ */
+.process-list-row { cursor: pointer; }
+.process-list-status { display:inline-flex; align-items:center; gap:6px; min-width:118px; font-size:11.5px; color:var(--muted); }
+.process-status-dot { width:8px; height:8px; border-radius:50%; flex:0 0 auto; background:var(--green); }
+.process-status-attention { background:var(--orange); }
+.process-status-broken { background:var(--red); }
+.process-status-ok { background:var(--green); }
+.process-list-right { min-width:0; }
+.process-list-summary { min-width:0; max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); font-size:11px; }
+.process-code-tag { flex:0 0 auto; width:max-content; }
+.process-detail-page .task-detail-layout { grid-template-columns:minmax(0,1fr); }
+.process-detail-page .process-detail-main { max-width:960px; width:100%; }
+.process-text-section { display:grid; gap:7px; }
+.process-detail-textarea { width:100%; min-height:96px; resize:vertical; overflow:auto; }
+.process-fix-list { display:grid; gap:8px; }
+.process-add-fix-btn { flex:0 0 auto; width:auto; min-width:max-content; white-space:nowrap; }
+.process-fix-row { display:grid; grid-template-columns:minmax(0,1fr) 150px 28px; gap:8px; align-items:start; }
+.process-fix-row textarea { width:100%; min-height:64px; resize:vertical; }
+.process-fix-row select { width:100%; }
+.process-fix-remove { margin-top:3px; }
+.process-fix-copy { min-width:0; padding:7px 2px; line-height:1.45; }
+.process-fix-status { justify-self:start; margin-top:5px; }
+.process-fix-editor-row { display:grid; grid-template-columns:minmax(0,1fr) 150px 32px; gap:8px; align-items:start; margin-bottom:8px; }
+.process-fix-editor-row textarea { width:100%; }
+.process-fix-editor-row select { width:100%; }
+@media (max-width:760px) {
+  .process-list-status { min-width:auto; }
+  .process-status-label, .process-list-summary { display:none; }
+  .process-fix-row, .process-fix-editor-row { grid-template-columns:minmax(0,1fr); }
+  .process-fix-remove { justify-self:end; }
+}
+
+/* Process list: problem name on the left, status on the right. */
+.process-list-row .process-list-right {
+  display: flex;
+  min-width: 0;
+  margin-left: auto;
+  justify-content: flex-end;
+  align-items: center;
+}
+.process-list-row .process-list-status {
+  min-width: 0;
+  justify-content: flex-end;
+  white-space: nowrap;
+}

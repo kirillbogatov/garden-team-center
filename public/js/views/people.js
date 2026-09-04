@@ -45,6 +45,7 @@ function renderPeopleList(type, title, emptyHint) {
   }
 
   view.innerHTML = `${teamFilter}
+    <div class="people-grid-responsive">
     <div class="people-grid people-grid--team">
       ${people
         .map((p) => {
@@ -70,6 +71,7 @@ function renderPeopleList(type, title, emptyHint) {
           </div>`;
         })
         .join('')}
+    </div>
     </div>
   `;
 }
@@ -106,10 +108,10 @@ function openPersonModal(type, existing) {
       <div class="ui-field field"><label class="ui-field-label field-label" for="pf-email">Email</label><input id="pf-email" value="${escapeHtml(p.email || '')}" /></div>
       <div class="ui-field field"><label class="ui-field-label field-label" for="pf-telegram">Telegram</label><input id="pf-telegram" value="${escapeHtml(p.telegram || '')}" /></div>
     </div>
-    <div class="ui-field-row field-row">
+    ${type === 'team' ? `<div class="ui-field-row field-row">
       <div class="ui-field field"><label class="ui-field-label field-label" for="pf-birthday">День рождения</label><input id="pf-birthday" type="date" value="${p.birthday || ''}" /></div>
-      ${type === 'team' ? `<div class="ui-field field"><label class="ui-field-label field-label" for="pf-hire">Дата найма</label><input id="pf-hire" type="date" value="${p.hireDate || ''}" ${limitedSelf ? 'disabled' : ''} /></div>` : ''}
-    </div>
+      <div class="ui-field field"><label class="ui-field-label field-label" for="pf-hire">Дата найма</label><input id="pf-hire" type="date" value="${p.hireDate || ''}" ${limitedSelf ? 'disabled' : ''} /></div>
+    </div>` : ''}
     ${type === 'team' ? `<div class="ui-field-row field-row">
       <div class="ui-field field"><label class="ui-field-label field-label" for="pf-status">Статус</label>
         <select id="pf-status" ${limitedSelf ? 'disabled' : ''}>
@@ -206,10 +208,10 @@ function openPersonModal(type, existing) {
       type,
       email: document.getElementById('pf-email').value.trim(),
       telegram: document.getElementById('pf-telegram').value.trim(),
-      birthday: document.getElementById('pf-birthday').value || null,
       notes: document.getElementById('pf-notes')?.value.trim() || '',
     };
     if (type === 'team') {
+      payload.birthday = document.getElementById('pf-birthday').value || null;
       payload.hireDate = document.getElementById('pf-hire').value || null;
       payload.grade = document.getElementById('pf-grade').value || null;
       payload.status = document.getElementById('pf-status').value;
@@ -269,7 +271,6 @@ function personDevelopmentHtml(p, data) {
           </span>
         </div>
         <span class="task-due-cell tiny" style="${overdue ? 'color:var(--red)' : ''}">${task.dueDate ? (task.status === 'done' ? deadlineDateLabel(task.dueDate) : dueLabel(task.dueDate)) : ''}</span>
-        <span class="task-assignee-cell" aria-hidden="true"></span>
       </div>
     </div>`;
   }
@@ -297,7 +298,6 @@ function personDevelopmentHtml(p, data) {
       <div class="tl-right">
         <div class="task-tags-cell"><span class="task-labels-group"><span class="ui-tag ui-tag--task-type badge task-kind labs">The Labs</span></span></div>
         <span class="task-due-cell tiny"></span>
-        <span class="task-assignee-cell" aria-hidden="true"></span>
       </div>
     </div>`;
   });
@@ -314,7 +314,7 @@ function personContextHtml(p, data) {
   const rows = [];
   const schedule = workScheduleBlockHtml(p);
   if (schedule) rows.push({ label: 'Работает', value: schedule });
-  if (p.birthday) rows.push({ label: 'День рождения', value: escapeHtml(fmtDate(p.birthday, { withYear: false })) });
+  if (p.type === 'team' && p.birthday) rows.push({ label: 'День рождения', value: escapeHtml(fmtDate(p.birthday, { withYear: false })) });
   if (p.type === 'team' && p.hireDate) {
     const tenure = formatTenure(p.hireDate);
     if (tenure) rows.push({ label: 'Стаж', value: escapeHtml(tenure) });
@@ -368,6 +368,13 @@ Views.personDetail = async function (id) {
   const p = data.person;
   if (id !== (data.person.slug || data.person.id)) Router.replace(personPath(p));
 
+  const [personNotes, settings] = p.type === 'team'
+    ? await Promise.all([
+        api.get(`/api/comments/person/${encodeURIComponent(p.id)}`).catch(() => []),
+        GardenSettings.load(),
+      ])
+    : [[], await GardenSettings.load()];
+
   const addTaskIdx = registerAction(() => FeatureLoader.run('openTaskModal', null, { prefill: { assigneeIds: [p.id] } }));
   const addMeetingIdx = registerAction(() => FeatureLoader.run('openMeetingModal', { participantIds: [p.id] }));
   const editPersonIdx = registerAction(() => openPersonModal(p.type, p));
@@ -377,7 +384,8 @@ Views.personDetail = async function (id) {
   // параметром setTopbar, тем же способом, что и The Labs ниже.
   setTopbar(`<h1 class="person-topbar-title-placeholder" aria-hidden="true">&nbsp;</h1>
     <div class="actions">
-      ${p.type === 'team' ? `<button class="ui-button ui-button--sm btn btn-sm" data-action-id="${addTaskIdx}">+ Добавить задачу</button>
+      ${p.type === 'team' ? `<button type="button" class="sidebar-collapse-btn overview-comments-sidebar-toggle" id="person-comments-toggle" aria-label="Показать панель стикеров" title="Показать панель стикеров" aria-expanded="false">${icon('sticky', 16)}</button>
+      <button class="ui-button ui-button--sm btn btn-sm" data-action-id="${addTaskIdx}">+ Добавить задачу</button>
       <button class="ui-button ui-button--sm btn btn-sm" data-action-id="${addMeetingIdx}">+ Добавить встречу</button>` : ''}
       ${(Auth.canManage('people') || Auth.isOwnPerson(p.id) || Auth.canManagePerson(p)) ? `<button class="ui-button btn" data-action-id="${editPersonIdx}">${icon('edit', 14)} Редактировать</button>` : ''}
     </div>`, { crumbs: [
@@ -403,18 +411,14 @@ Views.personDetail = async function (id) {
     { key: 'journal', label: 'Журнал' },
     ...(p.type === 'team' ? [{ key: 'load', label: 'Загрузка' }] : []),
   ];
+  const requestedTab = Router.queryParam('tab');
+  if (requestedTab && tabs.some((t) => t.key === requestedTab)) Views._personTab = requestedTab;
   if (!tabs.some((t) => t.key === Views._personTab)) Views._personTab = 'tasks';
 
   function tabBody(key) {
     if (key === 'tasks') {
-      // Та же сетка колонок (tl-title / task-tags-cell / task-due-cell /
-      // task-assignee-cell), что и в taskListRowHtml на странице «Задачи» —
-      // раньше здесь были те же самые данные, но одной строкой без колонок,
-      // из-за чего теги не выравнивались, а срок не был прибит к правому
-      // краю. Колонка исполнителя оставлена пустой (как и в соседней вкладке
-      // «Развитие», see developmentTaskRow ниже) — на странице самого
-      // сотрудника его же аватар в каждой строке был бы лишним, но пустая
-      // ячейка сохраняет ту же сетку и то же положение срока, что и везде.
+      // Используем ту же компактную типографику и колонки тегов/срока, что на странице «Задачи».
+      // Колонка исполнителя здесь не нужна: профиль уже задаёт контекст сотрудника.
       return historyTasks.length
         ? historyTasks.map((t) => {
             const idx = registerAction(() => FeatureLoader.run('openTaskModal', t.id));
@@ -425,7 +429,6 @@ Views.personDetail = async function (id) {
               <div class="tl-right">
                 <div class="task-tags-cell">${taskLabelsHtml(t)}</div>
                 <div class="task-due-cell">${t.dueDate ? `<span class="tiny" style="${overdue ? 'color:var(--red)' : ''}">${t.status === 'done' ? deadlineDateLabel(t.dueDate) : dueLabel(t.dueDate)}</span>` : ''}</div>
-                <span class="task-assignee-cell" aria-hidden="true"></span>
               </div>
             </div>`;
           }).join('')
@@ -527,8 +530,54 @@ Views.personDetail = async function (id) {
     <div class="person-history-label">История и работа</div>
     <div class="ui-tab tabs person-tabs">${tabs.map((t) => `<div class="ui-tab tab ${Views._personTab === t.key ? 'active' : ''}" data-view-state="_personTab" data-view-value="${t.key}" data-view-render="personDetail" data-view-render-arg="${id}">${t.label}</div>`).join('')}</div>
     <div class="person-tab-body">${tabBody(Views._personTab)}</div>
+    ${p.type === 'team' ? `<aside class="overview-comments-drawer person-comments-drawer" id="person-comments-drawer" aria-hidden="true">
+      <div class="overview-comments-head">
+        <div><strong>Стикеры</strong></div>
+        <div class="overview-notes-head-actions"><button type="button" class="task-detail-icon-btn overview-note-add" id="person-note-add" title="Добавить стикер" aria-label="Добавить стикер">+</button></div>
+      </div>
+      <div class="task-comments-list overview-comments-list" id="person-comments-list">${commentThreadHtml(personNotes, { variant: 'notes' })}</div>
+    </aside>` : ''}
     </div>
   `;
+
+  if (p.type === 'team') {
+    const drawer = document.getElementById('person-comments-drawer');
+    const toggle = document.getElementById('person-comments-toggle');
+    const mainShell = document.querySelector('.main');
+    let notesController = null;
+    const personStateKey = String(p.id);
+    const persistPersonNotesState = async (isOpen) => {
+      if (!notesController || notesController.filledCount() < 1) return;
+      const next = { ...((await GardenSettings.load()).personNotesOpen || {}), [personStateKey]: !!isOpen };
+      try { await GardenSettings.update({ personNotesOpen: next }); } catch (_) {}
+    };
+    const setPersonNotesOpen = (open, options = {}) => {
+      const isOpen = Boolean(open);
+      view.classList.toggle('overview-comments-open', isOpen);
+      mainShell?.classList.toggle('overview-comments-open', isOpen);
+      drawer?.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+      if (toggle) {
+        const label = isOpen ? 'Скрыть панель стикеров' : 'Показать панель стикеров';
+        toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        toggle.setAttribute('aria-label', label);
+        toggle.setAttribute('title', label);
+        toggle.classList.toggle('is-active', isOpen);
+      }
+      if (options.persist !== false) persistPersonNotesState(isOpen);
+    };
+    notesController = createCommentController({
+      entityType: 'person', entityId: p.id, comments: personNotes,
+      listId: 'person-comments-list', countId: 'person-comments-count',
+      addId: 'person-note-add', variant: 'notes', suppressEmptyAfterDelete: true,
+      journalPrefix: `@[${String(p.name || '').replace(/]/g, '')}](person:${p.id})`,
+      onChange: ({ type }) => {
+        if ((type === 'create' || type === 'update') && notesController?.filledCount() > 0) persistPersonNotesState(view.classList.contains('overview-comments-open'));
+      },
+    }).bind();
+    const hasFilledNotes = personNotes.some((note) => String(note?.text || '').trim());
+    setPersonNotesOpen(hasFilledNotes ? !!settings.personNotesOpen?.[personStateKey] : false, { persist: false });
+    if (toggle) toggle.onclick = () => setPersonNotesOpen(!view.classList.contains('overview-comments-open'));
+  }
 };
 
 // Public feature commands used by the declarative command layer.

@@ -130,6 +130,10 @@ boot();
 
 // Common declarative actions: navigation and modal close do not need inline JS.
 document.addEventListener('click', (event) => {
+  // Вложенные самостоятельные действия (статус, аватар, кнопка) не должны
+  // активировать route родительской строки. stopPropagation на document уже
+  // слишком поздний, поэтому отсекаем их до поиска маршрута.
+  if (event.target.closest?.('[data-action-stop="1"]')) return;
   const route = event.target.closest?.('[data-route]');
   if (route) {
     event.preventDefault();
@@ -143,6 +147,9 @@ document.addEventListener('click', (event) => {
 });
 
 document.addEventListener('click', (event) => {
+  // Не запускаем команду родительской строки, если клик пришёл из вложенного
+  // самостоятельного action-контрола (например, смены статуса задачи).
+  if (event.target.closest?.('[data-action-stop="1"]')) return;
   const node = event.target.closest?.('[data-command]');
   if (!node) return;
   const command = String(node.dataset.command || '');

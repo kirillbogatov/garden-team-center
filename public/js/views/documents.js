@@ -6,8 +6,3 @@ Views.documents = async function () {
   return Views.knowledgeBase();
 };
 
-// Сохранён только как совместимый row-layout контракт для архитектурной проверки;
-// пользовательский маршрут выше всегда открывает объединённую Базу знаний.
-function legacyDocumentsLayoutContract(folders, docs, selected, selectedFolder, filtered) {
-  return resourceFolderLayoutHtml('documents', folders, docs, selected, selectedFolder, filtered, documentRowHtml, 'документ','документа','документов');
-}

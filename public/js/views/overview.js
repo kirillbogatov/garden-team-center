@@ -27,7 +27,9 @@ const OVERVIEW_WIDGET_LABELS = {
   'quick-links': 'Быстрые переходы',
   goals: 'Цели',
   'team-workload': 'Проблемы с загрузкой',
-  'priority-tasks': 'Приоритетные задачи',
+  'priority-tasks': 'Мои задачи',
+  'team-priority-tasks': 'Задачи команды',
+  'missed-meetings': 'Встречи без итогов',
   'unresolved-issues': 'Нерешённые проблемы',
   'week-events': 'Ближайшие 7 дней',
   'attention-notes': 'Записи из журнала',
@@ -48,9 +50,16 @@ const OVERVIEW_QUICK_LINKS = {
 
 
 function overviewDefaultDashboardForCurrentUser() {
-  const isRegularMember = !!Auth.user && !Auth.isAdmin() && !Auth.isTeamlead();
   const personId = Auth.user?.personId || null;
-  if (!isRegularMember || !personId) return structuredClone(OVERVIEW_DEFAULT_DASHBOARD);
+  const base = structuredClone(OVERVIEW_DEFAULT_DASHBOARD);
+  if (Auth.isTeamlead()) {
+    const priorityIndex = base.signals.findIndex((item) => item.type === 'priority-tasks');
+    const insertAt = priorityIndex >= 0 ? priorityIndex + 1 : 0;
+    base.signals.splice(insertAt, 0, { id: 'team-priority-tasks', type: 'team-priority-tasks' }, { id: 'missed-meetings', type: 'missed-meetings' });
+    return base;
+  }
+  const isRegularMember = !!Auth.user && !Auth.isAdmin();
+  if (!isRegularMember || !personId) return base;
 
   const memberProjects = (store.projects || [])
     .filter((project) => project?.status === 'active' && (project.memberIds || []).includes(personId))
@@ -70,7 +79,7 @@ function overviewDefaultDashboardForCurrentUser() {
 
   return {
     quick,
-    signals: [{ id: 'week-events', type: 'week-events' }, { id: 'attention-notes', type: 'attention-notes' }],
+    signals: [{ id: 'priority-tasks', type: 'priority-tasks' }, { id: 'week-events', type: 'week-events' }, { id: 'attention-notes', type: 'attention-notes' }],
   };
 }
 
@@ -111,16 +120,88 @@ function overviewWidgetShell(widget, shelf, body, footer = '') {
 
 function overviewEmpty(text) { return `<div class="overview-widget-empty">${escapeHtml(text)}</div>`; }
 function overviewList(items) { return `<div class="overview-mini-list">${items.join('')}</div>`; }
+
+
+function overviewMeetingHasOutcomeRecords(meeting) {
+  const hasNotes = String(meeting?.notes || '').trim().length > 0;
+  const hasDocuments = Array.isArray(meeting?.documentLinks) && meeting.documentLinks.some((doc) => String(doc?.title || doc?.url || '').trim());
+  return hasNotes || hasDocuments;
+}
+
+function overviewMeetingMissedDays(meeting, todayKey = todayStr()) {
+  const dateKey = String(meeting?.date || '').slice(0, 10);
+  if (!dateKey || dateKey >= todayKey || overviewMeetingHasOutcomeRecords(meeting)) return 0;
+  const [ty, tm, td] = String(todayKey).split('-').map(Number);
+  const [my, mm, md] = dateKey.split('-').map(Number);
+  if (![ty, tm, td, my, mm, md].every(Number.isFinite)) return 0;
+  return Math.max(1, Math.floor((Date.UTC(ty, tm - 1, td) - Date.UTC(my, mm - 1, md)) / 86400000));
+}
+
+const TASK_PRIORITY_MODES = {
+  balanced: { important: 35, overdue: 40, overduePerDay: 2, overdueCap: 15, today: 50, tomorrow: 30, soon3: 20, soon7: 10 },
+  deadline: { important: 20, overdue: 55, overduePerDay: 2, overdueCap: 20, today: 60, tomorrow: 45, soon3: 30, soon7: 15 },
+  importance: { important: 60, overdue: 35, overduePerDay: 1, overdueCap: 10, today: 40, tomorrow: 25, soon3: 15, soon7: 5 },
+  overdue: { important: 25, overdue: 70, overduePerDay: 3, overdueCap: 25, today: 50, tomorrow: 35, soon3: 20, soon7: 10 },
+};
+
+function taskPriorityInfo(task, mode = 'balanced', todayKey = todayStr()) {
+  const weights = TASK_PRIORITY_MODES[mode] || TASK_PRIORITY_MODES.balanced;
+  const dueKey = String(task?.dueDate || '').slice(0, 10);
+  let score = task?.priority === 'high' ? weights.important : 0;
+  const reasons = [];
+  if (task?.priority === 'high') reasons.push('Важная');
+
+  if (dueKey) {
+    const [ty, tm, td] = todayKey.split('-').map(Number);
+    const [dy, dm, dd] = dueKey.split('-').map(Number);
+    const todayUtc = Date.UTC(ty, tm - 1, td);
+    const dueUtc = Date.UTC(dy, dm - 1, dd);
+    const days = Math.round((dueUtc - todayUtc) / 86400000);
+    if (days < 0) {
+      const overdueDays = Math.abs(days);
+      score += weights.overdue + Math.min(weights.overdueCap, overdueDays * weights.overduePerDay);
+      reasons.unshift(`Просрочено ${overdueDays} дн.`);
+    } else if (days === 0) {
+      score += weights.today;
+      reasons.unshift('Сегодня');
+    } else if (days === 1) {
+      score += weights.tomorrow;
+      reasons.unshift('Завтра');
+    } else if (days <= 3) {
+      score += weights.soon3;
+      reasons.unshift(`Через ${days} дн.`);
+    } else if (days <= 7) {
+      score += weights.soon7;
+      reasons.unshift(`Через ${days} дн.`);
+    } else {
+      reasons.unshift(fmtDate(dueKey));
+    }
+    return { score, reasons, days, dueKey };
+  }
+  return { score, reasons, days: null, dueKey: '' };
+}
+
+function rankedPriorityTasks(tasks, mode = 'balanced', todayKey = todayStr()) {
+  return (tasks || [])
+    .filter((task) => !task.archivedAt && task.status !== 'done')
+    .map((task) => ({ task, info: taskPriorityInfo(task, mode, todayKey) }))
+    // Задачи без срока и без пометки «Важная» не являются сигналом приоритета.
+    .filter(({ task, info }) => Boolean(task.dueDate) || task.priority === 'high' || info.score > 0)
+    .sort((a, b) => b.info.score - a.info.score
+      || ((a.info.days ?? 99999) - (b.info.days ?? 99999))
+      || String(a.task.title || '').localeCompare(String(b.task.title || ''), 'ru'));
+}
 // metaHtml — то же самое, что meta, но уже готовый (безопасный) HTML вместо
 // текста, который будет экранирован. Нужен виджетам, которым надо выделить
 // цветом часть подписи (например, «Сегодня»/«Завтра» в «Ближайшие 7 дней»),
 // не теряя экранирование остальных, произвольных данных.
-function overviewMiniRow({ title, meta = '', metaHtml = '', iconName = '', route = '', command = '', commandArg = '', person = null, tone = '' }) {
+function overviewMiniRow({ title, meta = '', metaHtml = '', iconName = '', route = '', command = '', commandArg = '', person = null, tone = '', trailingHtml = '' }) {
   const attrs = route ? `data-route="${escapeHtml(route)}"` : command ? `data-command="${escapeHtml(command)}" data-command-arg="${escapeHtml(commandArg)}"` : '';
   const metaContent = metaHtml || (meta ? escapeHtml(meta) : '');
   return `<div class="overview-mini-row ${tone ? `is-${tone}` : ''}" ${attrs}>
     ${person ? avatarHtml(person) : iconName ? `<span class="overview-mini-icon">${icon(iconName, 13)}</span>` : ''}
     <div class="overview-mini-copy"><span>${escapeHtml(title)}</span>${metaContent ? `<small>${metaContent}</small>` : ''}</div>
+    ${trailingHtml ? `<span class="overview-mini-trailing">${trailingHtml}</span>` : ''}
     <span class="overview-mini-chevron">${icon('chevronRight', 11)}</span>
   </div>`;
 }
@@ -188,7 +269,7 @@ function overviewShelfRowsHtml(widgets, shelf, renderWidget, addSlot) {
 Views.overview = async function () {
   Views._overviewEditing = !!Views._overviewEditing;
   const customizeLabel = Views._overviewEditing ? 'Готово' : 'Настроить';
-  setTopbar(`<h1>Обзор</h1><div class="actions overview-topbar-actions"><button type="button" class="sidebar-collapse-btn overview-comments-sidebar-toggle" id="overview-comments-toggle" aria-label="Показать заметки" title="Показать заметки" aria-expanded="false">${icon('sidebar', 16)}</button><button type="button" class="ui-button btn overview-customize-btn ${Views._overviewEditing ? 'active' : ''}" id="overview-customize">${icon(Views._overviewEditing ? 'tasks' : 'settings', 14)} ${customizeLabel}</button><button class="ui-button ui-button--primary btn btn-primary" data-command="openPalette">+ Добавить</button></div>`);
+  setTopbar(`<h1>Обзор</h1><div class="actions overview-topbar-actions"><button type="button" class="sidebar-collapse-btn overview-comments-sidebar-toggle" id="overview-comments-toggle" aria-label="Показать панель стикеров" title="Показать панель стикеров" aria-expanded="false">${icon('sticky', 16)}</button><button type="button" class="ui-button btn overview-customize-btn ${Views._overviewEditing ? 'active' : ''}" id="overview-customize">${icon(Views._overviewEditing ? 'tasks' : 'settings', 14)} ${customizeLabel}</button><button class="ui-button ui-button--primary btn btn-primary" data-command="openPalette">+ Добавить</button></div>`);
   const view = document.getElementById('view');
   view.classList.remove('overview-wide');
   view.innerHTML = `<div class="tiny">Загрузка…</div>`;
@@ -223,6 +304,33 @@ Views.overview = async function () {
     Views._overviewConfig = config;
     await GardenSettings.update({ overviewDashboard: config });
   }
+  // Тимлиду показываем два независимых списка: собственные приоритетные задачи
+  // и задачи остальных участников команды. Добавляем второй виджет и в уже
+  // сохранённые конфигурации, чтобы изменение появилось без сброса Обзора.
+  if (Auth.isTeamlead()) {
+    const signals = [...(config.signals || [])];
+    let changed = false;
+    if (!signals.some((item) => item.type === 'team-priority-tasks')) {
+      const ownIndex = signals.findIndex((item) => item.type === 'priority-tasks');
+      signals.splice(ownIndex >= 0 ? ownIndex + 1 : 0, 0, { id: 'team-priority-tasks', type: 'team-priority-tasks' });
+      changed = true;
+    }
+    if (!signals.some((item) => item.type === 'missed-meetings')) {
+      const teamTasksIndex = signals.findIndex((item) => item.type === 'team-priority-tasks');
+      signals.splice(teamTasksIndex >= 0 ? teamTasksIndex + 1 : 0, 0, { id: 'missed-meetings', type: 'missed-meetings' });
+      changed = true;
+    }
+    if (changed) {
+      config = { ...config, signals };
+      Views._overviewConfig = config;
+      await GardenSettings.update({ overviewDashboard: config });
+    }
+  }
+  if (!Auth.isTeamlead() && (config.signals || []).some((item) => item.type === 'team-priority-tasks' || item.type === 'missed-meetings')) {
+    config = { ...config, signals: config.signals.filter((item) => item.type !== 'team-priority-tasks' && item.type !== 'missed-meetings') };
+    Views._overviewConfig = config;
+    await GardenSettings.update({ overviewDashboard: config });
+  }
   // Виджет записей журнала возвращаем автоматически только тогда, когда
   // у пользователя действительно есть закреплённые записи. Так его можно
   // скрыть вручную, но новое закрепление снова делает содержимое заметным.
@@ -252,7 +360,7 @@ Views.overview = async function () {
   const renderWidget = (widget, shelf) => {
     if (widget.type === 'my-tasks') {
       const rows = myTasks.slice(0, 5).map((t) => overviewMiniRow({ title: t.title, meta: TASK_STATUS_LABEL[t.status] || '', iconName: 'tasks', command: 'openTaskModal', commandArg: t.id }));
-      return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Нет открытых задач'), `<a data-route="/tasks?mine=1">Все мои задачи</a>`);
+      return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Нет открытых задач'), `<a data-route="/tasks?mine=1&project=all">Все мои задачи</a>`);
     }
     if (widget.type === 'project-tasks') {
       const project = store.project(widget.projectId);
@@ -325,15 +433,50 @@ Views.overview = async function () {
         title: p.name,
         meta: issues.map((i) => i.label).join(' · '),
         person: p,
-        route: personPath(p),
+        route: `${personPath(p)}?tab=load`,
         tone: issues.some((i) => i.tone === 'danger') ? 'danger' : 'warning',
       }));
       return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Проблем с загрузкой нет'), `<a data-route="/projects?tab=load">Загрузка команды</a>`);
     }
-    if (widget.type === 'priority-tasks') {
-      const list = tasks.filter((t) => !t.archivedAt && t.status !== 'done' && t.priority === 'high');
-      const rows = list.slice(0, 6).map((t) => overviewMiniRow({ title: t.title, meta: store.project(t.projectId)?.name || '', iconName: 'tasks', command: 'openTaskModal', commandArg: t.id, tone: 'danger' }));
-      return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Нет приоритетных задач'), `<a data-route="/tasks">Открыть задачи</a>`);
+    if (widget.type === 'priority-tasks' || widget.type === 'team-priority-tasks') {
+      const priorityMode = settings?.taskPriorityMode || 'balanced';
+      const isTeamWidget = widget.type === 'team-priority-tasks';
+      const sourceTasks = isTeamWidget
+        ? tasks.filter((task) => !personId || !(task.assigneeIds || []).includes(personId))
+        : (personId ? tasks.filter((task) => (task.assigneeIds || []).includes(personId)) : []);
+      const ranked = rankedPriorityTasks(sourceTasks, priorityMode, today).slice(0, 5);
+      const rows = ranked.map(({ task, info }) => {
+        const assignee = store.person((task.assigneeIds || [])[0]) || null;
+        const assigneeId = assignee?.id || (task.assigneeIds || [])[0] || '';
+        const projectName = store.project(task.projectId)?.name || '';
+        const metaParts = [...info.reasons];
+        if (projectName) metaParts.push(projectName);
+        return overviewMiniRow({
+          title: task.title,
+          meta: metaParts.join(' · '),
+          person: assignee,
+          route: assigneeId ? `/tasks?person=${encodeURIComponent(assigneeId)}&project=all` : '/tasks?project=all',
+          tone: info.days != null && info.days < 0 ? 'warning' : '',
+          trailingHtml: taskStatusBadge(task.status || 'todo', task.id),
+        });
+      });
+      const emptyText = isTeamWidget ? 'Нет приоритетных задач команды' : 'Нет моих задач с дедлайном или пометкой «Важная»';
+      const taskRoute = isTeamWidget ? '/tasks?project=all' : '/tasks?mine=1&project=all';
+      return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty(emptyText), `<a data-route="${taskRoute}">${isTeamWidget ? 'Все задачи' : 'Все мои задачи'}</a>`);
+    }
+    if (widget.type === 'missed-meetings') {
+      const missedMeetings = meetings
+        .map((meeting) => ({ meeting, days: overviewMeetingMissedDays(meeting, today) }))
+        .filter((item) => item.days > 0)
+        .sort((a, b) => b.days - a.days || String(a.meeting.date || '').localeCompare(String(b.meeting.date || '')));
+      const rows = missedMeetings.slice(0, 7).map(({ meeting, days }) => overviewMiniRow({
+        title: meetingDisplayTitle(meeting),
+        meta: `${MEETING_TYPE_LABEL[meeting.type] || 'Другое'} · ${days} ${pluralRu(days, 'день', 'дня', 'дней')} назад`,
+        iconName: 'meetings',
+        route: meetingPath ? meetingPath(meeting) : `/meetings/${encodeURIComponent(meeting.meetingKey || meeting.id)}`,
+        tone: 'warning',
+      }));
+      return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Нет встреч без итогов'), `<a data-route="/meetings?period=missed">Все без итогов</a>`);
     }
     if (widget.type === 'unresolved-issues') {
       const list = issues.filter((i) => i.status !== 'resolved').sort((a,b) => (a.severity === 'high' ? -1 : 0) - (b.severity === 'high' ? -1 : 0));
@@ -451,7 +594,7 @@ Views.overview = async function () {
     mainShell?.classList.toggle('overview-comments-open', isOpen);
     overviewDrawer?.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
     if (overviewToggle) {
-      const label = isOpen ? 'Скрыть стикеры' : 'Показать стикеры';
+      const label = isOpen ? 'Скрыть панель стикеров' : 'Показать панель стикеров';
       overviewToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
       overviewToggle.setAttribute('aria-label', label);
       overviewToggle.setAttribute('title', label);
@@ -522,7 +665,7 @@ function overviewApplyEditingState(editing, options = {}) {
 function overviewCatalogTypes(shelf) {
   return shelf === 'quick'
     ? ['my-tasks','project-tasks','my-issues','my-agreements','my-journal','my-ideas','my-meetings','quick-link']
-    : ['goals','team-workload','priority-tasks','unresolved-issues','week-events','attention-notes'];
+    : ['goals','team-workload','priority-tasks', ...(Auth.isTeamlead() ? ['team-priority-tasks'] : []), 'unresolved-issues','week-events','attention-notes'];
 }
 
 function overviewCatalogIcon(type) {
@@ -538,6 +681,7 @@ function overviewCatalogIcon(type) {
     goals: 'goals',
     'team-workload': 'issues',
     'priority-tasks': 'tasks',
+    'team-priority-tasks': 'tasks',
     'unresolved-issues': 'issues',
     'week-events': 'calendar',
     'attention-notes': 'bookmark',

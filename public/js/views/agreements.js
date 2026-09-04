@@ -58,14 +58,6 @@ async function toggleAgreement(id, checked) {
   Views.agreements();
 }
 
-async function deleteAgreement(id) {
-  const ok = await confirmAction('Удалить эту договорённость?');
-  if (!ok) return;
-  await Resources.agreements.remove(id);
-  toast('Удалено');
-  Views.agreements();
-}
-
 async function openAgreementModal(id) {
   const isEdit = !!id;
   const a = isEdit ? await Resources.agreements.get(id) : {};

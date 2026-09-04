@@ -46,6 +46,10 @@ module.exports = function createEntityIdentifiers({ db, nextNumericKey }) {
       const key = String(ref || '').trim().toUpperCase();
       return db.meetings.all().find((item) => String(item.meetingKey || '').toUpperCase() === key) || null;
     }
+    if (name === 'processes') {
+      const key = String(ref || '').trim().toUpperCase();
+      return db.processes.all().find((item) => String(item.processKey || '').toUpperCase() === key) || null;
+    }
     if (!SLUG_COLLECTIONS[name]) return null;
     return db[name].all().find((item) => item.slug === ref) || null;
   }
@@ -129,9 +133,25 @@ module.exports = function createEntityIdentifiers({ db, nextNumericKey }) {
     }
   }
 
+
+  function nextProcessKey() {
+    return nextNumericKey(db.processes.all(), { prefix: 'PROCESS', readKey: (process) => String(process.processKey || '') });
+  }
+  function assignProcessKey(payload) { return { ...(payload || {}), processKey: nextProcessKey() }; }
+  function ensureProcessKeys() {
+    const used = new Set();
+    for (const process of db.processes.all()) {
+      const current = String(process.processKey || '').trim().toUpperCase();
+      if (/^PROCESS-\d{4,}$/.test(current) && !used.has(current)) { used.add(current); continue; }
+      const processKey = nextProcessKey();
+      db.processes.update(process.id, { processKey });
+      used.add(processKey);
+    }
+  }
+
   return {
     SLUG_COLLECTIONS, slugify, uniqueSlug, resolveEntity, normalizeProjectTaskCode, uniqueProjectTaskCode,
     ensureSlugs, ensureProjectTaskCodes, taskKeyPrefix, nextTaskKey, assignTaskKey, nextLabKey, ensureLabKeys, ensureTaskKeys,
-    nextMeetingKey, assignMeetingKey, ensureMeetingKeys,
+    nextMeetingKey, assignMeetingKey, ensureMeetingKeys, nextProcessKey, assignProcessKey, ensureProcessKeys,
   };
 };

@@ -22,6 +22,8 @@ function checkinShiftWeek(weekStartKey, deltaWeeks) {
 }
 
 Views.checkins = async function () {
+  const requestedPerson = Router.queryParam('person');
+  if (requestedPerson) { Views._checkinsMode = 'person'; Views._checkinsPerson = requestedPerson; }
   setTopbar(`<h1>Check-in</h1>`);
   const view = document.getElementById('view');
   view.classList.add('checkins-wide');

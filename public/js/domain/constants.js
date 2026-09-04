@@ -1,7 +1,6 @@
 // Единый словарь доменной терминологии и визуальных соответствий.
 // Views и UI используют эти значения вместо собственных копий.
 const PRIORITY_LABEL = { high: 'Важная', normal: 'Обычный' };
-const PRIORITY_COLOR = { high: 'var(--orange)', normal: 'var(--text-disabled)' };
 
 const TASK_STATUS_LABEL = { todo: 'К выполнению', in_progress: 'В работе', in_review: 'На ревью', paused: 'Приостановлено', blocked: 'Заблокировано', done: 'Готово' };
 const TASK_TYPE_LABEL = { standard: 'Проектная', development: 'Развитие' };
@@ -11,10 +10,9 @@ const ISSUE_STATUS_LABEL = { open: 'Новая', in_progress: 'В работе',
 const ISSUE_SEVERITY_LABEL = { high: 'Высокая', normal: 'Обычная' };
 const ISSUE_SEVERITY_COLOR = { high: 'var(--orange)', normal: 'var(--text-disabled)' };
 
-const MEETING_TYPE_LABEL = { '1:1': '1:1', pr: 'PR', other: 'Другое' };
+const MEETING_TYPE_LABEL = { '1:1': '1:1', pr: 'PR', club: 'Клаб', retro: 'Ретро', project: 'Проектные', other: 'Другое' };
 
 const JOURNAL_KIND_LABEL = { note: 'Заметка', idea: 'Идея', problem: 'Проблема', agreement: 'Договоренность' };
-const JOURNAL_KIND_COLOR = { note: 'var(--text-secondary)', agreement: 'var(--green)', idea: 'var(--purple)', problem: 'var(--red)' };
 
 const LAB_STATUS_LABEL = { idea: 'Идея', in_progress: 'В работе', paused: 'Приостановлено', done: 'Готово' };
 const LAB_TASK_STATUS = { idea: 'todo', in_progress: 'in_progress', paused: 'paused', done: 'done' };

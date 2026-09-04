@@ -5,6 +5,7 @@ module.exports = function registerCommentRoutes(app, { db, canReadItem, denied }
     task: { collection: 'tasks' },
     meeting: { collection: 'meetings' },
     project: { collection: 'projects' },
+    person: { collection: 'people' },
     lab: { collection: 'labs', validate: (item) => item && item.entityType !== 'idea' },
     overview: { synthetic: true },
   };
@@ -47,7 +48,7 @@ module.exports = function registerCommentRoutes(app, { db, canReadItem, denied }
       const text = String(req.body?.text || '').trim().slice(0, 10000);
       if (!text) return res.status(400).json({ error: 'text_required' });
       const stickyColors = new Set(['yellow', 'pink', 'blue', 'green']);
-      const color = ['overview', 'task', 'meeting', 'project'].includes(entityType) && stickyColors.has(String(req.body?.color || '')) ? String(req.body.color) : 'yellow';
+      const color = ['overview', 'task', 'meeting', 'project', 'person'].includes(entityType) && stickyColors.has(String(req.body?.color || '')) ? String(req.body.color) : 'yellow';
       const comment = db.comments.create({
         entityType, entityId: resolved.item.id, text, color,
         createdByUserId: req.auth.user.id,
@@ -65,11 +66,11 @@ module.exports = function registerCommentRoutes(app, { db, canReadItem, denied }
     if (!resolved || !canRead(resolved, req.auth.user)) return denied(res);
     if (comment.createdByUserId !== req.auth.user.id) return denied(res);
     const rawText = String(req.body?.text ?? comment.text ?? '').slice(0, 10000);
-    const noteEntity = ['overview', 'task', 'meeting', 'project'].includes(comment.entityType);
+    const noteEntity = ['overview', 'task', 'meeting', 'project', 'person'].includes(comment.entityType);
     const text = noteEntity ? rawText : rawText.trim();
     if (!noteEntity && !text) return res.status(400).json({ error: 'text_required' });
     const patch = { text };
-    if (['overview', 'task', 'meeting', 'project'].includes(comment.entityType) && req.body && Object.prototype.hasOwnProperty.call(req.body, 'color')) {
+    if (['overview', 'task', 'meeting', 'project', 'person'].includes(comment.entityType) && req.body && Object.prototype.hasOwnProperty.call(req.body, 'color')) {
       const stickyColors = new Set(['yellow', 'pink', 'blue', 'green']);
       if (stickyColors.has(String(req.body.color))) patch.color = String(req.body.color);
     }

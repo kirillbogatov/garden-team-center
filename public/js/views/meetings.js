@@ -4,41 +4,96 @@ Views._meetingFilter = 'all';
 Views._meetingPeriod = 'upcoming';
 Views._meetingMonthState = {};
 
-Views.meetings = async function () {
-  setTopbar(`<h1>Встречи</h1>${Auth.canCreate('meetings') ? `<div class="actions"><button class="ui-button ui-button--primary btn btn-primary" data-command="openMeetingModal">+ Добавить встречу</button></div>` : ''}`);
+function meetingHasOutcomeRecords(meeting) {
+  const hasNotes = String(meeting?.notes || '').trim().length > 0;
+  const hasDocuments = Array.isArray(meeting?.documentLinks) && meeting.documentLinks.some((doc) => String(doc?.title || doc?.url || '').trim());
+  return hasNotes || hasDocuments;
+}
+
+function meetingIsPast(meeting, todayKey = todayStr()) {
+  const dateKey = String(meeting?.date || '').slice(0, 10);
+  return !!dateKey && dateKey < todayKey;
+}
+
+function meetingIsMissed(meeting, todayKey = todayStr()) {
+  return meetingIsPast(meeting, todayKey) && !meetingHasOutcomeRecords(meeting);
+}
+
+function meetingMissedDays(meeting, todayKey = todayStr()) {
+  if (!meetingIsMissed(meeting, todayKey)) return 0;
+  const [ty, tm, td] = String(todayKey).split('-').map(Number);
+  const [my, mm, md] = String(meeting.date || '').slice(0, 10).split('-').map(Number);
+  if (![ty, tm, td, my, mm, md].every(Number.isFinite)) return 0;
+  return Math.max(1, Math.floor((Date.UTC(ty, tm - 1, td) - Date.UTC(my, mm - 1, md)) / 86400000));
+}
+
+function meetingPeriodLists(meetings) {
+  const today = todayStr();
+  const filteredByType = Views._meetingFilter === 'all' ? meetings : meetings.filter((meeting) => meeting.type === Views._meetingFilter);
+  return {
+    upcoming: filteredByType.filter((meeting) => !meetingIsPast(meeting, today)).sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))),
+    missed: filteredByType.filter((meeting) => meetingIsMissed(meeting, today)).sort((a, b) => meetingMissedDays(b, today) - meetingMissedDays(a, today) || String(b.date || '').localeCompare(String(a.date || ''))),
+    completed: filteredByType.filter((meeting) => meetingIsPast(meeting, today) && meetingHasOutcomeRecords(meeting)).sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))),
+    all: filteredByType.slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))),
+  };
+}
+
+function meetingEmptyText(period) {
+  return {
+    upcoming: 'Будущих встреч нет',
+    completed: 'Завершённых встреч нет',
+    missed: 'Встреч без итогов нет',
+    all: 'Встреч пока нет',
+  }[period] || 'Встреч пока нет';
+}
+
+function renderMeetingsWorkspace(meetings) {
   const view = document.getElementById('view');
-  view.innerHTML = `<div class="tiny">Загрузка…</div>`;
+  if (!view) return;
+  const filterLabel = { all: 'Все встречи', '1:1': '1:1', pr: 'PR', club: 'Клаб', retro: 'Ретро', project: 'Проектные', other: 'Другое' };
+  const periodLists = meetingPeriodLists(meetings);
+  const activeMeetings = periodLists[Views._meetingPeriod] || periodLists.upcoming;
+  const emptyText = meetingEmptyText(Views._meetingPeriod);
 
-  const meetings = await Resources.meetings.list();
-  const filters = ['all', '1:1', 'pr', 'other'];
-  const filterLabel = { all: 'Все', '1:1': '1:1', pr: 'PR', other: 'Другое' };
-  const filtered = Views._meetingFilter === 'all' ? meetings : meetings.filter((m) => m.type === Views._meetingFilter);
-
-  // Главный фильтр — тип встречи — тот же приём вкладок со счётчиками, что и в
-  // «Задачах»/«Проблемах»/«Договорённостях» (референс: /dashboard/user/list);
-  // период (предстоящие/завершённые) — второй, менее приоритетный переключатель
-  // строкой ниже, а не рядом вперемешку с вкладками.
-  const filterBar = `<div class="list-tabs meeting-filterbar" role="tablist" aria-label="Тип встречи">
-    ${filters.map((f) => `<button type="button" class="list-tab ${Views._meetingFilter === f ? 'active' : ''}" role="tab" aria-selected="${Views._meetingFilter === f}" data-view-state="_meetingFilter" data-view-value="${f}" data-view-render="meetings">${filterLabel[f]}</button>`).join('')}
+  const periodTabs = `<div class="list-tabs meeting-state-tabs" role="tablist" aria-label="Состояние встреч">
+    <button type="button" class="list-tab ${Views._meetingPeriod === 'upcoming' ? 'active' : ''}" role="tab" aria-selected="${Views._meetingPeriod === 'upcoming'}" data-command="setMeetingPeriod" data-command-arg="upcoming">Будущие</button>
+    <button type="button" class="list-tab ${Views._meetingPeriod === 'completed' ? 'active' : ''}" role="tab" aria-selected="${Views._meetingPeriod === 'completed'}" data-command="setMeetingPeriod" data-command-arg="completed">Завершённые</button>
+    <button type="button" class="list-tab ${Views._meetingPeriod === 'missed' ? 'active' : ''}" role="tab" aria-selected="${Views._meetingPeriod === 'missed'}" data-command="setMeetingPeriod" data-command-arg="missed">Без итогов</button>
+    <button type="button" class="list-tab ${Views._meetingPeriod === 'all' ? 'active' : ''}" role="tab" aria-selected="${Views._meetingPeriod === 'all'}" data-command="setMeetingPeriod" data-command-arg="all">Все</button>
   </div>`;
 
-  const today = todayStr();
-  const upcoming = filtered.filter((m) => (m.date || '').slice(0, 10) >= today).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
-  const past = filtered.filter((m) => (m.date || '').slice(0, 10) < today).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
-  const activeMeetings = Views._meetingPeriod === 'past' ? past : upcoming;
-  const emptyText = Views._meetingPeriod === 'past' ? 'Завершенных встреч нет' : 'Предстоящих встреч нет';
-
-  const periodTabs = `<div class="meeting-period-tabs meeting-period-tabs-secondary" role="tablist" aria-label="Период встреч">
-    <button type="button" class="meeting-period ${Views._meetingPeriod === 'upcoming' ? 'active' : ''}" role="tab" aria-selected="${Views._meetingPeriod === 'upcoming'}" data-command="setMeetingPeriod" data-command-arg="upcoming">Предстоящие</button>
-    <button type="button" class="meeting-period ${Views._meetingPeriod === 'past' ? 'active' : ''}" role="tab" aria-selected="${Views._meetingPeriod === 'past'}" data-command="setMeetingPeriod" data-command-arg="past">Завершённые</button>
+  const typeFilter = `<div class="meeting-filter-controls">
+    <select id="meeting-type-filter" class="task-filter-select meeting-type-filter" aria-label="Фильтр по типу встречи">
+      ${['all', '1:1', 'pr', 'club', 'retro', 'project', 'other'].map((value) => `<option value="${value}" ${Views._meetingFilter === value ? 'selected' : ''}>${filterLabel[value]}</option>`).join('')}
+    </select>
   </div>`;
 
   const monthGroups = groupMeetingsByMonth(activeMeetings);
-
-  view.innerHTML = `<div class="view-narrow work-list-page meetings-view">
-    <div class="work-list-toolbar meeting-toolbar">${filterBar}${periodTabs}</div>
-    ${activeMeetings.length ? `<div class="meeting-month-groups task-groups-separated">${monthGroups.map((group, index) => meetingMonthGroupHtml(group, index)).join('')}</div>` : `<div class="zen-empty">${emptyText}</div>`}
+  view.innerHTML = `<div class="view-narrow meetings-view">
+    <div class="task-sticky-toolbar meeting-sticky-toolbar"><div class="task-toolbar-inner">${typeFilter}</div></div>
+    <div class="work-list-page meetings-work-surface">
+      <div class="work-list-toolbar meeting-toolbar">${periodTabs}</div>
+      <div class="work-list-body meetings-list-body">${activeMeetings.length ? `<div class="meeting-month-groups task-groups-separated">${monthGroups.map((group, index) => meetingMonthGroupHtml(group, index)).join('')}</div>` : `<div class="zen-empty">${emptyText}</div>`}</div>
+    </div>
   </div>`;
+
+  const meetingTypeFilter = document.getElementById('meeting-type-filter');
+  if (meetingTypeFilter) meetingTypeFilter.onchange = () => {
+    Views._meetingFilter = meetingTypeFilter.value || 'all';
+    renderMeetingsWorkspace(Views._meetingsCache || []);
+  };
+}
+
+Views.meetings = async function () {
+  const requestedPeriod = Router.queryParam('period');
+  if (['upcoming', 'completed', 'missed', 'all'].includes(requestedPeriod)) Views._meetingPeriod = requestedPeriod;
+  setTopbar(`<h1>Встречи</h1>${Auth.canCreate('meetings') ? `<div class="actions"><button class="ui-button ui-button--primary btn btn-primary" data-command="openMeetingModal">+ Добавить встречу</button></div>` : ''}`);
+  const view = document.getElementById('view');
+  view.classList.add('task-page');
+  view.innerHTML = `<div class="tiny">Загрузка…</div>`;
+  const meetings = await Resources.meetings.list();
+  Views._meetingsCache = meetings;
+  renderMeetingsWorkspace(meetings);
 };
 
 function meetingMonthKey(date) {
@@ -69,9 +124,10 @@ function groupMeetingsByMonth(meetings) {
 
 function meetingMonthGroupHtml(group, index) {
   const stateKey = `${Views._meetingPeriod}:${Views._meetingFilter}:${group.key}`;
+  const expandedByDefault = Views._meetingPeriod === 'upcoming' ? index === 0 : true;
   const expanded = Object.prototype.hasOwnProperty.call(Views._meetingMonthState, stateKey)
     ? Views._meetingMonthState[stateKey]
-    : index === 0;
+    : expandedByDefault;
   return `<section class="meeting-month-group task-group-section separated ${expanded ? 'is-expanded' : 'is-collapsed'}" data-meeting-month="${escapeHtml(group.key)}">
     <button type="button" class="ui-disclosure group-header meeting-month-header" data-command="toggleMeetingMonth" data-command-arg="${escapeHtml(stateKey)}" data-command-self="1" aria-expanded="${expanded}">
       <span class="meeting-month-chevron" style="${expanded ? 'transform:rotate(90deg)' : ''}">${icon('chevronRight', 10)}</span>
@@ -83,9 +139,37 @@ function meetingMonthGroupHtml(group, index) {
   </section>`;
 }
 
+function meetingPeriodContent(meetings) {
+  const periodLists = meetingPeriodLists(meetings);
+  const activeMeetings = periodLists[Views._meetingPeriod] || periodLists.upcoming;
+  const emptyText = meetingEmptyText(Views._meetingPeriod);
+  const monthGroups = groupMeetingsByMonth(activeMeetings);
+  return activeMeetings.length
+    ? `<div class="meeting-month-groups task-groups-separated">${monthGroups.map((group, index) => meetingMonthGroupHtml(group, index)).join('')}</div>`
+    : `<div class="zen-empty">${emptyText}</div>`;
+}
+
 function setMeetingPeriod(period) {
-  Views._meetingPeriod = period === 'past' ? 'past' : 'upcoming';
-  Views.meetings();
+  const allowed = new Set(['upcoming', 'completed', 'missed', 'all']);
+  const nextPeriod = allowed.has(period) ? period : 'upcoming';
+  if (Views._meetingPeriod === nextPeriod) return;
+
+  const view = document.getElementById('view');
+  const scrollTop = view?.scrollTop || 0;
+  Views._meetingPeriod = nextPeriod;
+
+  document.querySelectorAll('.meeting-state-tabs .list-tab').forEach((tab) => {
+    const active = tab.dataset.commandArg === nextPeriod;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', String(active));
+  });
+
+  const body = document.querySelector('.meetings-list-body');
+  if (body) body.innerHTML = meetingPeriodContent(Views._meetingsCache || []);
+
+  if (view) {
+    requestAnimationFrame(() => { view.scrollTop = scrollTop; });
+  }
 }
 
 function toggleMeetingMonth(stateKey, button) {
@@ -101,17 +185,27 @@ function toggleMeetingMonth(stateKey, button) {
 }
 
 
+function meetingParticipantsHtml(participants) {
+  if (!participants.length) return `<span class="meeting-participants-empty">${avatarHtml(null)}</span>`;
+  const visible = participants.slice(0, 5);
+  const extra = participants.length - visible.length;
+  return `<span class="meeting-participants" aria-label="Участники встречи: ${escapeHtml(participants.map((p) => p.name).join(', '))}">
+    <span class="meeting-participants-stack">${visible.map((person) => personAvatarLinkHtml(person)).join('')}</span>
+    ${extra > 0 ? `<span class="meeting-participants-more">и ещё ${extra}</span>` : ''}
+  </span>`;
+}
+
 function meetingRowHtml(m) {
   const participants = (m.participantIds || []).map((id) => store.person(id)).filter(Boolean);
   const project = store.project(m.projectId);
-  const employee = participants[0] || null;
   const openIdx = registerAction(() => Router.go(meetingPath(m)));
-  return `<div class="ui-row ui-row--meeting meeting-row clickable" data-action-id="${openIdx}">
+  const missed = meetingIsMissed(m);
+  return `<div class="ui-row ui-row--meeting meeting-row clickable ${missed ? 'meeting-row--missed' : ''}" data-action-id="${openIdx}">
       <span class="meeting-type badge meeting-type-${String(m.type || 'other').replace(/[^a-z0-9]+/gi, '-')}">${MEETING_TYPE_LABEL[m.type] || 'Другое'}</span>
-      <span class="meeting-title">${escapeHtml(meetingDisplayTitle(m))}</span>
+      <span class="meeting-title"><span class="meeting-title-text">${escapeHtml(meetingDisplayTitle(m))}</span>${missed ? `<span class="meeting-missed-label">нет записей по итогам</span>` : ''}</span>
       <span class="meeting-row-meta meeting-row-project">${project ? projectChip(project) : ''}</span>
       <span class="meeting-date">${fmtDate(m.date)}</span>
-      <span class="meeting-employee-avatar">${employee ? personAvatarLinkHtml(employee) : avatarHtml(null)}</span>
+      <span class="meeting-employee-avatar">${meetingParticipantsHtml(participants)}</span>
       <span class="meeting-chevron">${icon('chevronRight', 14)}</span>
   </div>`;
 }
@@ -144,6 +238,9 @@ function openMeetingCreateModal(prefill) {
           <select id="mf-type">
             <option value="1:1" ${m.type === '1:1' ? 'selected' : ''}>1:1</option>
             <option value="pr" ${m.type === 'pr' ? 'selected' : ''}>PR</option>
+            <option value="club" ${m.type === 'club' ? 'selected' : ''}>Клаб</option>
+            <option value="retro" ${m.type === 'retro' ? 'selected' : ''}>Ретро</option>
+            <option value="project" ${m.type === 'project' ? 'selected' : ''}>Проектные</option>
             <option value="other" ${m.type === 'other' ? 'selected' : ''}>Другое</option>
           </select>
         </div>
@@ -214,7 +311,7 @@ async function renderMeetingDetailPage(m) {
   setTopbar(`
     <h1 class="topbar-h1-key">${escapeHtml(m.meetingKey || '')}</h1>
     <div class="actions task-detail-topbar-actions">
-      <button type="button" class="sidebar-collapse-btn task-notes-sidebar-toggle" id="meeting-context-toggle" aria-label="Скрыть стикеры" title="Скрыть стикеры" aria-expanded="true">${icon('sidebar', 16)}</button>
+      <button type="button" class="sidebar-collapse-btn task-notes-sidebar-toggle" id="meeting-context-toggle" aria-label="Скрыть панель стикеров" title="Скрыть панель стикеров" aria-expanded="true">${icon('sticky', 16)}</button>
       <div class="task-actions-menu-wrap">
         <button type="button" class="ui-button btn task-detail-topbar-btn" id="meeting-actions-toggle" aria-haspopup="menu" aria-expanded="false">Действия</button>
         <div class="task-actions-menu" id="meeting-actions-menu" role="menu" hidden>
@@ -238,6 +335,9 @@ ${detailPageHeaderHtml({ title: meetingDisplayTitle(m), eyebrow: m.meetingKey, i
                 <label class="task-detail-property"><span>Тип</span><span class="task-inline-edit is-editable"><select id="mf-type">
                   <option value="1:1" ${m.type === '1:1' ? 'selected' : ''}>1:1</option>
                   <option value="pr" ${m.type === 'pr' ? 'selected' : ''}>PR</option>
+                  <option value="club" ${m.type === 'club' ? 'selected' : ''}>Клаб</option>
+                  <option value="retro" ${m.type === 'retro' ? 'selected' : ''}>Ретро</option>
+                  <option value="project" ${m.type === 'project' ? 'selected' : ''}>Проектные</option>
                   <option value="other" ${!m.type || m.type === 'other' ? 'selected' : ''}>Другое</option>
                 </select><span class="task-inline-edit-icon" aria-hidden="true">${icon('edit', 11)}</span></span></label>
                 <label class="task-detail-property"><span>Дата</span><span class="task-inline-edit is-editable"><input id="mf-date" type="date" value="${dt}" /><span class="task-inline-edit-icon" aria-hidden="true">${icon('edit', 11)}</span></span></label>
@@ -326,12 +426,12 @@ ${detailPageHeaderHtml({ title: meetingDisplayTitle(m), eyebrow: m.meetingKey, i
     mainShell?.classList.toggle('task-notes-open', isOpen);
     contextDrawer?.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
     if (contextToggle) {
-      const label = isOpen ? 'Скрыть стикеры' : 'Показать стикеры';
+      const label = isOpen ? 'Скрыть панель стикеров' : 'Показать панель стикеров';
       contextToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
       contextToggle.setAttribute('aria-label', label);
       contextToggle.setAttribute('title', label);
       contextToggle.classList.toggle('is-active', isOpen);
-      contextToggle.innerHTML = icon('sidebar', 16);
+      contextToggle.innerHTML = icon('sticky', 16);
     }
   };
   // Open by default, but not below the 940px breakpoint where detail-page.css
@@ -707,40 +807,5 @@ function renderMeetingRelatedPanel(personIds) {
 
 
 // Закрываем управленческий цикл после встречи: из результатов сразу создаются follow-up сущности.
-function openMeetingFollowup(meeting) {
-  const openActions = (meeting.actionItems || []).filter((x) => !x.done && x.text);
-  const participants = (meeting.participantIds || []).map((id) => store.person(id)).filter(Boolean);
-  const primaryPerson = participants.find((p) => p.type === 'team') || participants[0] || null;
-  const sourceLabel = `${MEETING_TYPE_LABEL[meeting.type] || 'Встреча'} · ${fmtDate(meeting.date)}`;
-
-  Modal.open(`
-    <h2>Что не забыть после встречи?</h2>
-    <p class="muted" style="margin:-4px 0 18px">${escapeHtml(meetingDisplayTitle(meeting))} · ${escapeHtml(fmtDate(meeting.date))}</p>
-    ${openActions.length ? `<div class="followup-group"><div class="ui-field-label field-label">ACTION ITEMS → ЗАДАЧИ</div>${openActions.map((ai, i) => `<label class="followup-option"><input type="checkbox" data-follow-task="${i}" checked><span>${escapeHtml(ai.text)}</span></label>`).join('')}</div>` : ''}
-    <div class="ui-modal-actions modal-actions">
-      <button class="ui-button btn" id="follow-skip">Не создавать</button>
-      <button class="ui-button ui-button--primary btn btn-primary" id="follow-save">Создать follow-up</button>
-    </div>
-  `);
-
-  document.getElementById('follow-skip').onclick = () => { Modal.close(); Router.render(); };
-  document.getElementById('follow-save').onclick = async () => {
-    const selected = Array.from(document.querySelectorAll('[data-follow-task]:checked')).map((el) => openActions[Number(el.dataset.followTask)]).filter(Boolean);
-    for (const ai of selected) {
-      await Resources.tasks.create({
-        title: ai.text,
-        description: `Из встречи: ${sourceLabel}`,
-        projectId: meeting.projectId || null,
-        assigneeIds: ai.assigneeId ? [ai.assigneeId] : (primaryPerson ? [primaryPerson.id] : []),
-        status: 'todo', priority: 'normal', dueDate: null,
-        sourceMeetingId: meeting.id,
-      });
-    }
-    Modal.close();
-    toast('Follow-up создан');
-    Router.render();
-  };
-}
-
 // Public feature commands used by the declarative command layer.
 FeatureLoader.register({ setMeetingPeriod, toggleMeetingMonth, deleteMeeting, openMeetingModal, meetingDetailGoBack });

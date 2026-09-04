@@ -29,10 +29,6 @@ function detailInlineSelectHtml({ id, value = '', options = [], editable = true,
   }).join('')}</select></span>`;
 }
 
-function detailRelationListHtml(items, { empty = 'Связей пока нет', renderItem }) {
-  return items?.length ? items.map(renderItem).join('') : `<div class="task-relation-empty">${escapeHtml(empty)}</div>`;
-}
-
 function entityDetailHtml({ className = '', header = '', main = '' }) {
   return `<section class="modal-panel modal-task-detail task-detail-page ${escapeHtml(className)}"><div class="task-detail-shell">${header}<div class="task-detail-layout"><main class="task-detail-main">${main}</main></div></div></section>`;
 }

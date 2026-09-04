@@ -367,7 +367,11 @@ test('server-side settings whitelist accepts all registered theme values, so the
   assert.match(match[1], /'khvoya'/);
   const defaultMatch = settings.match(/theme:\s*'([^']+)'/);
   assert.ok(defaultMatch, 'DEFAULT_USER_SETTINGS.theme не найден');
-  assert.strictEqual(defaultMatch[1], 'tuman', 'тема по умолчанию должна быть tuman');
+  assert.strictEqual(defaultMatch[1], 'anuppuccin-latte', 'тема по умолчанию должна быть AnuPpuccin Latte');
+  assert.match(settings, /const DEFAULT_ACCENT = 'green'/, 'акцентом по умолчанию должен быть green');
+  const indexHtml = read('public/index.html');
+  assert.match(indexHtml, /const defaultTheme = 'anuppuccin-latte'/, 'anti-FOUC должен применять AnuPpuccin Latte до первого рендера');
+  assert.match(indexHtml, /savedAccent = 'green'/, 'anti-FOUC должен применять зелёный акцент по умолчанию');
 });
 
 test('khvoya keeps a strictly brighter base < elevated < elevated-2 < hover < active surface order (style.css)', () => {
@@ -477,7 +481,8 @@ test('Документы и Инструменты открываются без
   assert.match(rendererSource, /function toolRowHtml\(/, 'entity-renderers.js: должна быть функция toolRowHtml для рендера строки инструмента');
 
   const docsSource = read('public/js/views/documents.js');
-  assert.match(docsSource, /resourceFolderLayoutHtml\('documents', folders, docs, selected, selectedFolder, filtered, documentRowHtml,/, 'documents.js: resourceFolderLayoutHtml должен получать documentRowHtml как rowRenderer, а не строку словоформы');
+  assert.match(docsSource, /Router\.replace\('\/knowledge-base'\)/, 'documents.js: старый маршрут должен перенаправлять в объединённую Базу знаний');
+  assert.doesNotMatch(docsSource, /legacyDocumentsLayoutContract|resourceFolderLayoutHtml\('documents'/, 'documents.js: мёртвый legacy-layout не должен оставаться после объединения разделов');
 
   const toolsSource = read('public/js/views/tools.js');
   assert.match(toolsSource, /resourceFolderLayoutHtml\('tools', folders, tools, selected, selectedFolder, filtered, toolRowHtml,/, 'tools.js: resourceFolderLayoutHtml должен получать toolRowHtml как rowRenderer, а не строку словоформы');
@@ -582,11 +587,345 @@ test('aggregate detail endpoints reuse permission filters instead of bypassing a
 test('employee first overview uses focused personal dashboard defaults', () => {
   const overview = read('public/js/views/overview.js');
   assert.match(overview, /function overviewDefaultDashboardForCurrentUser\(\)/);
-  assert.match(overview, /!Auth\.isAdmin\(\) && !Auth\.isTeamlead\(\)/);
+  assert.match(overview, /const isRegularMember = !!Auth\.user && !Auth\.isAdmin\(\)/);
   assert.match(overview, /project\?\.status === 'active' && \(project\.memberIds \|\| \[\]\)\.includes\(personId\)/);
   assert.match(overview, /\{ id: 'my-journal', type: 'my-journal', breakBefore: true \}/);
   assert.match(overview, /linkKey: 'knowledge', breakBefore: true/);
   assert.match(overview, /linkKey: 'labs-projects'/);
-  assert.match(overview, /signals: \[\{ id: 'week-events', type: 'week-events' \}, \{ id: 'attention-notes', type: 'attention-notes' \}\]/);
+  assert.match(overview, /signals: \[\{ id: 'priority-tasks', type: 'priority-tasks' \}, \{ id: 'week-events', type: 'week-events' \}, \{ id: 'attention-notes', type: 'attention-notes' \}\]/);
   assert.match(overview, /GardenSettings\.update\(\{ overviewDashboard: config \}\)/);
+});
+
+test('meetings support Club type and expose it in the meeting type filter', () => {
+  const constants = read('public/js/domain/constants.js');
+  const meetings = read('public/js/views/meetings.js');
+  assert.match(constants, /club:\s*'Клаб'/, 'MEETING_TYPE_LABEL should define the Clab meeting type');
+  assert.match(constants, /retro:\s*'Ретро'/, 'MEETING_TYPE_LABEL should define the Retro meeting type');
+  assert.match(constants, /project:\s*'Проектные'/, 'MEETING_TYPE_LABEL should define the Project meeting type');
+  assert.match(meetings, /\['all', '1:1', 'pr', 'club', 'retro', 'project', 'other'\]/, 'meeting type filter should include club, retro and project meetings');
+  assert.match(meetings, /club:\s*'Клаб'/, 'the meetings page should label the club filter as «Клаб»');
+  assert.ok((meetings.match(/<option value="club"/g) || []).length >= 2, 'Club should be selectable both when creating and editing a meeting');
+  assert.ok((meetings.match(/<option value="retro"/g) || []).length >= 2, 'Retro should be selectable both when creating and editing a meeting');
+  assert.ok((meetings.match(/<option value="project"/g) || []).length >= 2, 'Project meetings should be selectable both when creating and editing a meeting');
+});
+
+test('processes use task-like list/detail flow with autosave, archive and fix option statuses', () => {
+  const processes = read('public/js/views/processes.js');
+  const router = read('public/js/lib/router.js');
+  assert.match(router, /\/\^\\\/processes\\\/\(\[\^\/\]\+\)\\\/\?\$\//, 'router.js: process instances should have a routed detail page');
+  assert.match(processes, /Views\.processDetailPage/, 'processes.js: existing processes should open as detail pages');
+  assert.match(processes, /PROCESS_STATUS_LABEL = \{ ok: 'Работает', attention: 'Есть проблемы', broken: 'Сломан' \}/);
+  assert.match(processes, /PROCESS_FIX_STATUS_LABEL = \{ unchecked: 'Не проверялось', effective: 'Эффективно', ineffective: 'Неэффективно' \}/);
+  assert.match(processes, /expectedBehavior/, 'processes.js: should store expected process behavior');
+  assert.match(processes, /currentBehavior/, 'processes.js: should store current behavior/problems');
+  assert.match(processes, /fixOptions/, 'processes.js: should support multiple repair options');
+  assert.match(processes, /DetailAutosave\.set\(createAutosave/, 'process detail should autosave changes');
+  assert.match(processes, /archivedAt: new Date\(\)\.toISOString\(\)/, 'process actions should support archive');
+  assert.match(processes, /Resources\.processes\.remove\(id\)/, 'process actions should support deletion');
+  assert.match(processes, /eyebrow: ''/, 'PROCESS identifier should not be duplicated inside the detail body');
+  assert.match(processes, /p\.processKey \|\| 'PROCESS'/, 'process detail header should render the unique PROCESS key');
+});
+
+
+test('processes receive stable human-readable PROCESS keys', () => {
+  const identifiers = fs.readFileSync(path.join(ROOT, 'server/entity-identifiers.js'), 'utf8');
+  const crud = fs.readFileSync(path.join(ROOT, 'server/routes/crud.js'), 'utf8');
+  const server = fs.readFileSync(path.join(ROOT, 'server/index.js'), 'utf8');
+  assert.match(identifiers, /prefix: 'PROCESS'/);
+  assert.match(identifiers, /processKey: nextProcessKey\(\)/);
+  assert.match(identifiers, /\^PROCESS-\\d\{4,\}\$/);
+  assert.match(crud, /processes: \{[\s\S]*prepareCreate: \(payload\) => assignProcessKey\(payload\)/);
+  assert.match(server, /ensureProcessKeys\(\)/);
+});
+
+test('employee detail exposes project-style sticky sidebar and journals notes with a real person mention', () => {
+  const people = read('public/js/views/people.js');
+  const comments = read('server/routes/comments.js');
+  const settings = read('server/routes/settings.js');
+  assert.match(people, /id="person-comments-toggle"/, 'employee detail should expose a sticky sidebar toggle');
+  assert.match(people, /id="person-comments-drawer"/, 'employee detail should render the sticky sidebar drawer');
+  assert.match(people, /entityType: 'person', entityId: p\.id/, 'employee stickies should be stored against the person entity');
+  assert.match(people, /journalPrefix: `@\[\$\{String\(p\.name \|\| ''\).*\}\]\(person:\$\{p\.id\}\)`/, 'moving an employee sticky to journal must prepend a canonical person mention');
+  assert.match(comments, /person: \{ collection: 'people' \}/, 'comments API must resolve person entities');
+  assert.match(comments, /'project', 'person'/, 'person comments should support sticky-note color/autosave behavior');
+  assert.match(settings, /personNotesOpen/, 'employee sidebar open state should persist in user settings');
+});
+
+test('meeting rows render up to five overlapping participant avatars with an overflow count', () => {
+  const meetings = read('public/js/views/meetings.js');
+  const css = read('public/css/system.css');
+  assert.match(meetings, /participants\.slice\(0, 5\)/);
+  assert.match(meetings, /и ещё \$\{extra\}/);
+  assert.match(meetings, /meeting-participants-stack/);
+  assert.doesNotMatch(meetings, /const employee = participants\[0\]/);
+  assert.match(css, /\.meeting-participants-stack \.ui-person-avatar[\s\S]*margin-left:\s*-7px/);
+});
+
+test('repository includes a README describing Garden Team Center capabilities', () => {
+  const readme = read('README.md');
+  assert.match(readme, /Garden Team Center/);
+  assert.match(readme, /## Возможности/);
+  assert.match(readme, /### Встречи/);
+  assert.match(readme, /### Процессы/);
+});
+
+test('work area width adapts to large screens while detail and table views keep suitable widths', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'public/css/system.css'), 'utf8');
+  assert.match(css, /--content-max:\s*clamp\(980px,\s*68vw,\s*1280px\)/);
+  assert.match(css, /--detail-content-max:\s*clamp\(880px,\s*58vw,\s*1060px\)/);
+  assert.match(css, /\.view\.task-detail-page-view\s*\{[\s\S]*?--detail-content-max/);
+  assert.match(css, /\.view\.gcal-wide,\s*\n\.view\.checkins-wide\s*\{[\s\S]*?--wide-content-gutter/);
+});
+
+
+test('overview settings section and attention signal preferences are removed without removing overview widgets', () => {
+  const settingsView = read('public/js/views/settings.js');
+  assert.doesNotMatch(settingsView, /key:\s*'focus'/, 'settings.js: раздел «Обзор» не должен оставаться в навигации настроек');
+  assert.doesNotMatch(settingsView, /data-attention/, 'settings.js: переключатели сигналов Обзора должны быть удалены');
+  assert.doesNotMatch(settingsView, /Выберите сигналы для страницы «Обзор»/, 'settings.js: описание удалённого раздела не должно оставаться');
+
+  const settingsRoute = read('server/routes/settings.js');
+  assert.doesNotMatch(settingsRoute, /attention:\s*\{\s*workload:/, 'routes/settings.js: пользовательская настройка списка сигналов больше не хранится');
+
+  const overview = read('public/js/views/overview.js');
+  assert.match(overview, /'team-workload'/, 'overview.js: сами виджеты Обзора должны остаться');
+  assert.match(overview, /'attention-notes'/, 'overview.js: виджет «Записи из журнала» должен остаться');
+});
+
+test('sticky sidebars use a sticky-note icon and explicit panel tooltip', () => {
+  const icons = read('public/js/lib/icons.js');
+  const views = [
+    read('public/js/views/overview.js'),
+    read('public/js/views/projects.js'),
+    read('public/js/views/people.js'),
+    read('public/js/views/tasks.js'),
+    read('public/js/views/meetings.js'),
+  ].join('\n');
+  assert.match(icons, /sticky:\s*'<path/, 'icons: должна быть отдельная иконка стикера');
+  assert.match(views, /icon\('sticky', 16\)/, 'правые панели стикеров должны использовать иконку стикера');
+  assert.match(views, /Показать панель стикеров/, 'закрытая панель должна иметь понятный tooltip');
+  assert.match(views, /Скрыть панель стикеров/, 'открытая панель должна иметь понятный tooltip');
+});
+
+test('stakeholders do not expose birthday in create/edit forms or detail context', () => {
+  const people = read('public/js/views/people.js');
+  assert.match(people, /type === 'team' \? `<div class="ui-field-row field-row">[\s\S]*pf-birthday/, 'birthday input should only render for team members');
+  assert.match(people, /if \(type === 'team'\) \{[\s\S]*payload\.birthday = document\.getElementById\('pf-birthday'\)/, 'birthday should only be written for team members');
+  assert.match(people, /p\.type === 'team' && p\.birthday/, 'birthday should only be shown in team member context');
+});
+
+test('team cards use a bounded container-responsive 1/2/3-column grid and keep local time at the top', () => {
+  const css = read('public/css/system.css');
+  const people = read('public/js/views/people.js');
+  assert.match(people, /people-grid-responsive/);
+  assert.match(css, /\.people-grid-responsive \{ container-type: inline-size; \}/);
+  assert.match(css, /\.people-grid--team \{[\s\S]*grid-template-columns: minmax\(0, 400px\) !important;[\s\S]*justify-content: start !important;/);
+  assert.match(css, /@container \(min-width: 810px\)[\s\S]*repeat\(2, minmax\(0, 400px\)\)/);
+  assert.match(css, /@container \(min-width: 1220px\)[\s\S]*repeat\(3, minmax\(0, 400px\)\)/);
+  assert.match(css, /\.pc-local-time \{[\s\S]*align-self: start;[\s\S]*margin-top: 0 !important;/);
+});
+
+test('Office demo data exercises current Garden entities, including Check-in, Processes and Clubs', () => {
+  const demoPath = path.join(ROOT, 'server/demo-data.js');
+  delete require.cache[require.resolve(demoPath)];
+  const demo = require(demoPath);
+  const activeTeam = demo.people.filter((p) => p.type === 'team' && p.status === 'active');
+  const currentWeek = '2026-08-31';
+  for (const person of activeTeam) {
+    assert.ok(demo.checkins.some((c) => c.personId === person.id && c.weekStart === currentWeek), `missing current Check-in for ${person.name}`);
+  }
+  assert.ok(demo.processes.length >= 3, 'demo should include several processes');
+  assert.deepEqual(new Set(demo.processes.map((p) => p.status)), new Set(['ok', 'attention', 'broken']));
+  assert.ok(demo.processes.every((p) => /^PROCESS-\d{4}$/.test(p.processKey || '')), 'demo processes should have PROCESS keys');
+  assert.ok(demo.meetings.some((m) => m.type === 'club' && (m.participantIds || []).length > 5), 'demo should demonstrate Club and participant overflow');
+  assert.ok(demo.kbDocs.length > 0 && demo.tools.length > 0, 'demo knowledge base and tools should not be empty');
+});
+
+test('personal and team task widgets rank up to five tasks with configurable strategies', () => {
+  const overview = read('public/js/views/overview.js');
+  const settingsView = read('public/js/views/settings.js');
+  const settingsRoute = read('server/routes/settings.js');
+  assert.match(overview, /const TASK_PRIORITY_MODES = \{/);
+  assert.match(overview, /balanced:[\s\S]*overdue: 40[\s\S]*today: 50/);
+  assert.match(overview, /importance:[\s\S]*important: 60/);
+  assert.match(overview, /overdue:[\s\S]*overdue: 70/);
+  assert.match(overview, /'priority-tasks': 'Мои задачи'/);
+  assert.match(overview, /'team-priority-tasks': 'Задачи команды'/);
+  assert.match(overview, /widget\.type === 'priority-tasks' \|\| widget\.type === 'team-priority-tasks'/);
+  assert.match(overview, /tasks\.filter\(\(task\) => !personId \|\| !\(task\.assigneeIds \|\| \[\]\)\.includes\(personId\)\)/);
+  assert.match(overview, /tasks\.filter\(\(task\) => \(task\.assigneeIds \|\| \[\]\)\.includes\(personId\)\)/);
+  assert.match(overview, /rankedPriorityTasks\(sourceTasks, priorityMode, today\)\.slice\(0, 5\)/);
+  assert.match(overview, /const projectName = store\.project\(task\.projectId\)\?\.name \|\| '';/);
+  assert.match(overview, /if \(projectName\) metaParts\.push\(projectName\);/);
+  assert.doesNotMatch(overview, /overview-widget-footer-note[^\n]*modeLabel/);
+  assert.match(overview, /Просрочено \$\{overdueDays\} дн\./);
+  assert.match(overview, /Auth\.isTeamlead\(\)[\s\S]*team-priority-tasks/);
+  assert.match(settingsView, /name="task-priority-mode"/);
+  assert.match(settingsView, /Сбалансированный/);
+  assert.match(settingsView, /По дедлайнам/);
+  assert.match(settingsView, /По важности/);
+  assert.match(settingsView, /Разгребание долгов/);
+  assert.match(settingsView, /Смотрим на срок и важность задачи\. Ближайшие задачи обычно важнее просроченных\./);
+  assert.match(settingsView, /Акцент на ближайших задачах\. Важность влияет на порядок, но не так сильно\./);
+  assert.match(settingsView, /Поднимает важные задачи, сортирует их по сроку\./);
+  assert.match(settingsView, /Чем дольше задача просрочена, тем выше она в списке\./);
+  assert.match(settingsRoute, /taskPriorityMode: 'balanced'/);
+  assert.match(settingsRoute, /team-priority-tasks/);
+  assert.match(settingsRoute, /\['balanced', 'deadline', 'importance', 'overdue'\]/);
+});
+
+
+test('overview priority task widgets allow inline task status changes', () => {
+  const overview = read('public/js/views/overview.js');
+  assert.match(overview, /trailingHtml:\s*taskStatusBadge\(task\.status \|\| 'todo', task\.id\)/);
+  assert.match(overview, /overview-mini-trailing/);
+});
+
+test('overview task widget status click does not activate the parent task row and task rows show assignee avatars', () => {
+  const overview = read('public/js/views/overview.js');
+  const bootstrap = read('public/js/bootstrap.js');
+  assert.match(overview, /const assignee = store\.person\(\(task\.assigneeIds \|\| \[\]\)\[0\]\) \|\| null/);
+  assert.match(bootstrap, /event\.target\.closest\?\.\('\[data-action-stop="1"\]'\)\) return;/);
+});
+
+test('task list has no priority-strategy sorting control', () => {
+  const tasks = fs.readFileSync(path.join(ROOT, 'public/js/views/tasks.js'), 'utf8');
+  assert.doesNotMatch(tasks, /task-sort-mode/);
+  assert.doesNotMatch(tasks, /_taskSortMode/);
+  assert.doesNotMatch(tasks, /sortTasksByPriorityStrategy/);
+});
+
+test('task create deadline suggestions are compact inline actions', () => {
+  const tasks = read('public/js/views/tasks.js');
+  assert.match(tasks, /Поставить на:<\/span><button[^>]+>сегодня<\/button><span[^>]*>·<\/span><button[^>]+>завтра<\/button><span[^>]*>·<\/span><button[^>]+>конец недели<\/button>/);
+});
+
+test('obvious unused legacy helpers are removed', () => {
+  const source = [
+    read('public/js/lib/detail-page.js'),
+    read('public/js/lib/interactions.js'),
+    read('public/js/lib/ui-helpers.js'),
+    read('public/js/lib/mentions.js'),
+    read('public/js/views/meetings.js'),
+    read('public/js/views/goals.js'),
+    read('public/js/views/agreements.js'),
+    read('public/js/views/documents.js'),
+  ].join('\n');
+  [
+    'detailRelationListHtml',
+    'accentMeta',
+    'currentAccent',
+    'multiCheckList',
+    'getCheckedValues',
+    'timezoneLineHtml',
+    'attachMentionAutocomplete(',
+    'openMeetingFollowup',
+    'linkTaskToGoal',
+    'deleteAgreement',
+    'legacyDocumentsLayoutContract',
+  ].forEach((name) => assert.doesNotMatch(source, new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))));
+});
+
+test('task priority strategy descriptions explain each strategy', () => {
+  const settings = fs.readFileSync(path.join(ROOT, 'public/js/views/settings.js'), 'utf8');
+  assert.match(settings, /Смотрим на срок и важность задачи\. Ближайшие задачи обычно важнее просроченных\./);
+  assert.match(settings, /Акцент на ближайших задачах\. Важность влияет на порядок, но не так сильно\./);
+  assert.match(settings, /Поднимает важные задачи, сортирует их по сроку\./);
+  assert.match(settings, /Чем дольше задача просрочена, тем выше она в списке\./);
+});
+
+test('meetings expose missed follow-up state, outcome tabs and a top type filter', () => {
+  const meetings = read('public/js/views/meetings.js');
+  const css = read('public/css/style.css');
+  assert.match(meetings, /function meetingHasOutcomeRecords\(meeting\)/);
+  assert.match(meetings, /meetingIsPast\(meeting, todayKey\).*?!meetingHasOutcomeRecords\(meeting\)/s);
+  assert.match(meetings, /нет записей по итогам/);
+  assert.match(meetings, /data-command-arg="upcoming">Будущие/);
+  assert.match(meetings, /data-command-arg="completed">Завершённые/);
+  assert.match(meetings, /data-command-arg="missed">Без итогов/);
+  assert.match(meetings, /data-command-arg="all">Все/);
+  assert.match(meetings, /id="meeting-type-filter"/);
+  assert.match(meetings, /all: 'Все встречи'/);
+  assert.match(meetings, /<option value="\$\{value\}"/);
+  assert.match(css, /\.meeting-missed-label/);
+});
+
+
+
+test('past meeting tabs expand all month groups by default', () => {
+  const meetings = read('public/js/views/meetings.js');
+  assert.match(meetings, /const expandedByDefault = Views\._meetingPeriod === 'upcoming' \? index === 0 : true;/);
+});
+
+test('team leads get a missed meetings widget sorted by days without outcome records', () => {
+  const overview = read('public/js/views/overview.js');
+  const settingsRoute = read('server/routes/settings.js');
+  assert.match(overview, /'missed-meetings': 'Встречи без итогов'/);
+  assert.match(overview, /Auth\.isTeamlead\(\)[\s\S]*missed-meetings/);
+  assert.match(overview, /widget\.type === 'missed-meetings'/);
+  assert.match(overview, /sort\(\(a, b\) => b\.days - a\.days/);
+  assert.match(overview, /pluralRu\(days, 'день', 'дня', 'дней'\)/);
+  assert.match(settingsRoute, /missed-meetings/);
+});
+
+
+test('meeting filters stay flat and missed widget shows type plus age', () => {
+  const meetings = read('public/js/views/meetings.js');
+  const overview = read('public/js/views/overview.js');
+  assert.doesNotMatch(meetings, /view-narrow work-list-page meetings-view/);
+  assert.match(meetings, /view-narrow meetings-view/);
+  assert.match(overview, /MEETING_TYPE_LABEL\[meeting\.type\].*pluralRu\(days, 'день', 'дня', 'дней'\).*назад/);
+});
+
+test('meeting tabs update only list content, preserve scroll and keep task-like spacing', () => {
+  const meetings = read('public/js/views/meetings.js');
+  const css = read('public/css/style.css');
+  assert.match(meetings, /function renderMeetingsWorkspace\(meetings\)/);
+  assert.match(meetings, /Views\._meetingsCache = meetings/);
+  const periodBlock = meetings.match(/function setMeetingPeriod\(period\)[\s\S]*?\n\}/)?.[0] || '';
+  assert.match(periodBlock, /querySelector\('\.meetings-list-body'\)/);
+  assert.match(periodBlock, /body\.innerHTML = meetingPeriodContent\(Views\._meetingsCache \|\| \[\]\)/);
+  assert.match(periodBlock, /scrollTop/);
+  assert.doesNotMatch(periodBlock, /renderMeetingsWorkspace|Views\.meetings\(/);
+  assert.match(meetings, /work-list-page meetings-work-surface/);
+  assert.match(meetings, /view\.classList\.add\('task-page'\)/);
+  assert.match(css, /\.meeting-sticky-toolbar \{ padding-bottom: 18px; margin-bottom: 16px; \}/);
+  assert.match(css, /\.meetings-work-surface \.meetings-list-body\{[\s\S]*padding-top: 18px/);
+});
+
+
+test('overview operational widgets deep-link to the relevant filtered context', () => {
+  const overview = read('public/js/views/overview.js');
+  const meetings = read('public/js/views/meetings.js');
+  const tasks = read('public/js/views/tasks.js');
+  const people = read('public/js/views/people.js');
+  assert.match(overview, /data-route="\/meetings\?period=missed">Все без итогов/);
+  assert.match(meetings, /Router\.queryParam\('period'\)/);
+  assert.match(meetings, /Views\._meetingPeriod = requestedPeriod/);
+  assert.match(overview, /route: `\$\{personPath\(p\)\}\?tab=load`/);
+  assert.match(people, /Router\.queryParam\('tab'\)/);
+  assert.match(people, /Views\._personTab = requestedTab/);
+  assert.match(overview, /route: assigneeId \? `\/tasks\?person=\$\{encodeURIComponent\(assigneeId\)\}&project=all` : '\/tasks\?project=all'/);
+  assert.match(tasks, /Router\.queryParam\('person'\)/);
+  assert.match(tasks, /requestedPerson \? requestedPerson\.id : Views\._taskPersonFilter/);
+  assert.match(tasks, /Router\.queryParam\('project'\)/);
+  assert.match(tasks, /requestedProjectFilter === 'all'.*Views\._taskProjectFilter = 'all'/s);
+});
+
+
+test('overview task links clear stale project filters and entity task rows use canonical task typography', () => {
+  const overview = read('public/js/views/overview.js');
+  const projects = read('public/js/views/projects.js');
+  const people = read('public/js/views/people.js');
+  const css = read('public/css/system.css');
+  assert.match(overview, /\/tasks\?mine=1&project=all[\s\S]*?Все мои задачи/);
+  assert.match(overview, /\/tasks\?person=\$\{encodeURIComponent\(assigneeId\)\}&project=all/);
+  assert.match(projects, /ui-row ui-row--task list-row task-list-row project-task-row/);
+  assert.match(projects, /class="tl-title"/);
+  assert.match(projects, /personAvatarLinkHtml/);
+  assert.doesNotMatch(projects.match(/if \(key === 'tasks'\)[\s\S]*?emptyState\('Задач нет'/)?.[0] || '', /personChip/);
+  assert.match(people, /ui-row ui-row--task list-row task-list-row/);
+  assert.match(css, /\.project-detail-page-shell \.task-list-row \.tl-title,[\s\S]*\.person-detail \.task-list-row \.tl-title[\s\S]*font-size: 13px;[\s\S]*font-weight: 400/);
+  assert.doesNotMatch(people, /task-assignee-cell\" aria-hidden=\"true/);
+  assert.match(css, /\.person-detail \.task-list-row \.tl-right,[\s\S]*grid-template-columns: minmax\(170px, 220px\) 118px/);
 });

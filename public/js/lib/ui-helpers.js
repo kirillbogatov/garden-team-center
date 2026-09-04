@@ -55,37 +55,7 @@ function optionsHtml(list, valueKey, labelFn, selected) {
     .join('');
 }
 
-function multiCheckList(list, name, labelFn, selectedIds) {
-  selectedIds = selectedIds || [];
-  return list
-    .map(
-      (item) => `<label style="display:flex;align-items:center;gap:8px;padding:5px 2px;font-size:12.5px;cursor:pointer;">
-        <input type="checkbox" name="${name}" value="${item.id}" ${selectedIds.includes(item.id) ? 'checked' : ''}/> ${escapeHtml(labelFn(item))}
-      </label>`
-    )
-    .join('');
-}
-
-function getCheckedValues(container, name) {
-  return Array.from(container.querySelectorAll(`input[name="${name}"]:checked`)).map((i) => i.value);
-}
-
 // ---------------- Часовой пояс / график работы ----------------
-
-// Компактная строка для карточки/списка: "Новосибирск · +5 ч · 04:00–13:00 у вас"
-function timezoneLineHtml(person) {
-  if (!person || !person.timezone) return '';
-  const diff = tzDiffMinutes(person.timezone);
-  const bits = [];
-  if (person.city) bits.push(escapeHtml(person.city));
-  else bits.push(escapeHtml(timezoneNameRu(person.timezone)));
-  bits.push(escapeHtml(timezoneMoscowDiffLabel(person.timezone)));
-  if (person.workStart && person.workEnd) {
-    bits.push(`${shiftHHMMByDiff(person.workStart, diff)}–${shiftHHMMByDiff(person.workEnd, diff)}`);
-  }
-  if (!bits.length) return '';
-  return `<div class="tz-line">${bits.map((b) => `<span>${b}</span>`).join('<span>·</span>')}</div>`;
-}
 
 // Панель на странице профиля: разница во времени и график работы, пересчитанный на Калининград.
 // Строка с текущим статусом человека: работает / рабочий день закончен / начнёт через Х ч / в отпуске до дд.мм.

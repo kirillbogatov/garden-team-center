@@ -65,7 +65,7 @@ Views.projectDetail = async function (id) {
   ]);
 
   setTopbar(`<h1>${escapeHtml(p.name)}</h1><div class="actions">
-    <button type="button" class="sidebar-collapse-btn overview-comments-sidebar-toggle" id="project-comments-toggle" aria-label="Показать заметки" title="Показать заметки" aria-expanded="false">${icon('sidebar', 16)}</button>
+    <button type="button" class="sidebar-collapse-btn overview-comments-sidebar-toggle" id="project-comments-toggle" aria-label="Показать панель стикеров" title="Показать панель стикеров" aria-expanded="false">${icon('sticky', 16)}</button>
     ${Auth.canEditItem('projects', p) ? `<button class="ui-button btn" data-command="editCurrentProject">${icon('edit',14)} Редактировать</button>` : ''}
   </div>`);
 
@@ -82,7 +82,16 @@ Views.projectDetail = async function (id) {
     if (key === 'tasks') return data.tasks.length ? data.tasks.map((t) => {
       const idx = registerAction(() => FeatureLoader.run('openTaskModal', t.id));
       const assignees = (t.assigneeIds || []).map((id) => store.person(id)).filter(Boolean);
-      return `<div class="ui-row list-row" data-action-id="${idx}">${taskStatusBadge(t.status, t.id)}<span class="title">${escapeHtml(t.title)}</span>${assignees.map(personChip).join('')}${priorityBadge(t.priority)}</div>`;
+      const overdue = t.dueDate && t.status !== 'done' && t.dueDate.slice(0, 10) < todayStr();
+      return `<div class="ui-row ui-row--task list-row task-list-row project-task-row" data-action-id="${idx}">
+        ${taskStatusBadge(t.status, t.id)}
+        <span class="tl-title">${escapeHtml(t.title)}</span>
+        <div class="tl-right">
+          <div class="task-tags-cell"><span class="task-labels-group">${priorityBadge(t.priority)}</span></div>
+          <div class="task-due-cell">${t.dueDate ? `<span class="tiny" style="${overdue ? 'color:var(--red)' : ''}">${t.status === 'done' ? deadlineDateLabel(t.dueDate) : dueLabel(t.dueDate)}</span>` : ''}</div>
+          <div class="task-assignee-cell">${assignees.length ? `<div class="flex gap-4">${assignees.map((a) => personAvatarLinkHtml(a)).join('')}</div>` : avatarHtml(null)}</div>
+        </div>
+      </div>`;
     }).join('') : emptyState('Задач нет', '', 'tasks');
     if (key === 'issues') return data.issues.length ? data.issues.map((i) => {
       const idx = registerAction(() => FeatureLoader.run('openIssueModal', i.id));
@@ -136,7 +145,7 @@ Views.projectDetail = async function (id) {
     mainShell?.classList.toggle('overview-comments-open', isOpen);
     drawer?.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
     if (toggle) {
-      const label = isOpen ? 'Скрыть стикеры' : 'Показать стикеры';
+      const label = isOpen ? 'Скрыть панель стикеров' : 'Показать панель стикеров';
       toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
       toggle.setAttribute('aria-label', label);
       toggle.setAttribute('title', label);

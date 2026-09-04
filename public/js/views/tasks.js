@@ -11,9 +11,16 @@ const TASK_STATUS_ORDER = ['todo', 'in_progress', 'in_review', 'paused', 'blocke
 Views.tasks = async function () {
   const mineOnly = Router.queryParam('mine') === '1';
   const currentPersonId = Auth.user?.personId || null;
-  // Быстрый переход «Мои задачи» должен быть отражён не только в выборке,
-  // но и в видимом состоянии фильтра сотрудников.
-  const taskPersonFilter = mineOnly && currentPersonId ? currentPersonId : Views._taskPersonFilter;
+  const requestedPersonId = Router.queryParam('person');
+  const requestedPerson = requestedPersonId ? store.person(requestedPersonId) : null;
+  const requestedProjectFilter = Router.queryParam('project');
+  if (requestedProjectFilter === 'all') Views._taskProjectFilter = 'all';
+  // Переходы из виджетов могут сразу открыть задачи конкретного сотрудника.
+  // Query-параметр задаёт только фильтр сотрудника и не сбрасывает остальные
+  // настройки представления/фильтры страницы.
+  const taskPersonFilter = mineOnly && currentPersonId
+    ? currentPersonId
+    : (requestedPerson ? requestedPerson.id : Views._taskPersonFilter);
   const isKanban = Views._taskViewMode === 'kanban';
   const filtersCollapsed = !!Views._taskFiltersCollapsed;
   setTopbar(`<h1>${mineOnly ? 'Мои задачи' : 'Задачи'}</h1>
@@ -26,8 +33,19 @@ Views.tasks = async function () {
         <span class="task-filter-toggle-chevron ${filtersCollapsed ? '' : 'open'}">${icon('chevronRight', 12)}</span>
         <span>Фильтры</span>
       </button>
-      ${Auth.canCreate('tasks') ? `<button class="ui-button ui-button--primary btn btn-primary" data-command="openTaskModal">+ Добавить задачу</button>` : ''}
+      ${Auth.canCreate('tasks') ? `<button class="ui-button ui-button--primary btn btn-primary" id="task-create-button">+ Добавить задачу</button>` : ''}
     </div>`);
+  const taskCreateButton = document.getElementById('task-create-button');
+  if (taskCreateButton) {
+    taskCreateButton.onclick = () => {
+      const prefill = {};
+      if (taskPersonFilter !== 'all') prefill.assigneeIds = [taskPersonFilter];
+      if (Views._taskProjectFilter?.startsWith('project:')) {
+        prefill.projectId = Views._taskProjectFilter.slice('project:'.length);
+      }
+      FeatureLoader.run('openTaskModal', null, { prefill });
+    };
+  }
   const view = document.getElementById('view');
   view.classList.add('task-page');
   view.classList.toggle('task-board-wide', isKanban);
@@ -185,7 +203,7 @@ Views.tasks = async function () {
   const personFilter = document.getElementById('task-person-filter');
   if (personFilter) personFilter.onchange = (e) => {
     Views._taskPersonFilter = e.target.value;
-    if (mineOnly) Router.replace('/tasks');
+    if (mineOnly || requestedPersonId) Router.replace('/tasks');
     Views.tasks();
   };
   document.getElementById('task-view-list').onclick = () => { Views._taskViewMode = 'list'; Views.tasks(); };
@@ -328,7 +346,7 @@ async function openTaskModal(id, opts) {
   const hasTaskActions = true;
   setTopbar(`<h1 class="topbar-h1-key">${escapeHtml(t.taskKey || '')}</h1>
     <div class="actions task-detail-topbar-actions">
-      <button type="button" class="sidebar-collapse-btn task-notes-sidebar-toggle" id="task-notes-toggle" aria-label="Скрыть стикеры" title="Скрыть стикеры" aria-expanded="true">${icon('sidebar', 16)}</button>
+      <button type="button" class="sidebar-collapse-btn task-notes-sidebar-toggle" id="task-notes-toggle" aria-label="Скрыть панель стикеров" title="Скрыть панель стикеров" aria-expanded="true">${icon('sticky', 16)}</button>
       ${hasTaskActions ? `<div class="task-actions-menu-wrap">
         <button type="button" class="ui-button btn task-detail-topbar-btn" id="task-actions-toggle" aria-haspopup="menu" aria-expanded="false">Действия</button>
         <div class="task-actions-menu" id="task-actions-menu" role="menu" hidden>
@@ -440,12 +458,12 @@ ${detailPageHeaderHtml({ title: t.title, eyebrow: '', inputId: 'tf-title', displ
     mainShell?.classList.toggle('task-notes-open', isOpen);
     notesDrawer?.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
     if (notesToggle) {
-      const label = isOpen ? 'Скрыть стикеры' : 'Показать стикеры';
+      const label = isOpen ? 'Скрыть панель стикеров' : 'Показать панель стикеров';
       notesToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
       notesToggle.setAttribute('aria-label', label);
       notesToggle.setAttribute('title', label);
       notesToggle.classList.toggle('is-active', isOpen);
-      notesToggle.innerHTML = icon('sidebar', 16);
+      notesToggle.innerHTML = icon('sticky', 16);
     }
   };
   // Notes are open by default on every task visit, but only where the layout
@@ -741,7 +759,41 @@ async function openTaskCreateModal(opts) {
     { key: 'assigneeIds', label: 'Исполнители', type: 'people', multi: true, people: () => store.team(), emptyLabel: 'Не назначено', placeholder: 'Добавить исполнителя…', hint: 'Каждый новый исполнитель получает отдельную копию задачи со своим статусом.' },
     { key: 'status', label: 'Статус', type: 'select', default: 'todo', options: ['todo','in_progress','in_review','paused','blocked','done'].map((value) => ({ value, label: TASK_STATUS_LABEL[value] })) },
     { key: 'priority', label: 'Приоритет', type: 'select', default: 'normal', options: ['normal','high'].map((value) => ({ value, label: PRIORITY_LABEL[value] })) },
-    { key: 'dueDate', label: 'Срок', type: 'date', parse: (v) => v || null },
+    {
+      key: 'dueDate', label: 'Срок', type: 'date', parse: (v) => v || null,
+      render: ({ id, value, disabled }) => `<div class="task-due-date-create"><input id="${id}" type="date" value="${escapeHtml(value || '')}" ${disabled}/><div class="task-date-suggestions" aria-label="Быстрый выбор срока"><span class="task-date-suggestions-label">Поставить на:</span><button type="button" class="task-date-suggestion" data-task-date-suggest="today">сегодня</button><span class="task-date-suggestion-separator" aria-hidden="true">·</span><button type="button" class="task-date-suggestion" data-task-date-suggest="tomorrow">завтра</button><span class="task-date-suggestion-separator" aria-hidden="true">·</span><button type="button" class="task-date-suggestion" data-task-date-suggest="week-end">конец недели</button></div></div>`,
+      init: ({ root }) => {
+        const field = root?.closest('.entity-form-field');
+        if (!root || !field) return;
+        const iso = (date) => {
+          const y = date.getFullYear();
+          const m = String(date.getMonth() + 1).padStart(2, '0');
+          const d = String(date.getDate()).padStart(2, '0');
+          return `${y}-${m}-${d}`;
+        };
+        const targetDate = (kind) => {
+          const date = new Date();
+          date.setHours(12, 0, 0, 0);
+          if (kind === 'tomorrow') date.setDate(date.getDate() + 1);
+          if (kind === 'week-end') {
+            const day = date.getDay();
+            const daysToFriday = (5 - day + 7) % 7;
+            // В выходные «до конца недели» означает ближайшее воскресенье,
+            // чтобы саджест никогда не подставлял уже прошедшую пятницу.
+            if (day === 6) date.setDate(date.getDate() + 1);
+            else if (day === 0) {}
+            else date.setDate(date.getDate() + daysToFriday);
+          }
+          return iso(date);
+        };
+        field.querySelectorAll('[data-task-date-suggest]').forEach((button) => {
+          button.addEventListener('click', () => {
+            root.value = targetDate(button.dataset.taskDateSuggest);
+            root.dispatchEvent(new Event('change', { bubbles: true }));
+          });
+        });
+      },
+    },
     // Relations and personal notes intentionally stay edit-only.
     { key: 'goalIds', label: 'Цели', type: 'text', create: false },
     { key: 'personalNotes', label: 'Заметки', type: 'textarea', create: false },

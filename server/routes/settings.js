@@ -11,14 +11,12 @@ module.exports = function registerSettingsRoutes(app, deps) {
   // Допустимые значения акцента — должны совпадать с ACCENT_COLORS
   // в public/js/lib/interactions.js.
   const ACCENT_VALUES = ['rosewater', 'flamingo', 'pink', 'mauve', 'red', 'maroon', 'peach', 'yellow', 'green', 'teal', 'sky', 'lavender'];
-  const DEFAULT_ACCENT = 'mauve';
+  const DEFAULT_ACCENT = 'green';
   const DEFAULT_USER_SETTINGS = {
-    theme: 'tuman', accentColor: DEFAULT_ACCENT, uiScale: 100, favoriteMenuItems: [], navSectionOverrides: {}, overviewDashboard: null, overviewNotesOpen: false, overviewNotesWidth: 300, overviewNoteOrder: [], projectNotesOpen: {},
-    attention: { workload:true, incompleteWorkload:true, noProjectTasks:true, projectIssue:true, highSeverityIssues:true, highPriorityItems:true, agreementTomorrow:true, noInProgressOnActiveProject:true, noActiveProjects:true, checkinDue:true },
+    theme: 'anuppuccin-latte', accentColor: DEFAULT_ACCENT, uiScale: 100, favoriteMenuItems: [], navSectionOverrides: {}, overviewDashboard: null, overviewNotesOpen: false, overviewNotesWidth: 300, overviewNoteOrder: [], projectNotesOpen: {}, personNotesOpen: {}, taskPriorityMode: 'balanced',
   };
   function normalizeUserSettings(value) {
     const source = value && typeof value === 'object' ? value : {};
-    const attention = source.attention && typeof source.attention === 'object' ? source.attention : {};
     const hiddenSource = source.attentionHiddenUntil && typeof source.attentionHiddenUntil === 'object' ? source.attentionHiddenUntil : {};
     const attentionHiddenUntil = {};
     Object.entries(hiddenSource).forEach(([key, value]) => {
@@ -41,7 +39,7 @@ module.exports = function registerSettingsRoutes(app, deps) {
       if (!Array.isArray(items)) return null;
       const allowed = shelf === 'quick'
         ? new Set(['my-tasks','project-tasks','my-issues','my-agreements','my-journal','my-ideas','my-meetings','quick-link','quick-links'])
-        : new Set(['goals','team-workload','priority-tasks','unresolved-issues','week-events','attention-notes']);
+        : new Set(['goals','team-workload','priority-tasks','team-priority-tasks','missed-meetings','unresolved-issues','week-events','attention-notes']);
       return items.slice(0, 24).filter((item) => item && typeof item === 'object' && allowed.has(item.type) && typeof item.id === 'string').map((item) => ({
         id: item.id.slice(0, 160),
         type: item.type,
@@ -58,9 +56,17 @@ module.exports = function registerSettingsRoutes(app, deps) {
       const id = String(key || '').slice(0, 120);
       if (id) projectNotesOpen[id] = !!value;
     });
+    const personNotesSource = source.personNotesOpen && typeof source.personNotesOpen === 'object' && !Array.isArray(source.personNotesOpen) ? source.personNotesOpen : {};
+    const personNotesOpen = {};
+    Object.entries(personNotesSource).slice(0, 200).forEach(([key, value]) => {
+      const id = String(key || '').slice(0, 120);
+      if (id) personNotesOpen[id] = !!value;
+    });
     const overviewNotesWidthRaw = Number(source.overviewNotesWidth);
     const overviewNotesWidth = Number.isFinite(overviewNotesWidthRaw) ? Math.max(240, Math.min(640, Math.round(overviewNotesWidthRaw))) : 300;
     const overviewNoteOrder = Array.isArray(source.overviewNoteOrder) ? source.overviewNoteOrder.map((id) => String(id).slice(0, 120)).filter(Boolean).slice(0, 200) : [];
+    const priorityModes = ['balanced', 'deadline', 'importance', 'overdue'];
+    const taskPriorityMode = priorityModes.includes(source.taskPriorityMode) ? source.taskPriorityMode : DEFAULT_USER_SETTINGS.taskPriorityMode;
     const scaleSteps = [80, 90, 100, 110, 125];
     const rawUiScale = Number(source.uiScale);
     const theme = THEME_VALUES.includes(source.theme) ? source.theme : DEFAULT_USER_SETTINGS.theme;
@@ -71,15 +77,8 @@ module.exports = function registerSettingsRoutes(app, deps) {
     const accentColor = ACCENT_VALUES.includes(source.accentColor) ? source.accentColor : DEFAULT_ACCENT;
     return {
       uiScale: scaleSteps.includes(rawUiScale) ? rawUiScale : 100,
-      favoriteMenuItems, navSectionOverrides, overviewDashboard, overviewNotesOpen: !!source.overviewNotesOpen, overviewNotesWidth, overviewNoteOrder, projectNotesOpen,
-      theme, accentColor,
-      attention: {
-        workload: attention.workload !== false, incompleteWorkload: attention.incompleteWorkload !== false,
-        noProjectTasks: attention.noProjectTasks !== false, projectIssue: attention.projectIssue !== false,
-        highSeverityIssues: attention.highSeverityIssues !== false, highPriorityItems: attention.highPriorityItems !== false,
-        agreementTomorrow: attention.agreementTomorrow !== false, noInProgressOnActiveProject: attention.noInProgressOnActiveProject !== false,
-        noActiveProjects: attention.noActiveProjects !== false, checkinDue: attention.checkinDue !== false,
-      },
+      favoriteMenuItems, navSectionOverrides, overviewDashboard, overviewNotesOpen: !!source.overviewNotesOpen, overviewNotesWidth, overviewNoteOrder, projectNotesOpen, personNotesOpen,
+      theme, accentColor, taskPriorityMode,
       attentionHiddenUntil,
     };
   }
@@ -91,7 +90,7 @@ module.exports = function registerSettingsRoutes(app, deps) {
   app.put('/api/settings', authenticate, (req, res) => {
     const current = normalizeUserSettings(db.auth.preferences.get(req.auth.user.id));
     const patch = req.body && typeof req.body === 'object' ? req.body : {};
-    const merged = normalizeUserSettings({ ...current, ...patch, attention: { ...current.attention, ...(patch.attention || {}) } });
+    const merged = normalizeUserSettings({ ...current, ...patch });
     db.auth.preferences.set(req.auth.user.id, merged);
     res.json({ ...merged, _initialized: true });
   });

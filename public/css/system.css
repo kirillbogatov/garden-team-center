@@ -701,9 +701,11 @@ html.theme-dark input[type="month"]::-webkit-calendar-picker-indicator {
 .team-active-toggle input { margin: 0; }
 .people-grid--team {
   display: grid !important;
-  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  grid-template-columns: minmax(0, 400px) !important;
   gap: 10px !important;
+  justify-content: start !important;
 }
+.people-grid-responsive { container-type: inline-size; }
 .person-card--team {
   min-height: 100px;
   padding: 12px !important;
@@ -746,8 +748,10 @@ html.theme-dark input[type="month"]::-webkit-calendar-picker-indicator {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
+  align-self: start;
   text-align: right;
   padding-top: 1px;
+  margin-top: 0 !important;
 }
 .pc-local-time-value {
   color: var(--text-primary);
@@ -756,6 +760,12 @@ html.theme-dark input[type="month"]::-webkit-calendar-picker-indicator {
   font-variant-numeric: tabular-nums;
 }
 .pc-local-time-label { display: none; }
+@container (min-width: 810px) {
+  .people-grid--team { grid-template-columns: repeat(2, minmax(0, 400px)) !important; }
+}
+@container (min-width: 1220px) {
+  .people-grid--team { grid-template-columns: repeat(3, minmax(0, 400px)) !important; }
+}
 @media (max-width: 760px) {
   .people-grid--team { grid-template-columns: 1fr !important; }
 }
@@ -3601,4 +3611,132 @@ body.is-resizing-notes, body.is-resizing-notes * { cursor: auto !important; user
 }
 .overview-sticky-note.is-dragging {
   opacity: 1 !important;
+}
+
+/* Meeting participant stack: show up to five people without collapsing to one avatar. */
+.ui-row--meeting {
+  grid-template-columns: 48px minmax(180px, 1fr) minmax(0, auto) 78px minmax(28px, auto) 18px;
+}
+.ui-row--meeting .meeting-employee-avatar {
+  width: auto;
+  min-width: 28px;
+  justify-content: flex-start;
+}
+.meeting-participants {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.meeting-participants-stack {
+  display: inline-flex;
+  align-items: center;
+  padding-left: 1px;
+}
+.meeting-participants-stack .ui-person-avatar {
+  position: relative;
+  margin-left: -7px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--bg-base);
+}
+.meeting-participants-stack .ui-person-avatar:first-child { margin-left: 0; }
+.meeting-participants-stack .ui-person-avatar:hover,
+.meeting-participants-stack .ui-person-avatar:focus-visible { z-index: 2; }
+.meeting-participants-stack .avatar {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  font-size: 9px;
+}
+.meeting-participants-more {
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+}
+.meeting-participants-empty { display: inline-flex; }
+@media (max-width: 980px) {
+  .ui-row--meeting { grid-template-columns: 46px minmax(150px, 1fr) minmax(0, auto) 74px minmax(28px, auto) 18px; }
+}
+@media (max-width: 720px) {
+  .ui-row--meeting { grid-template-columns: 44px minmax(0,1fr) 70px minmax(28px, auto) 18px; }
+  .meeting-participants-more { display: none; }
+}
+
+/* Adaptive work-area widths — grow with the viewport instead of locking every page to 980px. */
+:root {
+  --content-max: clamp(980px, 68vw, 1280px);
+  --detail-content-max: clamp(880px, 58vw, 1060px);
+  --wide-content-gutter: clamp(24px, 2.5vw, 44px);
+}
+
+/* Standard list/work pages inherit the adaptive --content-max through .view and .topbar. */
+.view.task-detail-page-view {
+  padding-left: max(
+    var(--content-gutter),
+    calc((100% - var(--detail-content-max)) / 2 + var(--content-gutter))
+  );
+  padding-right: max(
+    var(--content-gutter),
+    calc((100% - var(--detail-content-max)) / 2 + var(--content-gutter))
+  );
+}
+
+/* Calendar-like data surfaces should use almost the entire available work area. */
+.view.gcal-wide,
+.view.checkins-wide {
+  padding-left: var(--wide-content-gutter) !important;
+  padding-right: var(--wide-content-gutter) !important;
+}
+
+/* Overview grows with the same adaptive work-area width rather than staying at a fixed desktop size. */
+.view.overview-wide {
+  padding-left: var(--content-gutter);
+  padding-right: var(--content-gutter);
+}
+.overview-dashboard {
+  width: min(100%, var(--content-max));
+  max-width: var(--content-max);
+}
+
+@media (max-width: 1100px) {
+  :root {
+    --content-max: 980px;
+    --detail-content-max: 920px;
+  }
+}
+
+@media (max-width: 720px) {
+  .view.task-detail-page-view,
+  .view.gcal-wide,
+  .view.checkins-wide {
+    padding-left: var(--content-gutter) !important;
+    padding-right: var(--content-gutter) !important;
+  }
+}
+
+
+/* Task rows embedded into entity detail pages use the same compact typography as Tasks. */
+.project-detail-page-shell .task-list-row .tl-title,
+.person-detail .task-list-row .tl-title,
+.person-development-tab .task-list-row .tl-title {
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 400;
+}
+.project-detail-page-shell .task-list-row .task-assignee-cell,
+.person-detail .task-list-row .task-assignee-cell,
+.person-development-tab .task-list-row .task-assignee-cell {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+/* On a person's page the assignee is implicit, so do not reserve an empty assignee column. */
+.person-detail .task-list-row .tl-right,
+.person-development-tab .task-list-row .tl-right {
+  grid-template-columns: minmax(170px, 220px) 118px;
+  min-width: 300px;
+}
+.person-detail .task-list-row .task-assignee-cell,
+.person-development-tab .task-list-row .task-assignee-cell {
+  display: none;
 }

@@ -1,7 +1,7 @@
 'use strict';
 
 module.exports = function registerCrudRoutes(app, deps) {
-  const { COLLECTIONS, db, autoArchiveCompletedTasks, canReadItem, sanitizeItem, visibleItems, resolveEntity, denied, canCreate, withOwnership, taskLifecyclePatch, sanitizeKnowledgeHtmlServer, isTeamlead, canManageCollection, normalizeProjectTaskCode, uniqueProjectTaskCode, syncJournalDerivedEntity, assignTaskKey, SLUG_COLLECTIONS, uniqueSlug, nextLabKey, syncRecurringMeetingsForPerson, syncRecurringMeetingsForMeeting, canUpdate, nextTaskKey, taskKeyPrefix, teamleadOwnsPerson, memberPersonPatch, OWNER_COLLECTIONS, canDelete, assignMeetingKey, nextMeetingKey } = deps;
+  const { COLLECTIONS, db, autoArchiveCompletedTasks, canReadItem, sanitizeItem, visibleItems, resolveEntity, denied, canCreate, withOwnership, taskLifecyclePatch, sanitizeKnowledgeHtmlServer, isTeamlead, canManageCollection, normalizeProjectTaskCode, uniqueProjectTaskCode, syncJournalDerivedEntity, assignTaskKey, SLUG_COLLECTIONS, uniqueSlug, nextLabKey, syncRecurringMeetingsForPerson, syncRecurringMeetingsForMeeting, canUpdate, nextTaskKey, taskKeyPrefix, teamleadOwnsPerson, memberPersonPatch, OWNER_COLLECTIONS, canDelete, assignMeetingKey, nextMeetingKey, assignProcessKey, nextProcessKey } = deps;
 
   const resourceConfig = {
     projects: {
@@ -29,6 +29,10 @@ module.exports = function registerCrudRoutes(app, deps) {
       prepareUpdate: (current, payload) => ({ ...payload, meetingKey: current.meetingKey || nextMeetingKey() }),
       afterSave: (item, user) => syncRecurringMeetingsForMeeting(item, user),
       cleanup: (item, user) => syncRecurringMeetingsForMeeting(item, user),
+    },
+    processes: {
+      prepareCreate: (payload) => assignProcessKey(payload),
+      prepareUpdate: (current, payload) => ({ ...payload, processKey: current.processKey || nextProcessKey() }),
     },
   };
   const configFor = (name) => resourceConfig[name] || {};

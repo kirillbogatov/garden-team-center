@@ -163,13 +163,6 @@ const stmtUpdate = sqlite.prepare(`
 const stmtDelete = sqlite.prepare(
   'DELETE FROM records WHERE workspace = ? AND collection = ? AND id = ?'
 );
-const stmtDeleteCollection = sqlite.prepare(
-  'DELETE FROM records WHERE workspace = ? AND collection = ?'
-);
-const stmtCount = sqlite.prepare('SELECT COUNT(*) AS count FROM records');
-const stmtCountCollection = sqlite.prepare(
-  'SELECT COUNT(*) AS count FROM records WHERE collection = ?'
-);
 const stmtMetaGet = sqlite.prepare('SELECT value FROM meta WHERE key = ?');
 const stmtMetaUpsert = sqlite.prepare(`
   INSERT INTO meta (key, value) VALUES (?, ?)

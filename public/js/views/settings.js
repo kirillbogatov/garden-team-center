@@ -7,7 +7,6 @@ Views.settings = async function () {
   view.innerHTML = `<div class="tiny">Загрузка…</div>`;
 
   const [settings, workspace, storage] = await Promise.all([GardenSettings.load(true), api.get('/api/workspace-settings'), api.get('/api/storage-info')]);
-  const attention = settings.attention || {};
   const favorites = new Set(settings.favoriteMenuItems || []);
   // Список тем на экране «Оформление» держим самодостаточным: так он не
   // зависит от порядка загрузки общего реестра и старого браузерного кэша.
@@ -59,21 +58,10 @@ Views.settings = async function () {
   const menuItems = (NAV_GROUPS || []).flatMap((group) =>
     group.children.map((item) => ({ key: item.key, label: item.label, group: group.label }))
   );
-  const signals = [
-    { key: 'workload', label: 'Высокая загрузка', note: 'Сотрудник работает более чем над двумя проектами с активными задачами' },
-    { key: 'incompleteWorkload', label: 'Неполная загрузка', note: 'Суммарная загрузка сотрудника по активным проектам ниже полной' },
-    { key: 'noProjectTasks', label: 'Нет задач на проектах', note: 'У сотрудника есть активные проекты, но нет задач в To Do, «В работе» или «На согласовании»' },
-    { key: 'noActiveProjects', label: 'Нет активных проектов', note: 'У сотрудника не осталось ни одного активного проекта' },
-    { key: 'projectIssue', label: 'Проблема на проекте', note: 'На активном проекте есть одна или несколько нерешённых проблем' },
-    { key: 'highPriorityItems', label: 'Высокий приоритет', note: 'Открытые задачи с высоким приоритетом и проблемы высокой серьёзности' },
-    { key: 'agreementTomorrow', label: 'Срок договорённости завтра', note: 'Предупреждать за день до даты, указанной в тексте договорённости' },
-    { key: 'checkinDue', label: 'Пора провести Check-in', note: 'По понедельникам, пока за неделю собраны не все записи' },
-  ];
   const sections = [
     { key: 'appearance', label: 'Оформление' },
     { key: 'menu', label: 'Меню' },
     { key: 'tasks', label: 'Задачи' },
-    { key: 'focus', label: 'Обзор' },
     { key: 'storage', label: 'Данные' },
     { key: 'account', label: 'Учётная запись' },
   ];
@@ -99,8 +87,13 @@ Views.settings = async function () {
         </div></div>
       </section>`,
     menu: `<section class="settings-section"><div class="settings-section-head"><h2>Избранное</h2><p>Добавьте часто используемые подразделы в «Избранное» под «Журналом».</p></div><div class="ui-surface ui-surface--settings settings-card">${menuItems.map((item) => `<label class="settings-toggle-row"><span><strong>${item.label}</strong><small>${item.group}</small></span><input type="checkbox" data-favorite-menu="${item.key}" ${favorites.has(item.key) ? 'checked' : ''}/></label>`).join('')}</div></section>`,
-    tasks: `<section class="settings-section"><div class="settings-section-head"><h2>Задачи</h2><p>Правила жизненного цикла задач для всей команды.</p></div><div class="ui-surface ui-surface--settings settings-card"><label class="settings-number-row"><span><strong>Автоматически архивировать «Готово»</strong><small>Через сколько дней после завершения задача перемещается в архив.</small></span><div class="settings-number-control"><div class="settings-stepper" role="group" aria-label="Количество дней до архивации"><button type="button" class="settings-stepper-button" id="settings-auto-archive-minus" aria-label="Уменьшить число дней" ${workspace.canEdit ? '' : 'disabled'}>−</button><input class="settings-stepper-value" id="settings-auto-archive-days" type="number" min="1" max="365" step="1" value="${workspace.taskAutoArchiveDays}" ${workspace.canEdit ? '' : 'disabled'}/><button type="button" class="settings-stepper-button" id="settings-auto-archive-plus" aria-label="Увеличить число дней" ${workspace.canEdit ? '' : 'disabled'}>+</button></div><span>дн.</span></div></label></div>${workspace.canEdit ? '' : '<div class="ui-field-hint field-hint">Изменить этот срок может пользователь с правом управления всеми задачами.</div>'}</section>`,
-    focus: `<section class="settings-section"><div class="settings-section-head"><h2>Обратить внимание</h2><p>Выберите сигналы для страницы «Обзор».</p></div><div class="ui-surface ui-surface--settings settings-card">${signals.map((item) => `<label class="settings-toggle-row"><span><strong>${item.label}</strong><small>${item.note}</small></span><input type="checkbox" data-attention="${item.key}" ${attention[item.key] !== false ? 'checked' : ''}/></label>`).join('')}</div></section>`,
+    tasks: `<section class="settings-section"><div class="settings-section-head"><h2>Приоритет задач</h2><p>Выберите, что сильнее влияет на порядок задач в виджетах.</p></div><div class="ui-surface ui-surface--settings settings-card">${[
+      ['balanced','Сбалансированный','Смотрим на срок и важность задачи. Ближайшие задачи обычно важнее просроченных.'],
+      ['deadline','По дедлайнам','Акцент на ближайших задачах. Важность влияет на порядок, но не так сильно.'],
+      ['importance','По важности','Поднимает важные задачи, сортирует их по сроку.'],
+      ['overdue','Разгребание долгов','Чем дольше задача просрочена, тем выше она в списке.'],
+    ].map(([value,label,note]) => `<label class="settings-choice"><input type="radio" name="task-priority-mode" value="${value}" ${settings.taskPriorityMode === value ? 'checked' : ''}/><span><strong>${label}</strong><small>${note}</small></span></label>`).join('')}</div></section>
+    <section class="settings-section settings-section-spaced"><div class="settings-section-head"><h2>Архивация</h2><p>Правила жизненного цикла задач для всей команды.</p></div><div class="ui-surface ui-surface--settings settings-card"><label class="settings-number-row"><span><strong>Автоматически архивировать «Готово»</strong><small>Через сколько дней после завершения задача перемещается в архив.</small></span><div class="settings-number-control"><div class="settings-stepper" role="group" aria-label="Количество дней до архивации"><button type="button" class="settings-stepper-button" id="settings-auto-archive-minus" aria-label="Уменьшить число дней" ${workspace.canEdit ? '' : 'disabled'}>−</button><input class="settings-stepper-value" id="settings-auto-archive-days" type="number" min="1" max="365" step="1" value="${workspace.taskAutoArchiveDays}" ${workspace.canEdit ? '' : 'disabled'}/><button type="button" class="settings-stepper-button" id="settings-auto-archive-plus" aria-label="Увеличить число дней" ${workspace.canEdit ? '' : 'disabled'}>+</button></div><span>дн.</span></div></label></div>${workspace.canEdit ? '' : '<div class="ui-field-hint field-hint">Изменить этот срок может пользователь с правом управления всеми задачами.</div>'}</section>`,
     storage: `<section class="settings-section"><div class="settings-section-head"><h2>Данные</h2><p>Все версии Garden используют одну внешнюю папку данных.</p></div><div class="ui-surface ui-surface--settings settings-card settings-storage-card"><div class="settings-info-row"><span><strong>Рабочая папка</strong><small>Сотрудники, задачи, встречи, настройки и загруженные файлы сохраняются здесь.</small></span><code class="settings-storage-path">${escapeHtml(storage.dataDir || '')}</code></div><div class="settings-info-row"><span><strong>База данных</strong><small>Этот файл не заменяется при обновлении Garden.</small></span><code class="settings-storage-path">${escapeHtml(storage.database || '')}</code></div></div></section>`,
     account: `<section class="settings-section"><div class="settings-section-head"><h2>Учётная запись</h2></div><div class="ui-surface ui-surface--settings settings-card"><button type="button" class="settings-action-row" id="settings-change-password"><span><strong>Сменить пароль</strong><small>Изменить пароль для входа в Garden</small></span><span class="settings-action-chevron">›</span></button></div></section>`,
   };
@@ -167,6 +160,13 @@ Views.settings = async function () {
     scalePlus.onclick = () => changeScale(1);
   }
 
+  document.querySelectorAll('input[name="task-priority-mode"]').forEach((input) => {
+    input.onchange = async () => {
+      if (!input.checked) return;
+      await GardenSettings.update({ taskPriorityMode: input.value });
+    };
+  });
+
   document.querySelectorAll('[data-favorite-menu]').forEach((input) => {
     input.addEventListener('change', async () => {
       const next = new Set(GardenSettings.value?.favoriteMenuItems || []);
@@ -176,11 +176,7 @@ Views.settings = async function () {
     });
   });
 
-  document.querySelectorAll('[data-attention]').forEach((input) => {
-    input.addEventListener('change', async () => {
-      await GardenSettings.update({ attention: { [input.dataset.attention]: input.checked } });
-    });
-  });
+
 
   const archiveDays = document.getElementById('settings-auto-archive-days');
   if (archiveDays && workspace.canEdit) {

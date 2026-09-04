@@ -11,7 +11,7 @@ const GardenSettings = {
         GardenSettings.value = await api.put('/api/settings', { ...GardenSettings.value, theme: localTheme });
       }
     } catch (_) {
-      GardenSettings.value = { theme: currentTheme(), attention: { workload: true, incompleteWorkload: true, noProjectTasks: true, projectIssue: true, highSeverityIssues: true, highPriorityItems: true, agreementTomorrow: true, noInProgressOnActiveProject: true, noActiveProjects: true } };
+      GardenSettings.value = { theme: currentTheme() };
     }
     return GardenSettings.value;
   },
@@ -20,7 +20,6 @@ const GardenSettings = {
     const next = {
       ...current,
       ...patch,
-      attention: { ...(current.attention || {}), ...(patch.attention || {}) },
     };
     GardenSettings.value = await api.put('/api/settings', next);
     return GardenSettings.value;
