@@ -2564,17 +2564,24 @@ html:not(.theme-clarity):not(.theme-clarity-dark) .task-groups.task-groups-separ
   flex: 0 1 auto;
   margin: 0 !important;
 }
-.journal-composer #journal-submit {
+.journal-composer .journal-composer-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   flex: 0 0 auto;
-  margin-left: auto !important;
+}
+.journal-composer #journal-submit,
+.journal-composer #journal-create-task {
+  flex: 0 0 auto;
 }
 
 @media (max-width: 640px) {
   .journal-composer .journal-composer-footer {
     flex-wrap: wrap;
   }
-  .journal-composer #journal-submit {
-    margin-left: 0 !important;
+  .journal-composer .journal-composer-actions {
+    margin-left: 0;
   }
 }
 
@@ -3572,3 +3579,25 @@ textarea { field-sizing:content; }
 .detail-save-status.is-visible { opacity: 1; }
 @media (max-width: 720px) { .detail-save-status { min-width: 0; } }
 @media (prefers-reduced-motion: reduce) { .detail-save-status { transition: none; } }
+
+/* Keep task content comfortably separated from the page header when filters are collapsed,
+   without changing the spacing of the expanded filter panel. */
+.task-sticky-toolbar.is-collapsed + #task-content {
+  padding-top: 18px;
+}
+
+/* The collapsed navigation popup should use the same quiet border hierarchy as the rest of the UI. */
+.collapsed-nav-menu {
+  border-color: color-mix(in srgb, var(--border-soft) 58%, transparent);
+}
+
+/* The Labs: privacy checkbox and link editor align with the compact entity-form rhythm. */
+.lab-private-checkbox{display:flex;align-items:center;gap:8px;min-height:28px;margin:0;font-size:12.5px;line-height:1.35;font-weight:400;color:var(--text-primary);}
+.lab-private-checkbox input{flex:0 0 auto;margin:0;align-self:center;}
+.lab-private-checkbox span{font:inherit;color:inherit;}
+.lab-links-editor{min-width:0;}
+.lab-links-editor .meeting-document-head,.lab-links-editor .meeting-document-row{grid-template-columns:minmax(140px,.9fr) minmax(190px,1.35fr) 72px;}
+.lab-links-editor .meeting-document-remove{justify-self:start;}
+.meeting-document-head{grid-template-columns:minmax(140px,.9fr) minmax(190px,1.35fr) 72px;align-items:start;}
+.meeting-document-head>span{justify-self:start;text-align:left;}
+@media(max-width:720px){.lab-links-editor .meeting-document-head{display:none}.lab-links-editor .meeting-document-row{grid-template-columns:minmax(0,1fr) auto;}}

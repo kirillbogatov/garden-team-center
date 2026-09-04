@@ -205,20 +205,89 @@ function openLabStatusMenu(event, lab) {
 function normalizeLabLinks(value) {
   const raw = Array.isArray(value) ? value : String(value || '').split(/\r?\n/);
   const seen = new Set();
-  return raw.map((v) => String(v || '').trim()).filter((url) => {
-    if (!/^https?:\/\//i.test(url) || seen.has(url)) return false;
-    seen.add(url);
+  return raw.map((item) => {
+    if (item && typeof item === 'object') return { title: String(item.title || '').trim(), url: String(item.url || '').trim() };
+    return { title: '', url: String(item || '').trim() };
+  }).filter((item) => {
+    if (!/^https?:\/\//i.test(item.url) || seen.has(item.url)) return false;
+    seen.add(item.url);
     return true;
   });
 }
 
-function labLinkLabel(url) {
+function labLinkLabel(link) {
+  const item = link && typeof link === 'object' ? link : { title: '', url: String(link || '') };
+  if (item.title) return item.title;
   try {
-    const u = new URL(url);
+    const u = new URL(item.url);
     return u.hostname.replace(/^www\./, '');
   } catch (_) {
-    return url;
+    return item.url;
   }
+}
+
+function labLinksEditorHtml(id, value, editable = true) {
+  const links = normalizeLabLinks(value);
+  const rows = links.map((item, index) => `<div class="meeting-document-row meeting-document-row--composer lab-link-row" data-lab-link-row="${index}">
+    <div class="ui-field meeting-document-title-field"><input data-lab-link-title value="${escapeHtml(item.title)}" placeholder="Название" ${editable ? '' : 'disabled'} /></div>
+    <div class="ui-field meeting-document-url-field"><input data-lab-link-url type="url" value="${escapeHtml(item.url)}" placeholder="Ссылка" ${editable ? '' : 'disabled'} /></div>
+    ${editable ? `<button type="button" class="ui-icon-button meeting-document-remove" data-lab-link-remove title="Удалить ссылку" aria-label="Удалить ссылку">${icon('close', 13)}</button>` : ''}
+  </div>`).join('');
+  const composer = editable ? `<div class="meeting-document-row meeting-document-row--composer lab-link-composer">
+    <div class="ui-field meeting-document-title-field"><input data-lab-link-new-title placeholder="Название" /></div>
+    <div class="ui-field meeting-document-url-field"><input data-lab-link-new-url type="url" placeholder="Ссылка" /></div>
+    <button type="button" class="ui-button ui-button--sm btn btn-sm meeting-document-inline-add" data-lab-link-add>Добавить</button>
+  </div>` : '';
+  return `<div id="${id}" class="lab-links-editor ${editable ? 'is-editable' : ''}">
+    <div class="meeting-document-head" aria-hidden="true"><span>Название</span><span>Ссылка</span><span></span></div>
+    <div class="meeting-document-list" data-lab-link-list>${rows}${composer}</div>
+  </div>`;
+}
+
+function readLabLinksEditor(id) {
+  const root = document.getElementById(id);
+  if (!root) return [];
+  return Array.from(root.querySelectorAll('[data-lab-link-row]')).map((row) => ({
+    title: String(row.querySelector('[data-lab-link-title]')?.value || '').trim(),
+    url: String(row.querySelector('[data-lab-link-url]')?.value || '').trim(),
+  })).filter((item) => /^https?:\/\//i.test(item.url));
+}
+
+function bindLabLinksEditor(id, onChange = null) {
+  const root = document.getElementById(id);
+  if (!root || root.dataset.bound === '1') return;
+  root.dataset.bound = '1';
+  const notify = (important = false) => onChange?.(important);
+  root.addEventListener('input', (event) => {
+    if (event.target.matches('[data-lab-link-title], [data-lab-link-url]')) notify(false);
+  });
+  root.addEventListener('click', (event) => {
+    const remove = event.target.closest('[data-lab-link-remove]');
+    if (remove) {
+      remove.closest('[data-lab-link-row]')?.remove();
+      notify(true);
+      return;
+    }
+    const add = event.target.closest('[data-lab-link-add]');
+    if (!add) return;
+    const titleInput = root.querySelector('[data-lab-link-new-title]');
+    const urlInput = root.querySelector('[data-lab-link-new-url]');
+    const title = String(titleInput?.value || '').trim();
+    const url = String(urlInput?.value || '').trim();
+    if (!url) { toast('Укажите ссылку'); urlInput?.focus(); return; }
+    if (!/^https?:\/\//i.test(url)) { toast('Ссылка должна начинаться с http:// или https://'); urlInput?.focus(); return; }
+    const list = root.querySelector('[data-lab-link-list]');
+    const composer = root.querySelector('.lab-link-composer');
+    const row = document.createElement('div');
+    row.className = 'meeting-document-row meeting-document-row--composer lab-link-row';
+    row.setAttribute('data-lab-link-row', 'new');
+    row.innerHTML = `<div class="ui-field meeting-document-title-field"><input data-lab-link-title value="${escapeHtml(title)}" placeholder="Название" /></div><div class="ui-field meeting-document-url-field"><input data-lab-link-url type="url" value="${escapeHtml(url)}" placeholder="Ссылка" /></div><button type="button" class="ui-icon-button meeting-document-remove" data-lab-link-remove title="Удалить ссылку" aria-label="Удалить ссылку">${icon('close', 13)}</button>`;
+    list?.insertBefore(row, composer || null);
+    if (titleInput) titleInput.value = '';
+    if (urlInput) urlInput.value = '';
+    notify(true);
+    requestAnimationFrame(() => titleInput?.focus());
+  });
 }
 
 function labRowHtml(lab) {
@@ -236,7 +305,7 @@ function labRowHtml(lab) {
           <div class="lab-card-status">${labStatusHtml(lab.status || 'idea', lab)}</div>
           ${lab.private ? `<span class="lab-private-meta" title="Приватный проект">${icon('eyeOff', 12)} Приватный</span>` : ''}
           ${author ? `<span class="lab-row-author">${personAvatarLinkHtml(author)}<span>${escapeHtml(author.name)}</span><span class="ui-tag badge lab-type-badge">${escapeHtml(typeLabel)}</span></span>` : `<span class="ui-tag badge lab-type-badge">${escapeHtml(typeLabel)}</span>`}
-          ${links.length ? `<span class="lab-row-links">${links.map((url) => `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" data-stop-propagation="1">${escapeHtml(labLinkLabel(url))}</a>`).join('')}</span>` : ''}
+          ${links.length ? `<span class="lab-row-links">${links.map((link) => `<a href="${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer" data-stop-propagation="1">${escapeHtml(labLinkLabel(link))}</a>`).join('')}</span>` : ''}
         </div>
       </div>
       <div class="lab-card-tree" aria-hidden="true">${goalTreeHtml(progress, 'compact', lab.id)}</div>
@@ -257,7 +326,7 @@ function openLabModal(existing) {
     ...lab,
     title: lab.title || '',
     description: lab.description || '',
-    links: normalizeLabLinks(lab.links).join('\n'),
+    links: normalizeLabLinks(lab.links),
     authorId: lab.authorId || Auth.user?.personId || '',
     projectType: lab.projectType || 'pet',
     private: Boolean(lab.private),
@@ -266,9 +335,9 @@ function openLabModal(existing) {
   const schema = [
     { key: 'title', label: 'Название', type: 'text', trim: true },
     { key: 'description', label: 'Описание', type: 'textarea', rows: 5, trim: true },
-    { key: 'links', label: 'Ссылки', type: 'textarea', rows: 3, placeholder: 'https://…\nПо одной ссылке на строку', hint: 'По одной ссылке на строку', parse: normalizeLabLinks },
+    { key: 'links', label: 'Ссылки', render: ({ id, value, disabled }) => labLinksEditorHtml(id, value, !disabled), read: () => readLabLinksEditor('ef-links'), init: ({ root }) => bindLabLinksEditor(root?.id || 'ef-links') },
     { key: 'projectType', label: 'Тип проекта', type: 'select', options: Object.entries(LAB_TYPE_LABEL).map(([value,label]) => ({ value, label })) },
-    { key: 'private', label: 'Доступ', type: 'checkbox', checkboxLabel: 'Приватный проект', hint: 'Виден только автору, тимлидам и администраторам.' },
+    { key: 'private', label: 'Доступ', type: 'checkbox', render: ({ id, value, disabled }) => `<label class="check-row lab-private-checkbox"><input id="${id}" type="checkbox" ${value ? 'checked' : ''} ${disabled}/><span>Приватный проект (Виден только вам и вашему тимлиду)</span></label>` },
     { key: 'authorId', label: 'Автор', type: 'select', emptyLabel: '—', options: authors.map((person) => ({ value: person.id, label: person.name })) },
     { key: 'status', label: 'Статус', type: 'select', options: Object.entries(LAB_STATUS_LABEL).map(([value,label]) => ({ value, label })) },
   ];
@@ -349,15 +418,16 @@ Views.labDetail = async function (ref) {
   view.classList.add('task-detail-page-view');
   const authorControl = detailInlineSelectHtml({ id: 'lab-detail-author', value: lab.authorId || '', editable, emptyLabel: '—', options: authors.map((person) => ({ value: person.id, label: person.name })) });
   const typeControl = detailInlineSelectHtml({ id: 'lab-detail-type', value: lab.projectType || 'pet', editable, options: Object.entries(LAB_TYPE_LABEL).map(([value,label]) => ({ value, label })) });
-  const accessControl = detailInlineSelectHtml({ id: 'lab-detail-private', value: lab.private ? 'private' : 'public', editable, options: [{ value:'public', label:'Для команды' }, { value:'private', label:'Приватный' }] });
-  const linkControl = detailInlineInputHtml({ id: 'lab-detail-links', value: normalizeLabLinks(lab.links).join(' · '), editable, placeholder: 'https://…', linked: true });
+  const canManagePrivacy = Boolean(Auth.isTeamlead() || (Auth.user?.personId && Auth.user.personId === lab.authorId));
+  const accessControl = canManagePrivacy ? `<label class="check-row lab-private-checkbox"><input id="lab-detail-private" type="checkbox" ${lab.private ? 'checked' : ''} ${editable ? '' : 'disabled'}/><span>Приватный проект (Виден только вам и вашему тимлиду)</span></label>` : '';
+  const linkControl = labLinksEditorHtml('lab-detail-links', lab.links, editable);
   const statusControl = `<div class="task-detail-status-control">${labStatusHtml(lab.status || 'idea', editable ? lab : null)}</div>`;
   const details = `<section class="task-detail-section task-detail-details-section"><div class="task-detail-details-grid"><div class="task-detail-details-column">
     ${detailPropertyHtml({ label:'Автор', control:authorControl })}
     ${detailPropertyHtml({ label:'Тип', control:typeControl })}
-    ${detailPropertyHtml({ label:'Доступ', control:accessControl })}
+    ${canManagePrivacy ? detailPropertyHtml({ label:'Доступ', control:accessControl }) : ''}
     ${detailPropertyHtml({ label:'Статус', control:statusControl, className:'task-detail-status-property' })}
-    ${detailPropertyHtml({ label:'Ссылка', control:linkControl })}
+    ${detailPropertyHtml({ label:'Ссылки', control:linkControl })}
   </div><div class="task-detail-details-column lab-tree-column"><div class="lab-detail-progress-tree" aria-label="Прогресс проекта">${goalTreeHtml(progress, 'compact', lab.labKey || lab.id)}</div></div></div></section>`;
   const description = `<section class="task-detail-section task-detail-description-section"><div class="task-detail-section-label task-detail-section-title">Описание</div><div class="task-inline-edit task-inline-edit-description ${editable ? 'is-editable' : ''}">${editable ? `<textarea id="lab-detail-description" class="task-detail-description" rows="4" placeholder="Добавьте описание проекта">${escapeHtml(lab.description || '')}</textarea><span class="task-inline-edit-icon" aria-hidden="true">${icon('edit',11)}</span>` : `<textarea id="lab-detail-description" class="task-detail-description" hidden disabled>${escapeHtml(lab.description || '')}</textarea><div class="task-detail-description task-detail-description-readonly">${renderLinkedText(lab.description || '') || '<span class="muted">Описание не добавлено</span>'}</div>`}</div></section>`;
   const ideasSection = detailSectionHtml('Идеи', `<div class="task-relation-list task-relation-list-unified" id="lab-detail-ideas">${ideasHtml}</div>`, `<button type="button" class="task-section-add-btn" id="lab-detail-add-idea" aria-label="Добавить идею" title="Добавить идею">+</button>`).replace('task-detail-section"','task-detail-section task-relations-section"');
@@ -366,25 +436,6 @@ Views.labDetail = async function (ref) {
 
   Views._labDetailIdeas = ideas;
 
-  const linkedShell = document.querySelector('[data-linked-inline-shell="lab-detail-links"]');
-  const linksField = document.getElementById('lab-detail-links');
-  const linksDisplay = document.querySelector('[data-linked-inline-display="lab-detail-links"]');
-  if (linkedShell && linksField && linksDisplay) {
-    const beginLinkEdit = (event) => {
-      if (event?.target?.closest?.('a')) return;
-      linksDisplay.hidden = true;
-      linksField.hidden = false;
-      linksField.focus();
-      linksField.select?.();
-    };
-    linksDisplay.addEventListener('click', beginLinkEdit);
-    linksDisplay.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); beginLinkEdit(event); } });
-    linksField.addEventListener('blur', () => {
-      linksDisplay.innerHTML = linksField.value.trim() ? renderLinkedText(linksField.value) : '<span class="muted">https://…</span>';
-      linksField.hidden = true;
-      linksDisplay.hidden = false;
-    });
-  }
 
   const descriptionField = document.getElementById('lab-detail-description');
   const resizeDescription = () => {
@@ -454,9 +505,9 @@ Views.labDetail = async function (ref) {
       description: descriptionField.value.trim(),
       authorId: document.getElementById('lab-detail-author').value || null,
       projectType: document.getElementById('lab-detail-type').value || 'pet',
-      private: document.getElementById('lab-detail-private').value === 'private',
+      private: document.getElementById('lab-detail-private') ? document.getElementById('lab-detail-private').checked : Boolean(lab.private),
       status: lab.status || 'idea',
-      links: normalizeLabLinks(document.getElementById('lab-detail-links').value.replace(/\s+·\s+/g, '\n')),
+      links: readLabLinksEditor('lab-detail-links'),
     });
     let lastSavedPayload = JSON.stringify(currentPayload());
     const saveLabChanges = async () => {
@@ -481,7 +532,7 @@ Views.labDetail = async function (ref) {
     const autosave = DetailAutosave.set(createAutosave(saveLabChanges, { delay: 550 }), { entityType: 'labs', entityId: lab.id });
     Router.setLeaveGuard(async () => { await autosave.flush(); await DetailAutosave.finalizeVersion(); return true; }, () => autosave.pending);
 
-    ['lab-detail-title','lab-detail-description','lab-detail-links'].forEach((id) => {
+    ['lab-detail-title','lab-detail-description'].forEach((id) => {
       document.getElementById(id)?.addEventListener('input', () => autosave.schedule(false));
     });
     ['lab-detail-author','lab-detail-type','lab-detail-private'].forEach((id) => {
@@ -489,10 +540,8 @@ Views.labDetail = async function (ref) {
     });
     titleInput.addEventListener('blur', () => autosave.schedule(true));
     descriptionField?.addEventListener('blur', () => autosave.schedule(true));
-    const linksField = document.getElementById('lab-detail-links');
-    linksField?.addEventListener('blur', () => autosave.schedule(true));
+    bindLabLinksEditor('lab-detail-links', (important) => autosave.schedule(Boolean(important)));
     bindDetailCommitOnEnter(descriptionField, () => autosave.schedule(true));
-    bindDetailCommitOnEnter(linksField, () => autosave.schedule(true));
 
     document.getElementById('lab-detail-delete').onclick = async () => {
       if (!await confirmAction('Удалить проект The Labs?')) return;

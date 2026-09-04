@@ -19,6 +19,7 @@ const OVERVIEW_DEFAULT_DASHBOARD = {
 const OVERVIEW_WIDGET_LABELS = {
   'my-tasks': 'Мои задачи',
   'project-tasks': 'Задачи проекта',
+  'project-overview': 'Обзор проекта',
   'my-issues': 'Мои проблемы',
   'my-agreements': 'Мои договорённости',
   'my-journal': 'Мой журнал',
@@ -96,6 +97,10 @@ function overviewNormalizeConfig(settings) {
 }
 
 function overviewWidgetTitle(widget) {
+  if (widget.type === 'project-overview') {
+    const project = store.project(widget.projectId);
+    return project ? project.name : 'Проект';
+  }
   if (widget.type === 'project-tasks') {
     const project = store.project(widget.projectId);
     return project ? `Задачи · ${project.name}` : 'Задачи проекта';
@@ -191,6 +196,15 @@ function overviewQuickAction(widget, shelf) {
   let title = overviewWidgetTitle(widget);
   let tone = 'accent';
   if (widget.type === 'my-tasks') { iconName = 'tasks'; tone = 'blue'; attrs = 'data-route="/tasks?mine=1"'; }
+  else if (widget.type === 'project-overview') {
+    iconName = 'projects';
+    tone = 'green';
+    const project = store.project(widget.projectId);
+    if (project) {
+      title = project.name;
+      attrs = `data-route="${escapeHtml(projectPath(project))}"`;
+    }
+  }
   else if (widget.type === 'project-tasks') {
     iconName = 'tasks';
     tone = 'purple';
@@ -642,13 +656,14 @@ function overviewApplyEditingState(editing, options = {}) {
 
 function overviewCatalogTypes(shelf) {
   return shelf === 'quick'
-    ? ['my-tasks','project-tasks','my-issues','my-agreements','my-journal','my-ideas','my-meetings','quick-link']
+    ? ['my-tasks','project-overview','project-tasks','my-issues','my-agreements','my-journal','my-ideas','my-meetings','quick-link']
     : ['goals','team-workload','priority-tasks', ...(Auth.isTeamlead() ? ['team-priority-tasks'] : []), 'unresolved-issues','week-events','attention-notes'];
 }
 
 function overviewCatalogIcon(type) {
   return ({
     'my-tasks': 'tasks',
+    'project-overview': 'projects',
     'project-tasks': 'projects',
     'my-issues': 'issues',
     'my-agreements': 'agreements',
@@ -683,6 +698,9 @@ function openOverviewWidgetCatalog(initialShelf = 'quick') {
     if (!container) return;
     const existingIds = new Set((config[shelf] || []).map((x) => x.id));
     container.innerHTML = `<div class="overview-catalog-list">${overviewCatalogTypes(shelf).map((type) => {
+      if (type === 'project-overview') {
+        return `<div class="overview-catalog-row overview-catalog-row-select"><span class="overview-catalog-row-icon">${icon(overviewCatalogIcon(type), 17)}</span><span class="overview-catalog-row-label">${escapeHtml(OVERVIEW_WIDGET_LABELS[type])}</span><div class="overview-catalog-row-controls"><select id="overview-project-overview-select">${store.projects.map((p)=>`<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('')}</select><button type="button" class="ui-button btn btn-sm" id="overview-add-project-overview">Добавить</button></div></div>`;
+      }
       if (type === 'project-tasks') {
         return `<div class="overview-catalog-row overview-catalog-row-select"><span class="overview-catalog-row-icon">${icon(overviewCatalogIcon(type), 17)}</span><span class="overview-catalog-row-label">${escapeHtml(OVERVIEW_WIDGET_LABELS[type])}</span><div class="overview-catalog-row-controls"><select id="overview-project-widget-select">${store.projects.map((p)=>`<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('')}</select><button type="button" class="ui-button btn btn-sm" id="overview-add-project-widget">Добавить</button></div></div>`;
       }
@@ -701,6 +719,16 @@ function openOverviewWidgetCatalog(initialShelf = 'quick') {
       render();
       Views.overview();
     }));
+    document.getElementById('overview-add-project-overview')?.addEventListener('click', async () => {
+      const projectId = document.getElementById('overview-project-overview-select')?.value;
+      if (!projectId) return;
+      const id = `project-overview:${projectId}`;
+      if (!config.quick.some((item) => item.id === id)) config.quick.push({ id, type:'project-overview', projectId });
+      await overviewSaveConfig(config);
+      toast('Обзор сохранён');
+      render();
+      Views.overview();
+    });
     document.getElementById('overview-add-project-widget')?.addEventListener('click', async () => {
       const projectId = document.getElementById('overview-project-widget-select')?.value;
       if (!projectId) return;

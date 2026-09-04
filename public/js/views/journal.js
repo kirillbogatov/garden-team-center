@@ -44,7 +44,10 @@ Views.journal = async function () {
               .map((k) => `<button type="button" class="ui-segmented-item meeting-filter kind-btn ${k === Views._journalComposerKind ? 'active' : ''}" data-kind="${k}"><span>${JOURNAL_KIND_LABEL[k]}</span></button>`)
               .join('')}
           </div>
-          <button class="ui-button ui-button--primary btn btn-primary" id="journal-submit" style="margin-left:auto">Записать</button>
+          <div class="journal-composer-actions">
+            ${Auth.canCreate('tasks') ? `<button type="button" class="ui-button btn journal-create-task" id="journal-create-task">Сделать задачей</button>` : ''}
+            <button class="ui-button ui-button--primary btn btn-primary" id="journal-submit">Записать</button>
+          </div>
         </div>
       </div>
 
@@ -113,6 +116,15 @@ Views.journal = async function () {
   };
   editable.addEventListener('input', applyDetectedKind);
 
+  const createTaskButton = document.getElementById('journal-create-task');
+  if (createTaskButton) createTaskButton.addEventListener('click', async () => {
+    const sourceText = serializeEditableToText(editable).trim();
+    const prefill = journalTaskPrefill(sourceText);
+    editable.innerHTML = '';
+    editable.dispatchEvent(new Event('input', { bubbles: true }));
+    await FeatureLoader.run('openTaskModal', null, { prefill });
+  });
+
   document.getElementById('journal-submit').addEventListener('click', async () => {
     const text = serializeEditableToText(editable).trim();
     if (!text) return;
@@ -146,6 +158,26 @@ Views.journal = async function () {
 };
 
 
+
+
+function journalTaskPrefill(text) {
+  const source = String(text || '');
+  const assigneeIds = [];
+  let projectId = null;
+  let match;
+  MENTION_DISPLAY_RE.lastIndex = 0;
+  while ((match = MENTION_DISPLAY_RE.exec(source)) !== null) {
+    const [, , type, id] = match;
+    if (type === 'person' && !assigneeIds.includes(id) && store.person(id)) assigneeIds.push(id);
+    if (type === 'project' && !projectId && store.project(id)) projectId = id;
+  }
+  MENTION_DISPLAY_RE.lastIndex = 0;
+  const title = source
+    .replace(MENTION_DISPLAY_RE, (_, label) => label)
+    .trim()
+    .replace(/\s+/g, ' ');
+  return { title, assigneeIds, projectId };
+}
 
 function detectJournalKindFromText(text) {
   const normalized = String(text || '')

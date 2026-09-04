@@ -58,6 +58,7 @@ Views.projectDetail = async function (id) {
   const p = data.project;
   if (id !== (data.project.slug || data.project.id)) Router.replace(projectPath(p));
   Views._lastProject = p;
+  const addTaskIdx = registerAction(() => FeatureLoader.run('openTaskModal', null, { prefill: { projectId: p.id } }));
 
   const [projectNotes, settings] = await Promise.all([
     api.get(`/api/comments/project/${encodeURIComponent(p.id)}`).catch(() => []),
@@ -66,6 +67,7 @@ Views.projectDetail = async function (id) {
 
   setTopbar(`<h1>${escapeHtml(p.name)}</h1><div class="actions">
     <button type="button" class="sidebar-collapse-btn overview-comments-sidebar-toggle" id="project-comments-toggle" aria-label="Показать панель стикеров" title="Показать панель стикеров" aria-expanded="false">${icon('sticky', 16)}</button>
+    ${Auth.canCreate('tasks') ? `<button class="ui-button ui-button--sm btn btn-sm" data-action-id="${addTaskIdx}">+ Создать задачу</button>` : ''}
     ${Auth.canEditItem('projects', p) ? `<button class="ui-button btn" data-command="editCurrentProject">${icon('edit',14)} Редактировать</button>` : ''}
   </div>`);
 
@@ -75,7 +77,6 @@ Views.projectDetail = async function (id) {
     { key: 'meetings', label: 'Встречи' },
     { key: 'agreements', label: 'Договорённости' },
     { key: 'journal', label: 'Журнал' },
-    { key: 'documents', label: 'Документы' },
   ];
 
   function body(key) {
@@ -106,7 +107,6 @@ Views.projectDetail = async function (id) {
       return `<div class="ui-row list-row" data-action-id="${idx}"><span class="title">${renderMentionText(a.text)}</span><span class="meta">${fmtDate(a.date)}</span></div>`;
     }).join('') : emptyState('Договорённостей нет', '', 'agreements');
     if (key === 'journal') return data.journal.length ? data.journal.map(journalEntryHtml).join('') : emptyState('Упоминаний нет', '', 'journal');
-    if (key === 'documents') return data.documents.length ? data.documents.map(documentRowHtml).join('') : emptyState('Документов нет', '', 'documents');
     return '';
   }
 
@@ -116,10 +116,29 @@ Views.projectDetail = async function (id) {
       <span class="ui-tag badge">${PROJECT_STATUS_LABEL[p.status] || p.status}</span>
     </div>
     <p class="muted formatted-text">${escapeHtml(p.description || '')}</p>
-    <div class="flex gap-8" style="margin:12px 0 20px">${data.members.map(personChip).join('')}</div>
+    ${data.members.length ? `<section class="project-members-section" aria-labelledby="project-members-title">
+      <div class="project-members-heading-row">
+        <div class="project-members-heading" id="project-members-title">Участники проекта</div>
+      </div>
+      <div class="project-members-list">${data.members.map((person) => {
+        const load = normalizeProjectMemberLoad((p.memberLoads || {})[person.id]);
+        const option = PROJECT_LOAD_OPTIONS[load.mode] || PROJECT_LOAD_OPTIONS.full;
+        const actionIdx = registerAction(() => openProjectLoadManagement(p.id, person.id));
+        return `<div class="project-member-row">
+          <span class="project-member-person">
+            ${avatarHtml(person)}
+            <span class="project-member-action" role="button" tabindex="0" data-action-id="${actionIdx}" aria-label="Управлять загрузкой ${escapeHtml(person.name)}">
+              <span class="project-member-name">${escapeHtml(person.name)}</span>
+              <span class="project-member-separator" aria-hidden="true">·</span>
+              <span class="project-member-mode">${escapeHtml(option.label)} (${escapeHtml(option.rangeLabel)})</span>
+            </span>
+          </span>
+        </div>`;
+      }).join('')}</div>
+    </section>` : ''}
     ${data.goals.length ? `<div class="tiny" style="margin-bottom:16px">Работает на цели: ${data.goals.map((g) => `<span class="link" data-route="${goalPath(g)}">${escapeHtml(g.title)}</span>`).join(', ')}</div>` : ''}
-    <div class="ui-tab tabs">${tabs.map((t) => `<div class="ui-tab tab ${Views._projectTab === t.key ? 'active' : ''}" data-view-state="_projectTab" data-view-value="${t.key}" data-view-render="projectDetail" data-view-render-arg="${p.id}">${t.label}</div>`).join('')}</div>
-    <div>${body(Views._projectTab)}</div>
+    <div class="ui-tab tabs project-detail-tabs">${tabs.map((t) => `<div class="ui-tab tab ${Views._projectTab === t.key ? 'active' : ''}" data-project-detail-tab="${t.key}">${t.label}</div>`).join('')}</div>
+    <div class="project-detail-tab-body">${body(Views._projectTab)}</div>
     <aside class="overview-comments-drawer project-comments-drawer" id="project-comments-drawer" aria-hidden="true">
       <div class="overview-comments-head">
         <div><strong>Стикеры</strong></div>
@@ -128,6 +147,18 @@ Views.projectDetail = async function (id) {
       <div class="task-comments-list overview-comments-list" id="project-comments-list">${commentThreadHtml(projectNotes, { variant: 'notes' })}</div>
     </aside>
   </div>`;
+
+  const projectTabs = view.querySelector('.project-detail-tabs');
+  const projectTabBody = view.querySelector('.project-detail-tab-body');
+  projectTabs?.addEventListener('click', (event) => {
+    const tab = event.target.closest?.('[data-project-detail-tab]');
+    if (!tab || !projectTabs.contains(tab)) return;
+    const key = tab.dataset.projectDetailTab;
+    if (!tabs.some((item) => item.key === key) || key === Views._projectTab) return;
+    Views._projectTab = key;
+    projectTabs.querySelectorAll('[data-project-detail-tab]').forEach((node) => node.classList.toggle('active', node === tab));
+    if (projectTabBody) projectTabBody.innerHTML = body(key);
+  });
 
   const drawer = document.getElementById('project-comments-drawer');
   const toggle = document.getElementById('project-comments-toggle');
@@ -193,7 +224,6 @@ function openProjectModal(existing) {
     </div>
     <div class="ui-field field"><span class="ui-field-label field-label">Участники</span>
       <div id="prf-members-wrap">${peoplePickerHtml('Добавить участника…')}</div>
-      <div id="prf-member-loads" class="project-member-loads"></div>
     </div>
     <div class="ui-modal-actions modal-actions">
       ${isEdit ? `<button class="ui-button ui-button--danger btn btn-danger btn-push-left" data-command="deleteProject" data-command-arg="${p.id}">${icon('trash',14)} Удалить</button>` : ''}
@@ -206,37 +236,11 @@ function openProjectModal(existing) {
     document.getElementById('prf-color').value = color;
     document.querySelectorAll('[data-project-color]').forEach((item) => { item.classList.toggle('selected', item === swatch); item.setAttribute('aria-pressed', item === swatch ? 'true' : 'false'); });
   }));
-  const normalizeMemberLoad = normalizeProjectMemberLoad;
-  const memberLoads = Object.fromEntries(Object.entries(p.memberLoads || {}).map(([id, value]) => [id, normalizeMemberLoad(value)]));
-  const memberLoadsEl = document.getElementById('prf-member-loads');
-  function renderMemberLoads(selectedIds) {
-    const selectedPeople = selectedIds.map((id) => store.person(id)).filter(Boolean);
-    memberLoadsEl.innerHTML = selectedPeople.length ? `<div class="project-member-loads-title">Ориентировочная загрузка в проекте</div>${selectedPeople.map((person) => {
-      const load = memberLoads[person.id] || normalizeMemberLoad('full');
-      memberLoads[person.id] = load;
-      return `<div class="project-member-load-row" data-person-id="${person.id}">
-        <div class="project-member-load-person">${avatarHtml(person)}<span>${escapeHtml(person.name)}</span></div>
-        <select class="project-member-load-select" data-person-id="${person.id}">
-          <option value="full" ${load.mode === 'full' ? 'selected' : ''}>Фултайм (6–8 часов)</option>
-          <option value="half" ${load.mode === 'half' ? 'selected' : ''}>Парт-тайм (3–5 часов)</option>
-          <option value="support" ${load.mode === 'support' ? 'selected' : ''}>Саппорт (1–2 часа)</option>
-        </select>
-      </div>`;
-    }).join('')}` : '';
-    memberLoadsEl.querySelectorAll('.project-member-load-select').forEach((select) => {
-      select.onchange = () => {
-        const id = select.dataset.personId;
-        memberLoads[id] = { mode: select.value };
-      };
-    });
-
-  }
+  const existingMemberLoads = { ...(p.memberLoads || {}) };
   const membersPicker = initPeoplePicker(document.getElementById('prf-members-wrap'), store.team(), p.memberIds, {
     multi: true,
     placeholder: 'Добавить участника…',
-    onChange: (ids) => renderMemberLoads(ids),
   });
-  renderMemberLoads(membersPicker.getSelected());
   document.getElementById('prf-cancel').onclick = () => Modal.close();
   document.getElementById('prf-save').onclick = async () => {
     const payload = {
@@ -246,7 +250,7 @@ function openProjectModal(existing) {
       status: document.getElementById('prf-status').value,
       color: document.getElementById('prf-color').value,
       memberIds: membersPicker.getSelected(),
-      memberLoads: Object.fromEntries(membersPicker.getSelected().map((id) => [id, (memberLoads[id] || normalizeMemberLoad('full')).mode])),
+      memberLoads: Object.fromEntries(membersPicker.getSelected().map((id) => [id, normalizeProjectMemberLoad(existingMemberLoads[id] || 'full').mode])),
     };
     if (!payload.name) { toast('Укажите название проекта'); return; }
     if (payload.taskCode && !/^[A-Z]{4}$/.test(payload.taskCode)) { toast('Код задач должен состоять из 4 латинских букв'); return; }
@@ -266,11 +270,84 @@ function openProjectModal(existing) {
 }
 
 
+
+async function openProjectLoadManagement(projectId, focusPersonId = null) {
+  const project = store.projects.find((item) => item.id === projectId) || Views._lastProject;
+  if (!project || !Auth.canEditItem('projects', project, ['memberIds'])) return;
+
+  const initialMemberIds = [...(project.memberIds || [])];
+  const draft = { ...(project.memberLoads || {}) };
+
+  Modal.open(`
+    <h2>Управление загрузкой</h2>
+    <div class="ui-field field project-load-management-members">
+      <span class="ui-field-label field-label">Исполнители</span>
+      <div id="project-load-members-wrap">${peoplePickerHtml('Добавить исполнителя…')}</div>
+    </div>
+    <div class="project-load-management-label">Ориентировочная загрузка</div>
+    <div class="project-member-loads" id="project-load-management-list"></div>
+    <div class="ui-modal-actions modal-actions">
+      <button class="ui-button btn" data-modal-close>Отмена</button>
+      <button class="ui-button ui-button--primary btn btn-primary" id="project-load-management-save">Сохранить</button>
+    </div>
+  `, { initialFocus: 'panel' });
+
+  const list = document.getElementById('project-load-management-list');
+  const renderRows = (memberIds) => {
+    const members = memberIds.map((id) => store.person(id)).filter(Boolean);
+    list.innerHTML = members.length ? members.map((person) => {
+      const mode = normalizeProjectMemberLoad(draft[person.id] || 'full').mode;
+      draft[person.id] = mode;
+      return `<div class="project-member-load-row" data-person-id="${escapeHtml(person.id)}">
+        <div class="project-member-load-person">${avatarHtml(person)}<span>${escapeHtml(person.name)}</span></div>
+        <select class="project-member-load-select" data-project-load-person="${escapeHtml(person.id)}" aria-label="Загрузка ${escapeHtml(person.name)}">
+          <option value="full" ${mode === 'full' ? 'selected' : ''}>Фултайм (6–8 часов)</option>
+          <option value="half" ${mode === 'half' ? 'selected' : ''}>Парт-тайм (3–5 часов)</option>
+          <option value="support" ${mode === 'support' ? 'selected' : ''}>Саппорт (1–2 часа)</option>
+        </select>
+      </div>`;
+    }).join('') : '<div class="empty-inline">Добавьте исполнителей проекта, чтобы настроить загрузку</div>';
+
+    list.querySelectorAll('[data-project-load-person]').forEach((select) => {
+      select.onchange = () => { draft[select.dataset.projectLoadPerson] = select.value; };
+    });
+  };
+
+  const membersPicker = initPeoplePicker(document.getElementById('project-load-members-wrap'), store.team(), initialMemberIds, {
+    multi: true,
+    placeholder: 'Добавить исполнителя…',
+    onChange: renderRows,
+  });
+  renderRows(initialMemberIds);
+  if (focusPersonId) {
+    const targetLoad = list.querySelector(`[data-project-load-person="${CSS.escape(focusPersonId)}"]`);
+    if (targetLoad) targetLoad.focus({ preventScroll: true });
+  }
+
+  const save = document.getElementById('project-load-management-save');
+  save.onclick = async () => {
+    save.disabled = true;
+    try {
+      const memberIds = membersPicker.getSelected();
+      const memberLoads = Object.fromEntries(memberIds.map((id) => [id, normalizeProjectMemberLoad(draft[id] || 'full').mode]));
+      const updated = await Resources.projects.update(project.id, { memberIds, memberLoads });
+      await store.loadAll();
+      Views._lastProject = { ...project, ...(updated || {}), memberIds, memberLoads };
+      Modal.close();
+      toast('Загрузка обновлена');
+      await Views.projectDetail(project.id);
+    } catch (error) {
+      save.disabled = false;
+      toast('Не удалось сохранить загрузку');
+    }
+  };
+}
+
 async function openPersonLoadModal(personId) {
   const person = store.person(personId);
   if (!person) return;
   const projects = store.projects.filter((pr) => pr.status === 'active');
-  const canEdit = Auth.canEditItem('projects', p, ['memberIds']);
+  const canEdit = Auth.canManage('projects');
   const draft = new Map(projects.map((pr) => {
     const included = (pr.memberIds || []).includes(personId);
     const load = normalizeProjectMemberLoad((pr.memberLoads || {})[personId]);
@@ -355,4 +432,4 @@ async function deleteProject(id) {
 }
 
 // Public feature commands used by the declarative command layer.
-FeatureLoader.register({ editCurrentProject, openProjectModal, openPersonLoadModal, deleteProject });
+FeatureLoader.register({ editCurrentProject, openProjectModal, openPersonLoadModal, openProjectLoadManagement, deleteProject });

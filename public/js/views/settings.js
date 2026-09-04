@@ -8,6 +8,17 @@ Views.settings = async function () {
 
   const [settings, workspace, storage] = await Promise.all([GardenSettings.load(true), api.get('/api/workspace-settings'), api.get('/api/storage-info')]);
   const favorites = new Set(settings.favoriteMenuItems || []);
+  const notificationRows = Auth.isTeamlead() ? [
+    ['checkin_reminder', 'Напоминание о чек-апе', 'Во вторник, если Check-in не был заполнен в понедельник.'],
+    ['issue_created', 'Новая проблема от сотрудника', 'Когда сотрудник добавляет новую проблему.'],
+    ['lab_created', 'Новая идея или проект The Labs', 'Когда сотрудник добавляет идею или создаёт проект The Labs.'],
+  ] : (!Auth.isAdmin() ? [
+    ['task_assigned', 'Новая задача от тимлида', 'Когда тимлид ставит вам новую задачу.'],
+    ['project_load_changed', 'Изменение загрузки на проекте', 'Когда тимлид меняет вашу загрузку на проекте.'],
+  ] : []);
+  const notificationsSettingsHtml = notificationRows.length
+    ? notificationRows.map(([key, title, hint]) => `<label class="settings-toggle-row"><span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(hint)}</small></span><input type="checkbox" data-notification-event="${key}" ${(settings.notificationEvents?.[key] !== false) ? 'checked' : ''}/></label>`).join('')
+    : '<div class="settings-info-row"><span><strong>Нет доступных событий</strong><small>Для вашей роли персональные уведомления пока не настроены.</small></span></div>';
   // Список тем на экране «Оформление» держим самодостаточным: так он не
   // зависит от порядка загрузки общего реестра и старого браузерного кэша.
   // Значения должны совпадать с GARDEN_THEMES и серверным whitelist.
@@ -62,6 +73,7 @@ Views.settings = async function () {
     { key: 'appearance', label: 'Оформление' },
     { key: 'menu', label: 'Меню' },
     { key: 'tasks', label: 'Задачи' },
+    { key: 'notifications', label: 'Уведомления' },
     { key: 'storage', label: 'Данные' },
     { key: 'account', label: 'Учётная запись' },
   ];
@@ -89,6 +101,7 @@ Views.settings = async function () {
     menu: `<section class="settings-section"><div class="settings-section-head"><h2>Избранное</h2><p>Добавьте часто используемые подразделы в «Избранное» под «Журналом».</p></div><div class="ui-surface ui-surface--settings settings-card">${menuItems.map((item) => `<label class="settings-toggle-row"><span><strong>${item.label}</strong><small>${item.group}</small></span><input type="checkbox" data-favorite-menu="${item.key}" ${favorites.has(item.key) ? 'checked' : ''}/></label>`).join('')}</div></section>`,
     tasks: `<section class="settings-section"><div class="settings-section-head"><h2>Приоритет задач</h2><p>Выберите, что сильнее влияет на порядок задач в виджетах.</p></div><div class="ui-surface ui-surface--settings settings-card">${Object.entries(TASK_PRIORITY_STRATEGIES).map(([value, strategy]) => `<label class="settings-choice"><input type="radio" name="task-priority-mode" value="${value}" ${settings.taskPriorityMode === value ? 'checked' : ''}/><span><strong>${strategy.label}</strong><small>${strategy.description}</small></span></label>`).join('')}</div></section>
     <section class="settings-section settings-section-spaced"><div class="settings-section-head"><h2>Архивация</h2><p>Правила жизненного цикла задач для всей команды.</p></div><div class="ui-surface ui-surface--settings settings-card"><label class="settings-number-row"><span><strong>Автоматически архивировать «Готово»</strong><small>Через сколько дней после завершения задача перемещается в архив.</small></span><div class="settings-number-control"><div class="settings-stepper" role="group" aria-label="Количество дней до архивации"><button type="button" class="settings-stepper-button" id="settings-auto-archive-minus" aria-label="Уменьшить число дней" ${workspace.canEdit ? '' : 'disabled'}>−</button><input class="settings-stepper-value" id="settings-auto-archive-days" type="number" min="1" max="365" step="1" value="${workspace.taskAutoArchiveDays}" ${workspace.canEdit ? '' : 'disabled'}/><button type="button" class="settings-stepper-button" id="settings-auto-archive-plus" aria-label="Увеличить число дней" ${workspace.canEdit ? '' : 'disabled'}>+</button></div><span>дн.</span></div></label></div>${workspace.canEdit ? '' : '<div class="ui-field-hint field-hint">Изменить этот срок может пользователь с правом управления всеми задачами.</div>'}</section>`,
+    notifications: `<section class="settings-section"><div class="settings-section-head"><h2>Уведомления</h2><p>Выберите события, о которых Garden будет сообщать вам.</p></div><div class="ui-surface ui-surface--settings settings-card">${notificationsSettingsHtml}</div></section>`,
     storage: `<section class="settings-section"><div class="settings-section-head"><h2>Данные</h2><p>Все версии Garden используют одну внешнюю папку данных.</p></div><div class="ui-surface ui-surface--settings settings-card settings-storage-card"><div class="settings-info-row"><span><strong>Рабочая папка</strong><small>Сотрудники, задачи, встречи, настройки и загруженные файлы сохраняются здесь.</small></span><code class="settings-storage-path">${escapeHtml(storage.dataDir || '')}</code></div><div class="settings-info-row"><span><strong>База данных</strong><small>Этот файл не заменяется при обновлении Garden.</small></span><code class="settings-storage-path">${escapeHtml(storage.database || '')}</code></div></div></section>`,
     account: `<section class="settings-section"><div class="settings-section-head"><h2>Учётная запись</h2></div><div class="ui-surface ui-surface--settings settings-card"><button type="button" class="settings-action-row" id="settings-change-password"><span><strong>Сменить пароль</strong><small>Изменить пароль для входа в Garden</small></span><span class="settings-action-chevron">›</span></button></div></section>`,
   };
@@ -160,6 +173,14 @@ Views.settings = async function () {
       if (!input.checked) return;
       await GardenSettings.update({ taskPriorityMode: input.value });
     };
+  });
+
+  document.querySelectorAll('[data-notification-event]').forEach((input) => {
+    input.addEventListener('change', async () => {
+      const current = { ...(GardenSettings.value?.notificationEvents || settings.notificationEvents || {}) };
+      current[input.dataset.notificationEvent] = input.checked;
+      await GardenSettings.update({ notificationEvents: current });
+    });
   });
 
   document.querySelectorAll('[data-favorite-menu]').forEach((input) => {

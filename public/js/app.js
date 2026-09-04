@@ -238,7 +238,7 @@ document.addEventListener('click', (e) => {
 // Живёт в #app-header — отдельном от #topbar узле, поэтому не перезаписывается
 // каждым вызовом setTopbar() со страницы. Рендерится вместе с сайдбаром на
 // каждую навигацию (см. конец renderSidebar), плюс обновляется точечно, когда
-// приходят свежие данные AttentionEngine.
+// обновляется отдельно от содержимого страниц.
 // ---------------------------------------------------------------------------
 
 let _headerMenuOpenKind = null;
@@ -262,6 +262,14 @@ function openHeaderMenu(event, kind) {
   menu.setAttribute('role', 'menu');
   menu.innerHTML = kind === 'account' ? accountMenuHtml() : notificationsMenuHtml();
   document.body.appendChild(menu);
+  if (kind === 'notifications') {
+    NotificationCenter.bindMenu(menu);
+    NotificationCenter.load(true).then(() => {
+      if (_headerMenuOpenKind !== 'notifications' || !menu.isConnected) return;
+      menu.innerHTML = notificationsMenuHtml();
+      NotificationCenter.bindMenu(menu);
+    }).catch(() => {});
+  }
   // body масштабируется applyUiScale(). Fixed-элементы внутри transform-контекста
   // тоже масштабируются, поэтому у нижнего аккаунтного меню мог обрезаться «Выйти».
   // Компенсируем масштаб и ограничиваем меню границами viewport.
@@ -299,74 +307,85 @@ function accountMenuHtml() {
   `;
 }
 
-function notificationsMenuHtml() {
-  const items = AttentionEngine.cached;
-  if (items === null) return `<div class="header-menu-head-solo">Уведомления</div><div class="header-menu-empty">Загрузка…</div>`;
-  if (!items.length) return `<div class="header-menu-head-solo">Уведомления</div><div class="header-menu-empty">Всё спокойно — нет срочных сигналов</div>`;
-  const rows = items.slice(0, 8).map((item) => {
-    const idx = registerAction(() => { closeHeaderMenu(); item.run(); });
-    return `<button type="button" class="header-menu-notif-row" data-action-id="${idx}">
-      <span class="attention-mark ${item.tone}"></span>
-      <span class="header-menu-notif-copy"><span class="header-menu-notif-kind">${escapeHtml(item.kind)}</span><span class="header-menu-notif-title">${escapeHtml(item.title)}</span>${item.meta ? `<span class="header-menu-notif-meta">${escapeHtml(item.meta)}</span>` : ''}</span>
-    </button>`;
-  }).join('');
-  return `<div class="header-menu-head-solo">Уведомления</div><div class="header-menu-notif-list">${rows}</div><div class="header-menu-sep"></div><button type="button" class="header-menu-item" data-route="/overview" data-close-header-menu>${icon('overview', 15)}<span>Открыть «Обзор»</span></button>`;
-}
-
-// Лёгкий, самостоятельный источник «срочных сигналов» для колокольчика в шапке —
-// не дублирует полный движок «Требует внимания» с Обзора (тот учитывает загрузку
-// людей и завязан на большой набор данных), а берёт только явно срочные, дешёвые
-// в вычислении вещи: приоритетные задачи, серьёзные проблемы, договорённости на
-// завтра. Кэшируется в памяти; пересчитывается лениво при первом обращении и по
-// требованию (клик по колокольчику), а не на каждую навигацию.
-const AttentionEngine = {
-  cached: null,
+const NotificationCenter = {
+  items: null,
+  unreadCount: 0,
   loading: null,
-  async compute() {
-    const [tasks, issues, agreements] = await Promise.all([
-      Resources.tasks.list(),
-      Resources.issues.list(),
-      Resources.agreements.list(),
-    ]);
-    const activeTeamIds = new Set(store.activeTeam().map((p) => p.id));
-    const belongsToActiveTeam = (ids) => !ids?.length || ids.some((id) => activeTeamIds.has(id));
-    const items = [];
-    tasks
-      .filter((t) => !t.archivedAt && t.status !== 'done' && t.priority === 'high' && belongsToActiveTeam(t.assigneeIds))
-      .forEach((t) => items.push({
-        key: `task:${t.id}`, tone: 'danger', kind: 'Приоритетная задача', title: t.title,
-        meta: store.project(t.projectId)?.name || '', run: () => FeatureLoader.run('openTaskModal', t.id),
-      }));
-    issues
-      .filter((i) => i.status !== 'resolved' && i.severity === 'high')
-      .forEach((i) => items.push({
-        key: `issue:${i.id}`, tone: 'danger', kind: 'Серьёзная проблема', title: i.title,
-        meta: store.project(i.projectId)?.name || '', run: () => FeatureLoader.run('openIssueModal', i.id),
-      }));
-    const now = new Date();
-    const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-    const tomorrowKey = localDateKey(tomorrow);
-    agreements
-      .filter((a) => a.status !== 'done')
-      .forEach((a) => {
-        const date = agreementDateFromText(a.text, now) || (a.dueDate ? String(a.dueDate).slice(0, 10) : null);
-        if (date !== tomorrowKey) return;
-        items.push({
-          key: `agreement:${a.id}`, tone: 'warning', kind: 'Договорённость на завтра', title: plainJournalText(a.text) || 'Договорённость',
-          meta: fmtDate(date), run: () => FeatureLoader.run('openAgreementModal', a.id),
-        });
-      });
-    items.sort((a, b) => (a.tone === 'danger' ? 0 : 1) - (b.tone === 'danger' ? 0 : 1));
-    return items;
+  pollTimer: null,
+  startPolling() {
+    if (NotificationCenter.pollTimer) return;
+    NotificationCenter.pollTimer = window.setInterval(() => NotificationCenter.load(true).catch(() => {}), 60000);
   },
-  async refresh() {
-    if (this.loading) return this.loading;
-    this.loading = this.compute()
-      .then((items) => { this.cached = items; this.loading = null; renderAppHeader(); return items; })
-      .catch((err) => { this.loading = null; console.error(err); return this.cached || []; });
-    return this.loading;
+  async load(force = false) {
+    if (!force && NotificationCenter.items !== null) return NotificationCenter.items;
+    if (NotificationCenter.loading) return NotificationCenter.loading;
+    NotificationCenter.loading = api.get('/api/notifications').then((data) => {
+      NotificationCenter.items = Array.isArray(data?.items) ? data.items : [];
+      NotificationCenter.unreadCount = Number(data?.unreadCount || 0);
+      NotificationCenter.refreshBadge();
+      return NotificationCenter.items;
+    }).finally(() => { NotificationCenter.loading = null; });
+    return NotificationCenter.loading;
+  },
+  refreshBadge() {
+    document.querySelectorAll('[data-notification-badge]').forEach((badge) => {
+      const count = NotificationCenter.unreadCount;
+      badge.textContent = count > 99 ? '99+' : String(count || '');
+      badge.hidden = count <= 0;
+    });
+  },
+  async markRead(id) {
+    const data = await api.put(`/api/notifications/${encodeURIComponent(id)}/read`, {});
+    const item = NotificationCenter.items?.find((entry) => entry.id === id);
+    if (item) item.readAt = item.readAt || new Date().toISOString();
+    NotificationCenter.unreadCount = Number(data?.unreadCount || Math.max(0, NotificationCenter.unreadCount - 1));
+    NotificationCenter.refreshBadge();
+  },
+  async markAllRead() {
+    await api.post('/api/notifications/read-all', {});
+    (NotificationCenter.items || []).forEach((item) => { item.readAt = item.readAt || new Date().toISOString(); });
+    NotificationCenter.unreadCount = 0;
+    NotificationCenter.refreshBadge();
+  },
+  bindMenu(menu) {
+    menu.querySelectorAll('[data-notification-id]').forEach((row) => {
+      row.onclick = async () => {
+        const item = NotificationCenter.items?.find((entry) => entry.id === row.dataset.notificationId);
+        if (!item) return;
+        if (!item.readAt) await NotificationCenter.markRead(item.id).catch(() => {});
+        closeHeaderMenu();
+        if (item.route) Router.go(item.route);
+      };
+    });
+    const readAll = menu.querySelector('[data-notifications-read-all]');
+    if (readAll) readAll.onclick = async () => {
+      await NotificationCenter.markAllRead().catch(() => {});
+      if (menu.isConnected) menu.innerHTML = notificationsMenuHtml();
+      NotificationCenter.bindMenu(menu);
+    };
   },
 };
+
+function notificationEventLabel(eventType) {
+  return ({
+    task_assigned: 'Задача',
+    project_load_changed: 'Загрузка',
+    checkin_reminder: 'Check-in',
+    issue_created: 'Проблема',
+    lab_created: 'The Labs',
+  })[eventType] || 'Уведомление';
+}
+
+function notificationsMenuHtml() {
+  const items = NotificationCenter.items;
+  if (items === null) return `<div class="header-menu-head-solo">Уведомления</div><div class="header-menu-empty">Загрузка…</div>`;
+  const rows = items.slice(0, 20).map((item) => `<button type="button" class="header-menu-notif-row ${item.readAt ? '' : 'is-unread'}" data-notification-id="${escapeHtml(item.id)}">
+      <span class="notification-unread-dot" aria-hidden="true"></span>
+      <span class="header-menu-notif-copy"><span class="header-menu-notif-kind">${escapeHtml(notificationEventLabel(item.eventType))}</span><span class="header-menu-notif-title">${escapeHtml(item.title)}</span>${item.body ? `<span class="header-menu-notif-meta">${escapeHtml(item.body)}</span>` : ''}</span>
+    </button>`).join('');
+  const body = rows || `<div class="header-menu-empty">Новых уведомлений нет</div>`;
+  return `<div class="header-menu-notif-head"><div class="header-menu-head-solo">Уведомления</div>${NotificationCenter.unreadCount ? '<button type="button" class="header-menu-link" data-notifications-read-all>Прочитать все</button>' : ''}</div><div class="header-menu-notif-list">${body}</div>`;
+}
 
 function renderAppHeader() {
   // Глобальная верхняя панель убрана: поиск и сервисные действия теперь живут в сайдбаре.
@@ -642,6 +661,7 @@ function renderSidebar(currentPath) {
     <nav class="nav-sections nav-sections-stacked" aria-label="Разделы Garden">${sectionHtml}</nav>
     <div class="sidebar-footer sidebar-footer-bar">
       <button type="button" class="sidebar-user-compact" data-header-menu="account" aria-haspopup="menu" title="${escapeHtml(accountName)}" aria-label="Меню аккаунта">${accountAvatar}<span class="sidebar-user-name">${escapeHtml(accountName)}</span></button>
+      <button type="button" class="sidebar-footer-icon sidebar-notifications-btn" data-header-menu="notifications" aria-haspopup="menu" title="Уведомления" aria-label="Уведомления">${icon('bell', 15)}<span class="sidebar-notification-badge" data-notification-badge hidden></span></button>
       <button type="button" class="sidebar-footer-icon ${currentPath === '/settings' ? 'active' : ''}" data-route="/settings" title="Настройки" aria-label="Настройки">${icon('settings', 15)}</button>
     </div>
   `;
@@ -653,6 +673,9 @@ function renderSidebar(currentPath) {
   normalizeSidebarActiveItems(sidebar);
   ensureActiveNavItemVisible(sidebar);
   renderAppHeader();
+  NotificationCenter.refreshBadge();
+  NotificationCenter.startPolling();
+  NotificationCenter.load(true).catch(() => {});
 }
 
 // Пункты меню могут не помещаться в высоту сайдбара (особенно когда активная

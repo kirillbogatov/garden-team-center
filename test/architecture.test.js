@@ -215,7 +215,7 @@ test('detail textareas commit on Enter and keep Shift+Enter for new lines', () =
   assert.match(detail, /event\.shiftKey/);
   assert.match(tasks, /bindDetailCommitOnEnter\(descriptionField/);
   assert.match(labs, /bindDetailCommitOnEnter\(descriptionField/);
-  assert.match(labs, /bindDetailCommitOnEnter\(linksField/);
+  assert.match(labs, /bindLabLinksEditor\('lab-detail-links'/);
 });
 
 test('task notes drawer does not default to open below the overlay breakpoint (tasks.js)', () => {
@@ -804,9 +804,15 @@ test('task list has no priority-strategy sorting control', () => {
   assert.doesNotMatch(tasks, /sortTasksByPriorityStrategy/);
 });
 
-test('task create deadline suggestions are compact inline actions', () => {
+test('task create deadline suggestions are compact inline actions with a Friday shortcut', () => {
   const tasks = read('public/js/views/tasks.js');
-  assert.match(tasks, /Поставить на:<\/span><button[^>]+>сегодня<\/button><span[^>]*>·<\/span><button[^>]+>завтра<\/button><span[^>]*>·<\/span><button[^>]+>конец недели<\/button>/);
+  assert.match(tasks, /Поставить на:/);
+  assert.match(tasks, /data-task-date-suggest=\"today\">сегодня/);
+  assert.match(tasks, /data-task-date-suggest=\"tomorrow\">завтра/);
+  assert.match(tasks, /data-task-date-suggest=\"week-end\">конец недели/);
+  assert.match(tasks, /new Date\(\)\.getDay\(\) === 5/);
+  assert.match(tasks, /data-task-date-suggest=\"next-monday\">следующий понедельник/);
+  assert.match(tasks, /kind === 'next-monday'/);
 });
 
 test('obvious unused legacy helpers are removed', () => {
@@ -1084,4 +1090,168 @@ test('overview task rows open task detail, my tasks use task icon, and Garden br
   assert.match(css, /\.sidebar-brand-name:hover\{background: transparent;color: var\(--text-primary\);\}/, 'Garden brand should not get a hover background');
   assert.doesNotMatch(appJs, /garden-hover-sprig/, 'Garden brand should not render decorative animation markup');
   assert.doesNotMatch(css, /garden-branch-grow|garden-leaf-one|garden-leaf-two/, 'Garden brand should not include decorative hover animation');
+});
+
+
+test('command palette search field follows the modal shape and uses broadly useful examples', () => {
+  const css = read('public/css/style.css');
+  const interactions = read('public/js/lib/interactions.js');
+  assert.match(css, /\.palette input\{[^}]*border-radius:\s*calc\(var\(--radius-lg\) - 1px\) calc\(var\(--radius-lg\) - 1px\) 0 0/);
+  assert.match(interactions, /Поиск: задачи на сегодня, встречи без итогов, check-in с блокерами…/);
+  assert.equal(interactions.includes('мои задачи, встречи без итогов 1:1'), false);
+});
+
+test('person and project detail tabs update locally without rerendering the whole detail page', () => {
+  const people = read('public/js/views/people.js');
+  const projects = read('public/js/views/projects.js');
+  assert.match(people, /data-person-detail-tab=/);
+  assert.match(people, /personTabBody\.innerHTML = tabBody\(key\)/);
+  assert.doesNotMatch(people, /data-view-state="_personTab"[^>]*data-view-render="personDetail"/);
+  assert.match(projects, /data-project-detail-tab=/);
+  assert.match(projects, /projectTabBody\.innerHTML = body\(key\)/);
+  assert.doesNotMatch(projects, /data-view-state="_projectTab"[^>]*data-view-render="projectDetail"/);
+});
+
+test('project detail does not expose the removed Documents tab or fetch project documents', () => {
+  const projects = read('public/js/views/projects.js');
+  const aggregates = read('server/routes/aggregates.js');
+  assert.doesNotMatch(projects, /key: 'documents'/);
+  assert.doesNotMatch(projects, /data\.documents/);
+  assert.doesNotMatch(aggregates, /const documents = visibleItems\('documents'/);
+});
+
+test('project detail exposes task creation prefilled with the current project', () => {
+  const projects = read('public/js/views/projects.js');
+  assert.match(projects, /openTaskModal', null, \{ prefill: \{ projectId: p\.id \} \}/);
+  assert.match(projects, /\+ Создать задачу/);
+});
+
+test('overview offers a project overview quick-access widget to every user', () => {
+  const overview = read('public/js/views/overview.js');
+  assert.match(overview, /'project-overview': 'Обзор проекта'/);
+  assert.match(overview, /\['my-tasks','project-overview','project-tasks'/, 'project overview should be in the shared quick-action catalog without a role gate');
+  assert.match(overview, /widget\.type === 'project-overview'[\s\S]*projectPath\(project\)/, 'project overview quick action should deep-link to project detail');
+  assert.match(overview, /overview-project-overview-select/);
+  assert.match(overview, /config\.quick\.push\(\{ id, type:'project-overview', projectId \}\)/);
+});
+
+test('project detail shows members as a dedicated section with workload mode', () => {
+  const projects = read('public/js/views/projects.js');
+  const css = read('public/css/style.css');
+  assert.match(projects, /Участники проекта/);
+  assert.match(projects, /PROJECT_LOAD_OPTIONS\[load\.mode\]/);
+  assert.match(projects, /project-member-mode/);
+  assert.match(projects, /option\.label/);
+  assert.match(projects, /option\.rangeLabel/);
+  assert.doesNotMatch(projects, /data\.members\.map\(personChip\)/, 'legacy inline member chips should be removed from project detail');
+  assert.match(css, /\.project-members-section\{/);
+  assert.match(css, /\.project-member-row\{/);
+});
+
+
+test('employee workload edit action works and project workload opens from participant hours', () => {
+  const projects = read('public/js/views/projects.js');
+  const css = read('public/css/style.css');
+  assert.match(projects, /const canEdit = Auth\.canManage\('projects'\)/, 'employee workload modal must not reference an undefined project variable');
+  assert.match(projects, /Управление загрузкой/);
+  assert.doesNotMatch(projects, /project-members-load-link/, 'project detail should not keep a separate workload-management link');
+  assert.match(projects, /project-member-action[\s\S]*data-action-id=/, 'only the participant text should be the workload-management entry point');
+  assert.match(projects, /openProjectLoadManagement\(p\.id, person\.id\)/, 'participant click should tell the workload modal which employee to focus');
+  assert.doesNotMatch(projects, /project-member-row[^>]*data-action-id=/, 'empty participant-row space must not be clickable');
+  assert.match(projects, /\$\{escapeHtml\(option\.label\)\} \(\$\{escapeHtml\(option\.rangeLabel\)\}\)/, 'the row should show both workload mode and hours');
+  assert.match(projects, /async function openProjectLoadManagement\(projectId, focusPersonId = null\)/);
+  assert.match(projects, /project-load-management-members[\s\S]*Исполнители/, 'workload modal should expose the participant picker above load rows');
+  assert.match(projects, /initPeoplePicker\(document\.getElementById\('project-load-members-wrap'\)/);
+  assert.match(projects, /Resources\.projects\.update\(project\.id, \{ memberIds, memberLoads \}\)/);
+  assert.doesNotMatch(projects, /Router\.go\(personPath\(person\)\)/, 'participant workload rows should not navigate to the employee page');
+  assert.doesNotMatch(projects, /project-member-load-link|data-project-load-open/, 'workload row should not contain a competing nested link');
+  assert.doesNotMatch(css, /\.project-member-row:hover\{background:var\(--bg-hover\);\}/, 'workload row should not use background highlighting on hover');
+  assert.match(css, /\.project-member-action:hover \.project-member-name,\.project-member-action:hover \.project-member-mode\{text-decoration:underline/, 'hovering the participant text should underline it');
+  assert.doesNotMatch(projects, /id="prf-member-loads"/, 'project edit form should keep only the participant picker');
+  assert.match(projects, /existingMemberLoads/, 'editing participants must preserve existing workload values');
+  assert.match(css, /\.project-load-management-members\{[^}]*margin-bottom:18px/, 'workload assignee field should be separated from workload controls');
+  assert.match(projects, /Modal\.open\([\s\S]*initialFocus: 'panel'/, 'workload modal should not autofocus the assignee picker');
+  assert.match(projects, /data-project-load-person[\s\S]*focusPersonId[\s\S]*targetLoad\.focus/, 'workload modal should focus the selected employee load control after opening');
+});
+
+test('server settings preserve project overview quick widgets', () => {
+  const settings = read('server/routes/settings.js');
+  assert.match(settings, /new Set\(\['my-tasks','project-overview','project-tasks'/);
+  assert.match(settings, /item\.type === 'project-tasks' \|\| item\.type === 'project-overview'/);
+});
+
+test('journal opens task creation modal in place and hands over text plus canonical mentions', () => {
+  const journal = read('public/js/views/journal.js');
+  const overview = read('public/js/views/overview.js');
+  const css = read('public/css/system.css');
+  assert.match(journal, /id="journal-create-task"[^>]*>Сделать задачей<\/button>/);
+  assert.doesNotMatch(journal, /id="journal-create-task"[^>]*>[^<]*<svg/, 'journal task action must not render an icon');
+  assert.match(journal, /const sourceText = serializeEditableToText\(editable\)\.trim\(\)/);
+  assert.match(journal, /function journalTaskPrefill\(text\)/);
+  assert.match(journal, /type === 'person'[^\n]*assigneeIds\.push\(id\)/, 'canonical employee mentions should prefill task assignees');
+  assert.match(journal, /type === 'project'[^\n]*projectId = id/, 'the first canonical project mention should prefill the task project');
+  assert.match(journal, /replace\(MENTION_DISPLAY_RE, \(_, label\) => label\)/, 'task title should use visible mention labels rather than canonical markup');
+  assert.match(journal, /editable\.innerHTML = ''/);
+  assert.match(journal, /FeatureLoader\.run\('openTaskModal', null, \{ prefill \}\)/, 'task creation should open as a modal without leaving Journal');
+  assert.doesNotMatch(journal, /Router\.go/, 'journal task action must not navigate to Tasks');
+  assert.match(css, /\.journal-composer \.journal-composer-actions \{[\s\S]*margin-left: auto;/);
+  assert.match(overview, /return project \? project\.name : 'Проект';/, 'project overview widget title should be only the project name');
+  assert.match(overview, /title = project\.name;/);
+});
+
+
+test('journal task handoff uses the same button size as Record', () => {
+  const journal = read('public/js/views/journal.js');
+  assert.match(journal, /class="ui-button btn journal-create-task" id="journal-create-task">Сделать задачей<\/button>/);
+  assert.doesNotMatch(journal, /journal-create-task[^\n]*btn-sm/);
+});
+
+test('notification center is wired into sidebar, settings and server persistence', () => {
+  const app = read('public/js/app.js');
+  const settingsView = read('public/js/views/settings.js');
+  const settingsRoute = read('server/routes/settings.js');
+  const db = read('server/db.js');
+  const crud = read('server/routes/crud.js');
+  assert.match(app, /data-header-menu="notifications"/);
+  assert.match(app, /data-notification-badge/);
+  assert.match(app, /\/api\/notifications/);
+  assert.match(settingsView, /key: 'notifications', label: 'Уведомления'/);
+  assert.match(settingsView, /\['task_assigned', 'Новая задача от тимлида'/);
+  assert.match(settingsView, /\['project_load_changed', 'Изменение загрузки на проекте'/);
+  assert.match(settingsView, /\['checkin_reminder', 'Напоминание о чек-апе'/);
+  assert.match(settingsView, /\['issue_created', 'Новая проблема от сотрудника'/);
+  assert.match(settingsView, /\['lab_created', 'Новая идея или проект The Labs'/);
+  assert.match(settingsView, /Auth\.isTeamlead\(\) \? \[/);
+  assert.match(settingsRoute, /notificationEvents/);
+  assert.match(db, /CREATE TABLE IF NOT EXISTS notifications/);
+  assert.match(crud, /notifyTaskAssigned/);
+  assert.match(crud, /notifyProjectLoadChanges/);
+  assert.match(crud, /notifyIssueCreated/);
+  assert.match(crud, /notifyLabCreated/);
+});
+
+
+test('The Labs uses aligned privacy control and document-style links editor', () => {
+  const labs = read('public/js/views/labs.js');
+  const css = read('public/css/system.css');
+  const style = read('public/css/style.css');
+  const meetings = read('public/js/views/meetings.js');
+  assert.match(labs, /Приватный проект \(Виден только вам и вашему тимлиду\)/);
+  assert.match(labs, /canManagePrivacy = Boolean\(Auth\.isTeamlead\(\)/);
+  assert.match(labs, /labLinksEditorHtml\('lab-detail-links'/);
+  assert.match(labs, /meeting-document-head/);
+  assert.match(labs, /data-lab-link-new-title/);
+  assert.match(labs, /data-lab-link-new-url/);
+  assert.match(css, /\.lab-private-checkbox\{display:flex;align-items:center/);
+  assert.match(css, /\.meeting-document-head\{grid-template-columns:[^}]*72px;align-items:start/);
+  assert.match(style, /\.header-menu-popover--notifications\{border-color:var\(--border-soft\);box-shadow:var\(--shadow-card\);\}/);
+  assert.match(meetings, /<span>Название<\/span><span>Ссылка<\/span>/);
+});
+
+test('team active-only checkbox shows inactive employees when unchecked', () => {
+  const people = read('public/js/views/people.js');
+  assert.match(people, /const people = type === 'team' && Views\._teamOnlyActive \? allPeople\.filter\(isActiveTeamPerson\) : allPeople/);
+  assert.match(people, /id="team-only-active"/);
+  assert.match(people, /addEventListener\('change',[\s\S]*toggleTeamOnlyActive\(event\.currentTarget\.checked\)/);
+  assert.doesNotMatch(people, /onchange="toggleTeamOnlyActive/);
 });

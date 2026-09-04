@@ -17,10 +17,17 @@ function renderPeopleList(type, title, emptyHint) {
   setTopbar(`<h1>${title}</h1>${(Auth.canManage('people') || (Auth.isTeamlead() && type === 'team')) ? `<div class="actions"><button class="ui-button ui-button--primary btn btn-primary" data-command="openPersonModal" data-command-arg="${type}">${type === 'team' ? '+ Добавить сотрудника' : '+ Добавить стейкхолдера'}</button></div>` : ''}`);
   const view = document.getElementById('view');
 
-  const teamFilter = type === 'team' ? `<div class="team-list-toolbar"><label class="team-active-toggle"><input type="checkbox" ${Views._teamOnlyActive ? 'checked' : ''} onchange="toggleTeamOnlyActive(this.checked)" /><span>Только активные</span></label></div>` : '';
+  const teamFilter = type === 'team' ? `<div class="team-list-toolbar"><label class="team-active-toggle"><input type="checkbox" id="team-only-active" ${Views._teamOnlyActive ? 'checked' : ''} /><span>Только активные</span></label></div>` : '';
+  const bindTeamFilter = () => {
+    if (type !== 'team') return;
+    document.getElementById('team-only-active')?.addEventListener('change', (event) => {
+      toggleTeamOnlyActive(event.currentTarget.checked);
+    });
+  };
 
   if (!people.length) {
     view.innerHTML = `${teamFilter}${emptyState(type === 'team' && Views._teamOnlyActive ? 'Нет активных сотрудников' : emptyHint, '', type === 'team' ? 'team' : 'stakeholders')}`;
+    bindTeamFilter();
     return;
   }
 
@@ -74,6 +81,7 @@ function renderPeopleList(type, title, emptyHint) {
     </div>
     </div>
   `;
+  bindTeamFilter();
 }
 
 function toggleTeamOnlyActive(checked) {
@@ -523,7 +531,7 @@ Views.personDetail = async function (id) {
     </div>
     ${personContextHtml(p, data)}
     <div class="person-history-label">История и работа</div>
-    <div class="ui-tab tabs person-tabs">${tabs.map((t) => `<div class="ui-tab tab ${Views._personTab === t.key ? 'active' : ''}" data-view-state="_personTab" data-view-value="${t.key}" data-view-render="personDetail" data-view-render-arg="${id}">${t.label}</div>`).join('')}</div>
+    <div class="ui-tab tabs person-tabs">${tabs.map((t) => `<div class="ui-tab tab ${Views._personTab === t.key ? 'active' : ''}" data-person-detail-tab="${t.key}">${t.label}</div>`).join('')}</div>
     <div class="person-tab-body">${tabBody(Views._personTab)}</div>
     ${p.type === 'team' ? `<aside class="overview-comments-drawer person-comments-drawer" id="person-comments-drawer" aria-hidden="true">
       <div class="overview-comments-head">
@@ -534,6 +542,21 @@ Views.personDetail = async function (id) {
     </aside>` : ''}
     </div>
   `;
+
+  const personTabs = view.querySelector('.person-tabs');
+  const personTabBody = view.querySelector('.person-tab-body');
+  personTabs?.addEventListener('click', (event) => {
+    const tab = event.target.closest?.('[data-person-detail-tab]');
+    if (!tab || !personTabs.contains(tab)) return;
+    const key = tab.dataset.personDetailTab;
+    if (!tabs.some((item) => item.key === key) || key === Views._personTab) return;
+    Views._personTab = key;
+    personTabs.querySelectorAll('[data-person-detail-tab]').forEach((node) => {
+      node.classList.toggle('active', node === tab);
+      node.setAttribute('aria-selected', node === tab ? 'true' : 'false');
+    });
+    if (personTabBody) personTabBody.innerHTML = tabBody(key);
+  });
 
   if (p.type === 'team') {
     const drawer = document.getElementById('person-comments-drawer');

@@ -16,6 +16,8 @@ const registerSearchRoutes = require('./routes/search');
 const registerAggregateRoutes = require('./routes/aggregates');
 const registerPhotoRoutes = require('./routes/photos');
 const registerVersionRoutes = require('./routes/versions');
+const registerNotificationRoutes = require('./routes/notifications');
+const { ensureCheckinReminder } = require('./notifications');
 const { nextNumericKey } = require('./entity-keys');
 const createAuthCore = require('./auth-core');
 const createAccessControl = require('./access-control');
@@ -193,6 +195,7 @@ registerCrudRoutes(app, {
 registerCollaborationRoutes(app, { db, canReadItem, denied });
 registerCommentRoutes(app, { db, canReadItem, denied });
 registerVersionRoutes(app, { db, resolveEntity, canReadItem, canUpdate, sanitizeItem, denied });
+registerNotificationRoutes(app, { db, ensureCheckinReminder });
 
 // ---------- Aggregated read models ----------
 registerAggregateRoutes(app, { db, resolveEntity, sanitizeItem, visibleItems, canReadItem, denied });

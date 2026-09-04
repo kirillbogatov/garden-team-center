@@ -1,6 +1,7 @@
 'use strict';
 
 const { recordCreate: recordVersionCreate, recordUpdate: recordVersionUpdate } = require('../versioning');
+const { notifyTaskAssigned, notifyProjectLoadChanges, notifyIssueCreated, notifyLabCreated } = require('../notifications');
 
 module.exports = function registerCrudRoutes(app, deps) {
   const { COLLECTIONS, db, autoArchiveCompletedTasks, canReadItem, sanitizeItem, visibleItems, resolveEntity, denied, canCreate, withOwnership, taskLifecyclePatch, sanitizeKnowledgeHtmlServer, isTeamlead, canManageCollection, normalizeProjectTaskCode, uniqueProjectTaskCode, syncJournalDerivedEntity, assignTaskKey, SLUG_COLLECTIONS, uniqueSlug, nextLabKey, syncRecurringMeetingsForPerson, syncRecurringMeetingsForMeeting, canUpdate, nextTaskKey, taskKeyPrefix, teamleadOwnsPerson, memberPersonPatch, OWNER_COLLECTIONS, canDelete, assignMeetingKey, nextMeetingKey, assignProcessKey, nextProcessKey } = deps;
@@ -117,7 +118,7 @@ module.exports = function registerCrudRoutes(app, deps) {
             taskGroupId,
             taskGroupIndex: index,
           })));
-          copies.forEach((copy) => recordVersionedCreate('tasks', copy, user));
+          copies.forEach((copy) => { recordVersionedCreate('tasks', copy, user); notifyTaskAssigned(db, user, copy); });
           return res.status(201).json({ ...copies[0], copies });
         }
       }
@@ -125,6 +126,9 @@ module.exports = function registerCrudRoutes(app, deps) {
       payload = configFor(name).prepareCreate?.(payload) || payload;
       const item = db[name].create(payload);
       recordVersionedCreate(name, item, user);
+      if (name === 'tasks') notifyTaskAssigned(db, user, item);
+      if (name === 'issues') notifyIssueCreated(db, user, item);
+      if (name === 'labs') notifyLabCreated(db, user, item);
       if (name === 'people' && item.type === 'team') syncRecurringMeetingsForPerson(item.id, user);
       if (!(name === 'meetings' && item.autoRecurring)) configFor(name).afterSave?.(item, user);
       res.status(201).json(sanitizeItem(name, item, user));
@@ -204,6 +208,7 @@ module.exports = function registerCrudRoutes(app, deps) {
             delete copyPayload.id; delete copyPayload.createdAt; delete copyPayload.updatedAt; delete copyPayload.taskGroupIndex; delete copyPayload.taskKey;
             const copy = db.tasks.create(assignTaskKey(copyPayload));
             recordVersionedCreate('tasks', copy, user);
+            notifyTaskAssigned(db, user, copy);
             copies.push(copy);
           }
           return res.json({ ...item, copies, createdCopies: copies.length });
@@ -212,6 +217,7 @@ module.exports = function registerCrudRoutes(app, deps) {
   
       const item = db[name].update(req.params.id, requestBody);
       recordVersionedUpdate(name, current, item, user);
+      if (name === 'projects') notifyProjectLoadChanges(db, user, current, item);
       if (name === 'people' && item.type === 'team') syncRecurringMeetingsForPerson(item.id, user);
       configFor(name).afterSave?.(item, user);
       res.json(sanitizeItem(name, item, user));

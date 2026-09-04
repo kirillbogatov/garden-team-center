@@ -131,6 +131,25 @@ sqlite.exec(`
     ON auth_sessions(user_id);
   CREATE INDEX IF NOT EXISTS idx_auth_sessions_expiry
     ON auth_sessions(expires_at);
+
+  CREATE TABLE IF NOT EXISTS notifications (
+    id TEXT PRIMARY KEY,
+    workspace TEXT NOT NULL DEFAULT 'main',
+    user_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL DEFAULT '',
+    route TEXT,
+    dedupe_key TEXT,
+    created_at TEXT NOT NULL,
+    read_at TEXT,
+    UNIQUE(workspace, user_id, dedupe_key)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_notifications_user_created
+    ON notifications(workspace, user_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_notifications_user_unread
+    ON notifications(workspace, user_id, read_at);
 `);
 
 function relationKeyFor(name, item) {
@@ -490,6 +509,18 @@ const userPrefUpsert = sqlite.prepare(`
   ON CONFLICT(user_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at
 `);
 
+const notifList = sqlite.prepare(`
+  SELECT id, event_type AS eventType, title, body, route, created_at AS createdAt, read_at AS readAt
+  FROM notifications WHERE workspace = ? AND user_id = ? ORDER BY created_at DESC LIMIT ?
+`);
+const notifUnreadCount = sqlite.prepare('SELECT COUNT(*) AS count FROM notifications WHERE workspace = ? AND user_id = ? AND read_at IS NULL');
+const notifInsert = sqlite.prepare(`
+  INSERT OR IGNORE INTO notifications (id, workspace, user_id, event_type, title, body, route, dedupe_key, created_at, read_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+`);
+const notifMarkRead = sqlite.prepare('UPDATE notifications SET read_at = COALESCE(read_at, ?) WHERE workspace = ? AND user_id = ? AND id = ?');
+const notifMarkAllRead = sqlite.prepare('UPDATE notifications SET read_at = COALESCE(read_at, ?) WHERE workspace = ? AND user_id = ?');
+
 function authRow(row) {
   if (!row) return null;
   return {
@@ -560,6 +591,31 @@ db.auth = {
     remove: (tokenHash) => authSessionDelete.run(tokenHash),
     removeForUser: (userId) => authSessionDeleteForUser.run(userId),
     cleanup: () => authSessionCleanup.run(new Date().toISOString()),
+  },
+};
+
+db.notifications = {
+  list(userId, limit = 50) {
+    const safeLimit = Math.max(1, Math.min(100, Number(limit) || 50));
+    return notifList.all(currentWorkspace(), String(userId), safeLimit).map((row) => ({ ...row, readAt: row.readAt || null, route: row.route || null }));
+  },
+  unreadCount(userId) { return Number(notifUnreadCount.get(currentWorkspace(), String(userId)).count || 0); },
+  create(userId, data) {
+    const createdAt = data.createdAt || new Date().toISOString();
+    const id = data.id || genId('ntf');
+    const dedupeKey = data.dedupeKey ? String(data.dedupeKey) : null;
+    const result = notifInsert.run(id, currentWorkspace(), String(userId), String(data.eventType || 'general'), String(data.title || ''), String(data.body || ''), data.route ? String(data.route) : null, dedupeKey, createdAt);
+    if (!result.changes) return null;
+    return { id, eventType: String(data.eventType || 'general'), title: String(data.title || ''), body: String(data.body || ''), route: data.route || null, createdAt, readAt: null };
+  },
+  markRead(userId, id) {
+    const now = new Date().toISOString();
+    const result = notifMarkRead.run(now, currentWorkspace(), String(userId), String(id));
+    return Number(result.changes) > 0;
+  },
+  markAllRead(userId) {
+    const now = new Date().toISOString();
+    return Number(notifMarkAllRead.run(now, currentWorkspace(), String(userId)).changes || 0);
   },
 };
 

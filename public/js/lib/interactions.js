@@ -175,7 +175,7 @@ function openPalette() {
   if (!Auth.user) return;
   Modal.root.innerHTML = `<div class="ui-overlay overlay" id="palette-overlay">
     <div class="palette">
-      <input id="palette-input" placeholder="Поиск: мои задачи, встречи без итогов 1:1, процессы с проблемами…" autocomplete="off" />
+      <input id="palette-input" placeholder="Поиск: задачи на сегодня, встречи без итогов, check-in с блокерами…" autocomplete="off" />
       <div class="palette-results" id="palette-results"></div>
       <div class="palette-hint">
         <span>↑↓ навигация</span><span>Enter выбрать</span><span>Esc закрыть</span><span>? горячие клавиши</span>

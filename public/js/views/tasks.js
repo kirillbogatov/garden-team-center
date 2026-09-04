@@ -9,6 +9,10 @@ Views._taskFiltersCollapsed = localStorage.getItem('garden:taskFiltersCollapsed'
 const TASK_STATUS_ORDER = ['todo', 'in_progress', 'in_review', 'paused', 'blocked', 'done'];
 
 Views.tasks = async function () {
+  const createRequested = Router.queryParam('create') === '1';
+  const createTitle = Router.queryParam('title');
+  const createAssigneeIds = String(Router.queryParam('assignees') || '').split(',').map((id) => id.trim()).filter((id) => store.person(id));
+  const createProjectId = Router.queryParam('createProject');
   const mineOnly = Router.queryParam('mine') === '1';
   const currentPersonId = Auth.user?.personId || null;
   const requestedPersonId = Router.queryParam('person');
@@ -214,6 +218,17 @@ Views.tasks = async function () {
     Views._taskViewMode = 'kanban'; Views.tasks();
   };
   if (isKanban) initTaskKanbanDnD();
+
+  if (createRequested && Auth.canCreate('tasks')) {
+    // Переход из Журнала открывает форму создания уже на странице Задач.
+    // Query очищаем до открытия формы, чтобы повторный render не открывал её снова.
+    Router.replace('/tasks');
+    const prefill = {};
+    if (createTitle) prefill.title = createTitle;
+    if (createAssigneeIds.length) prefill.assigneeIds = [...new Set(createAssigneeIds)];
+    if (createProjectId && store.project(createProjectId)) prefill.projectId = createProjectId;
+    await openTaskModal(null, { prefill });
+  }
 };
 
 function toggleTaskGroup(key, header) {
@@ -768,7 +783,13 @@ async function openTaskCreateModal(opts) {
     { key: 'priority', label: 'Приоритет', type: 'select', default: 'normal', options: ['normal','high'].map((value) => ({ value, label: PRIORITY_LABEL[value] })) },
     {
       key: 'dueDate', label: 'Срок', type: 'date', parse: (v) => v || null,
-      render: ({ id, value, disabled }) => `<div class="task-due-date-create"><input id="${id}" type="date" value="${escapeHtml(value || '')}" ${disabled}/><div class="task-date-suggestions" aria-label="Быстрый выбор срока"><span class="task-date-suggestions-label">Поставить на:</span><button type="button" class="task-date-suggestion" data-task-date-suggest="today">сегодня</button><span class="task-date-suggestion-separator" aria-hidden="true">·</span><button type="button" class="task-date-suggestion" data-task-date-suggest="tomorrow">завтра</button><span class="task-date-suggestion-separator" aria-hidden="true">·</span><button type="button" class="task-date-suggestion" data-task-date-suggest="week-end">конец недели</button></div></div>`,
+      render: ({ id, value, disabled }) => {
+        const isFriday = new Date().getDay() === 5;
+        const suggestions = isFriday
+          ? '<button type="button" class="task-date-suggestion" data-task-date-suggest="today">сегодня</button><span class="task-date-suggestion-separator" aria-hidden="true">·</span><button type="button" class="task-date-suggestion" data-task-date-suggest="next-monday">следующий понедельник</button>'
+          : '<button type="button" class="task-date-suggestion" data-task-date-suggest="today">сегодня</button><span class="task-date-suggestion-separator" aria-hidden="true">·</span><button type="button" class="task-date-suggestion" data-task-date-suggest="tomorrow">завтра</button><span class="task-date-suggestion-separator" aria-hidden="true">·</span><button type="button" class="task-date-suggestion" data-task-date-suggest="week-end">конец недели</button>';
+        return `<div class="task-due-date-create"><input id="${id}" type="date" value="${escapeHtml(value || '')}" ${disabled}/><div class="task-date-suggestions" aria-label="Быстрый выбор срока"><span class="task-date-suggestions-label">Поставить на:</span>${suggestions}</div></div>`;
+      },
       init: ({ root }) => {
         const field = root?.closest('.entity-form-field');
         if (!root || !field) return;
@@ -782,6 +803,11 @@ async function openTaskCreateModal(opts) {
           const date = new Date();
           date.setHours(12, 0, 0, 0);
           if (kind === 'tomorrow') date.setDate(date.getDate() + 1);
+          if (kind === 'next-monday') {
+            const day = date.getDay();
+            const daysToMonday = ((8 - day) % 7) || 7;
+            date.setDate(date.getDate() + daysToMonday);
+          }
           if (kind === 'week-end') {
             const day = date.getDay();
             const daysToFriday = (5 - day + 7) % 7;

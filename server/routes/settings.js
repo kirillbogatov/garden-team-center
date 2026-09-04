@@ -13,7 +13,7 @@ module.exports = function registerSettingsRoutes(app, deps) {
   const ACCENT_VALUES = ['rosewater', 'flamingo', 'pink', 'mauve', 'red', 'maroon', 'peach', 'yellow', 'green', 'teal', 'sky', 'lavender'];
   const DEFAULT_ACCENT = 'green';
   const DEFAULT_USER_SETTINGS = {
-    theme: 'anuppuccin-latte', accentColor: DEFAULT_ACCENT, uiScale: 100, favoriteMenuItems: [], navSectionOverrides: {}, overviewDashboard: null, overviewNotesOpen: false, overviewNotesWidth: 300, overviewNoteOrder: [], projectNotesOpen: {}, personNotesOpen: {}, taskPriorityMode: 'balanced',
+    theme: 'anuppuccin-latte', accentColor: DEFAULT_ACCENT, uiScale: 100, favoriteMenuItems: [], navSectionOverrides: {}, overviewDashboard: null, overviewNotesOpen: false, overviewNotesWidth: 300, overviewNoteOrder: [], projectNotesOpen: {}, personNotesOpen: {}, taskPriorityMode: 'balanced', notificationEvents: { task_assigned: true, project_load_changed: true, checkin_reminder: true, issue_created: true, lab_created: true },
   };
   function normalizeUserSettings(value) {
     const source = value && typeof value === 'object' ? value : {};
@@ -38,12 +38,12 @@ module.exports = function registerSettingsRoutes(app, deps) {
     const normalizeOverviewShelf = (items, shelf) => {
       if (!Array.isArray(items)) return null;
       const allowed = shelf === 'quick'
-        ? new Set(['my-tasks','project-tasks','my-issues','my-agreements','my-journal','my-ideas','my-meetings','quick-link','quick-links'])
+        ? new Set(['my-tasks','project-overview','project-tasks','my-issues','my-agreements','my-journal','my-ideas','my-meetings','quick-link','quick-links'])
         : new Set(['goals','team-workload','priority-tasks','team-priority-tasks','missed-meetings','unresolved-issues','week-events','attention-notes']);
       return items.slice(0, 24).filter((item) => item && typeof item === 'object' && allowed.has(item.type) && typeof item.id === 'string').map((item) => ({
         id: item.id.slice(0, 160),
         type: item.type,
-        ...(item.type === 'project-tasks' && item.projectId ? { projectId: String(item.projectId).slice(0, 120) } : {}),
+        ...((item.type === 'project-tasks' || item.type === 'project-overview') && item.projectId ? { projectId: String(item.projectId).slice(0, 120) } : {}),
         ...(item.type === 'quick-link' && item.linkKey ? { linkKey: String(item.linkKey).slice(0, 80) } : {}),
         ...(item.breakBefore ? { breakBefore: true } : {}),
       }));
@@ -67,6 +67,9 @@ module.exports = function registerSettingsRoutes(app, deps) {
     const overviewNoteOrder = Array.isArray(source.overviewNoteOrder) ? source.overviewNoteOrder.map((id) => String(id).slice(0, 120)).filter(Boolean).slice(0, 200) : [];
     const priorityModes = ['balanced', 'deadline', 'importance', 'overdue'];
     const taskPriorityMode = priorityModes.includes(source.taskPriorityMode) ? source.taskPriorityMode : DEFAULT_USER_SETTINGS.taskPriorityMode;
+    const notificationEventKeys = ['task_assigned', 'project_load_changed', 'checkin_reminder', 'issue_created', 'lab_created'];
+    const notificationSource = source.notificationEvents && typeof source.notificationEvents === 'object' && !Array.isArray(source.notificationEvents) ? source.notificationEvents : {};
+    const notificationEvents = Object.fromEntries(notificationEventKeys.map((key) => [key, notificationSource[key] !== false]));
     const scaleSteps = [80, 90, 100, 110, 125];
     const rawUiScale = Number(source.uiScale);
     const theme = THEME_VALUES.includes(source.theme) ? source.theme : DEFAULT_USER_SETTINGS.theme;
@@ -78,7 +81,7 @@ module.exports = function registerSettingsRoutes(app, deps) {
     return {
       uiScale: scaleSteps.includes(rawUiScale) ? rawUiScale : 100,
       favoriteMenuItems, navSectionOverrides, overviewDashboard, overviewNotesOpen: !!source.overviewNotesOpen, overviewNotesWidth, overviewNoteOrder, projectNotesOpen, personNotesOpen,
-      theme, accentColor, taskPriorityMode,
+      theme, accentColor, taskPriorityMode, notificationEvents,
       attentionHiddenUntil,
     };
   }

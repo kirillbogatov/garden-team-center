@@ -28,10 +28,9 @@ module.exports = function registerAggregateRoutes(app, { db, resolveEntity, sani
     const journal = visibleItems('journal', req.auth.user).filter((j) => (j.mentions || []).some((m) => m.id === id)).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     const meetings = visibleItems('meetings', req.auth.user).filter((m) => m.projectId === id);
     const agreements = visibleItems('agreements', req.auth.user).filter((a) => a.projectId === id || (a.relatedProjectIds || []).includes(id) || (a.mentions || []).some((m) => m.type === 'project' && m.id === id));
-    const documents = visibleItems('documents', req.auth.user).filter((d) => d.projectId === id);
     const members = visibleItems('people', req.auth.user).filter((p) => (project.memberIds || []).includes(p.id));
     const goals = visibleItems('goals', req.auth.user).filter((g) => (g.projectIds || []).includes(id));
-    res.json({ project, tasks, issues, journal, meetings, agreements, documents, members, goals });
+    res.json({ project, tasks, issues, journal, meetings, agreements, members, goals });
   });
 
   app.get('/api/goals/:id/detail', (req, res) => {

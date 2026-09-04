@@ -60,7 +60,10 @@ const Modal = {
     // Фокус переносим внутрь диалога — иначе Tab уходит на страницу под оверлеем.
     const candidates = focusableWithin(panel);
     const firstSafe = candidates.find((node) => !node.classList.contains('btn-danger'));
-    (panel.querySelector('[autofocus]') || firstSafe || candidates[0] || panel).focus();
+    const initialFocus = opts.initialFocus === 'panel'
+      ? panel
+      : (panel.querySelector('[autofocus]') || firstSafe || candidates[0] || panel);
+    initialFocus.focus({ preventScroll: true });
   },
   requestClose() {
     if (!Modal._dirty) { Modal.close(); return; }
