@@ -373,7 +373,7 @@ Views.personDetail = async function (id) {
 
   const [personNotes, settings] = p.type === 'team'
     ? await Promise.all([
-        api.get(`/api/comments/person/${encodeURIComponent(p.id)}`).catch(() => []),
+        Comments.list('person', p.id).catch(() => []),
         GardenSettings.load(),
       ])
     : [[], await GardenSettings.load()];

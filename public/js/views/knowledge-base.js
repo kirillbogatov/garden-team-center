@@ -90,12 +90,12 @@ async function openKbFolderModal(id) {
     const hasDocs = docs.some((d)=>d.folderId===current.id);
     if (hasChildren || hasDocs) { toast('Сначала перенесите документы и вложенные папки'); return; }
     if (!(await confirmAction('Удалить пустую папку?'))) return;
-    await api.del('/api/kbFolders/'+current.id); Modal.close(); Views._kbFolder='all'; Views.knowledgeBase();
+    await Resources.kbFolders.remove(current.id); Modal.close(); Views._kbFolder='all'; Views.knowledgeBase();
   };
   document.getElementById('kbf-save').onclick = async () => {
     const payload={title:document.getElementById('kbf-title').value.trim(),parentId:document.getElementById('kbf-parent').value||null};
     if(!payload.title){toast('Укажите название папки');return;}
-    if(current) await api.put('/api/kbFolders/'+current.id,payload); else await Resources.kbFolders.create(payload);
+    if(current) await Resources.kbFolders.update(current.id,payload); else await Resources.kbFolders.create(payload);
     Modal.close(); Views.knowledgeBase();
   };
 }
@@ -280,12 +280,12 @@ Views.knowledgeDocument = async function (ref) {
   document.getElementById('kb-import').onclick=()=>document.getElementById('kb-import-file').click();
   document.getElementById('kb-import-file').onchange=async(e)=>{const file=e.target.files[0];if(!file)return;editor.innerHTML=markdownToKnowledgeHtml(await file.text());initKnowledgeImageResizing(editor);scheduleDraftSave();toast('Markdown импортирован. Черновик сохранится автоматически.');};
   document.getElementById('kb-export').onclick=()=>exportKnowledgeMarkdown(titleInput.value.trim()||d.title, knowledgeHtmlToMarkdown(editor.innerHTML));
-  document.getElementById('kb-delete').onclick=async()=>{if(!(await confirmAction('Удалить документ из базы знаний?')))return;knowledgeClearDraft(draftKey);await api.del('/api/kbDocs/'+d.id);Router.go('/knowledge-base');};
+  document.getElementById('kb-delete').onclick=async()=>{if(!(await confirmAction('Удалить документ из базы знаний?')))return;knowledgeClearDraft(draftKey);await Resources.kbDocs.remove(d.id);Router.go('/knowledge-base');};
   document.getElementById('kb-save').onclick=async()=>{
     const title=titleInput.value.trim(); if(!title){toast('Укажите название');return;}
     const contentHtml=sanitizeKnowledgeHtml(editor.innerHTML);
     const folderId=folderSelect.value||null;
-    await api.put('/api/kbDocs/'+d.id,{title,folderId,contentHtml,markdown:knowledgeHtmlToMarkdown(contentHtml)});
+    await Resources.kbDocs.update(d.id,{title,folderId,contentHtml,markdown:knowledgeHtmlToMarkdown(contentHtml)});
     knowledgeClearDraft(draftKey);
     publishedState.title = title;
     publishedState.folderId = folderId || '';

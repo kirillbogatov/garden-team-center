@@ -3,6 +3,7 @@
 const PRIORITY_LABEL = { high: 'Важная', normal: 'Обычный' };
 
 const TASK_STATUS_LABEL = { todo: 'К выполнению', in_progress: 'В работе', in_review: 'На ревью', paused: 'Приостановлено', blocked: 'Заблокировано', done: 'Готово' };
+const TASK_STATUS_ORDER = ['todo', 'in_progress', 'in_review', 'paused', 'blocked', 'done'];
 const TASK_TYPE_LABEL = { standard: 'Проектная', development: 'Развитие' };
 
 const TASK_PRIORITY_STRATEGIES = {
@@ -47,3 +48,6 @@ const LAB_TYPE_LABEL = { pet: 'Пет-проект', tool: 'Инструмент
 const PROJECT_STATUS_LABEL = { active: 'Активен', paused: 'На паузе', done: 'Завершён' };
 const GOAL_STATUS_LABEL = { active: 'В работе', done: 'Достигнута', paused: 'Отложена' };
 const AGREEMENT_STATUS_LABEL = { open: 'Открыта', done: 'Выполнена' };
+
+const PROCESS_STATUS_LABEL = { ok: 'Работает', attention: 'Есть проблемы', broken: 'Сломан' };
+const PROCESS_FIX_STATUS_LABEL = { unchecked: 'Не проверялось', effective: 'Эффективно', ineffective: 'Неэффективно' };

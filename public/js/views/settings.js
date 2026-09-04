@@ -73,10 +73,17 @@ Views.settings = async function () {
     { key: 'appearance', label: 'Оформление' },
     { key: 'menu', label: 'Меню' },
     { key: 'tasks', label: 'Задачи' },
+    { key: 'ideas', label: 'Идеи' },
     { key: 'notifications', label: 'Уведомления' },
     { key: 'storage', label: 'Данные' },
     { key: 'account', label: 'Учётная запись' },
   ];
+  const ideaVisibilityChoices = [
+    { value: 'private', label: 'Только я', hint: 'Новые идеи видны только вам, без вопроса.' },
+    { value: 'public', label: 'Все сотрудники', hint: 'Новые идеи сразу видны команде, без вопроса.' },
+    { value: 'ask', label: 'Спрашивать перед сохранением идеи', hint: 'Каждый раз показывать диалог выбора при добавлении новой идеи.' },
+  ];
+  const ideaVisibilityDefault = ['private', 'public', 'ask'].includes(settings.ideaVisibilityDefault) ? settings.ideaVisibilityDefault : 'ask';
   if (!sections.some((x) => x.key === Views._settingsSection)) Views._settingsSection = 'appearance';
 
   const sectionHtml = {
@@ -101,6 +108,7 @@ Views.settings = async function () {
     menu: `<section class="settings-section"><div class="settings-section-head"><h2>Избранное</h2><p>Добавьте часто используемые подразделы в «Избранное» под «Журналом».</p></div><div class="ui-surface ui-surface--settings settings-card">${menuItems.map((item) => `<label class="settings-toggle-row"><span><strong>${item.label}</strong><small>${item.group}</small></span><input type="checkbox" data-favorite-menu="${item.key}" ${favorites.has(item.key) ? 'checked' : ''}/></label>`).join('')}</div></section>`,
     tasks: `<section class="settings-section"><div class="settings-section-head"><h2>Приоритет задач</h2><p>Выберите, что сильнее влияет на порядок задач в виджетах.</p></div><div class="ui-surface ui-surface--settings settings-card">${Object.entries(TASK_PRIORITY_STRATEGIES).map(([value, strategy]) => `<label class="settings-choice"><input type="radio" name="task-priority-mode" value="${value}" ${settings.taskPriorityMode === value ? 'checked' : ''}/><span><strong>${strategy.label}</strong><small>${strategy.description}</small></span></label>`).join('')}</div></section>
     <section class="settings-section settings-section-spaced"><div class="settings-section-head"><h2>Архивация</h2><p>Правила жизненного цикла задач для всей команды.</p></div><div class="ui-surface ui-surface--settings settings-card"><label class="settings-number-row"><span><strong>Автоматически архивировать «Готово»</strong><small>Через сколько дней после завершения задача перемещается в архив.</small></span><div class="settings-number-control"><div class="settings-stepper" role="group" aria-label="Количество дней до архивации"><button type="button" class="settings-stepper-button" id="settings-auto-archive-minus" aria-label="Уменьшить число дней" ${workspace.canEdit ? '' : 'disabled'}>−</button><input class="settings-stepper-value" id="settings-auto-archive-days" type="number" min="1" max="365" step="1" value="${workspace.taskAutoArchiveDays}" ${workspace.canEdit ? '' : 'disabled'}/><button type="button" class="settings-stepper-button" id="settings-auto-archive-plus" aria-label="Увеличить число дней" ${workspace.canEdit ? '' : 'disabled'}>+</button></div><span>дн.</span></div></label></div>${workspace.canEdit ? '' : '<div class="ui-field-hint field-hint">Изменить этот срок может пользователь с правом управления всеми задачами.</div>'}</section>`,
+    ideas: `<section class="settings-section"><div class="settings-section-head"><h2>Кто может видеть мои идеи</h2><p>Настройка применяется к новым идеям, которые вы добавляете в Журнале или The Labs.</p></div><div class="ui-surface ui-surface--settings settings-card">${ideaVisibilityChoices.map((c) => `<label class="settings-choice"><input type="radio" name="idea-visibility-default" value="${c.value}" ${ideaVisibilityDefault === c.value ? 'checked' : ''}/><span><strong>${c.label}</strong><small>${c.hint}</small></span></label>`).join('')}</div></section>`,
     notifications: `<section class="settings-section"><div class="settings-section-head"><h2>Уведомления</h2><p>Выберите события, о которых Garden будет сообщать вам.</p></div><div class="ui-surface ui-surface--settings settings-card">${notificationsSettingsHtml}</div></section>`,
     storage: `<section class="settings-section"><div class="settings-section-head"><h2>Данные</h2><p>Все версии Garden используют одну внешнюю папку данных.</p></div><div class="ui-surface ui-surface--settings settings-card settings-storage-card"><div class="settings-info-row"><span><strong>Рабочая папка</strong><small>Сотрудники, задачи, встречи, настройки и загруженные файлы сохраняются здесь.</small></span><code class="settings-storage-path">${escapeHtml(storage.dataDir || '')}</code></div><div class="settings-info-row"><span><strong>База данных</strong><small>Этот файл не заменяется при обновлении Garden.</small></span><code class="settings-storage-path">${escapeHtml(storage.database || '')}</code></div></div></section>`,
     account: `<section class="settings-section"><div class="settings-section-head"><h2>Учётная запись</h2></div><div class="ui-surface ui-surface--settings settings-card"><button type="button" class="settings-action-row" id="settings-change-password"><span><strong>Сменить пароль</strong><small>Изменить пароль для входа в Garden</small></span><span class="settings-action-chevron">›</span></button></div></section>`,
@@ -172,6 +180,14 @@ Views.settings = async function () {
     input.onchange = async () => {
       if (!input.checked) return;
       await GardenSettings.update({ taskPriorityMode: input.value });
+    };
+  });
+
+  document.querySelectorAll('input[name="idea-visibility-default"]').forEach((input) => {
+    input.onchange = async () => {
+      if (!input.checked) return;
+      await GardenSettings.update({ ideaVisibilityDefault: input.value });
+      toast('Настройка сохранена');
     };
   });
 

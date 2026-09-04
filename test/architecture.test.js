@@ -82,6 +82,18 @@ test('server bootstrap stays thin and domain workflows are extracted', () => {
   assert.match(index, /createRecurringMeetings/);
   assert.match(read('server/domain/journal-sync.js'), /syncJournalDerivedEntity/);
   assert.match(read('server/domain/recurring-meetings.js'), /syncRecurringMeetingsForPerson/);
+
+  // Task lifecycle, auto-archive, knowledge-base sanitization and teamlead self-assignment
+  // sync used to be defined inline in index.js — they belong in server/domain/ instead
+  // (ARCHITECTURE.md rule 9: index.js is composition/bootstrap, not business workflows).
+  assert.match(index, /require\('\.\/domain\/task-lifecycle'\)/);
+  assert.match(index, /createTaskAutoArchive/);
+  assert.match(index, /require\('\.\/domain\/knowledge-sanitize'\)/);
+  assert.match(index, /createTeamleadSync/);
+  assert.match(read('server/domain/task-lifecycle.js'), /function taskLifecyclePatch/);
+  assert.match(read('server/domain/task-auto-archive.js'), /function autoArchiveCompletedTasks/);
+  assert.match(read('server/domain/knowledge-sanitize.js'), /function sanitizeKnowledgeHtmlServer/);
+  assert.match(read('server/domain/teamlead-sync.js'), /function ensureTeamleadSelfAssignment/);
 });
 
 
@@ -611,11 +623,13 @@ test('meeting types are centralized and reused by filters and forms', () => {
 
 test('processes use task-like list/detail flow with autosave, archive and fix option statuses', () => {
   const processes = read('public/js/views/processes.js');
+  const constants = read('public/js/domain/constants.js');
   const router = read('public/js/lib/router.js');
   assert.match(router, /\/\^\\\/processes\\\/\(\[\^\/\]\+\)\\\/\?\$\//, 'router.js: process instances should have a routed detail page');
   assert.match(processes, /Views\.processDetailPage/, 'processes.js: existing processes should open as detail pages');
-  assert.match(processes, /PROCESS_STATUS_LABEL = \{ ok: 'Работает', attention: 'Есть проблемы', broken: 'Сломан' \}/);
-  assert.match(processes, /PROCESS_FIX_STATUS_LABEL = \{ unchecked: 'Не проверялось', effective: 'Эффективно', ineffective: 'Неэффективно' \}/);
+  assert.match(constants, /PROCESS_STATUS_LABEL = \{ ok: 'Работает', attention: 'Есть проблемы', broken: 'Сломан' \}/, 'domain/constants.js: status dictionaries live here, not in the view');
+  assert.match(constants, /PROCESS_FIX_STATUS_LABEL = \{ unchecked: 'Не проверялось', effective: 'Эффективно', ineffective: 'Неэффективно' \}/, 'domain/constants.js: status dictionaries live here, not in the view');
+  assert.doesNotMatch(processes, /const PROCESS_STATUS_LABEL|const PROCESS_FIX_STATUS_LABEL/, 'processes.js should reference the shared dictionaries, not redeclare them');
   assert.match(processes, /expectedBehavior/, 'processes.js: should store expected process behavior');
   assert.match(processes, /currentBehavior/, 'processes.js: should store current behavior/problems');
   assert.match(processes, /fixOptions/, 'processes.js: should support multiple repair options');
@@ -1035,7 +1049,7 @@ test('meeting detail caps participants at two while related context is limited b
   assert.match(meetings, /function meetingDetailParticipantsHtml\(participants\)[\s\S]*participants\.slice\(0, 2\)/, 'meeting detail should show only two people');
   assert.match(meetings, /и ещё \$\{extra\}…/, 'detail view should show the remaining participant count');
   assert.match(meetings, /meeting-detail-participant-name/, 'detail participants should have a dedicated no-wrap name element');
-  assert.match(meetings, /const showParticipantContext = meetingType === 'one_on_one' \|\| meetingType === 'pr';/);
+  assert.match(meetings, /const showParticipantContext = meetingType === '1:1' \|\| meetingType === 'pr';/);
   assert.match(meetings, /const tasksPromise = showParticipantContext \? Resources\.tasks\.list\(\) : Promise\.resolve\(\[\]\);/);
   assert.match(meetings, /const issuesPromise = showParticipantContext \? Resources\.issues\.list\(\) : Promise\.resolve\(\[\]\);/);
   assert.match(meetings, /const journalPromise = showParticipantContext \? Resources\.journal\.list\(\) : Promise\.resolve\(\[\]\);/);
@@ -1254,4 +1268,84 @@ test('team active-only checkbox shows inactive employees when unchecked', () => 
   assert.match(people, /id="team-only-active"/);
   assert.match(people, /addEventListener\('change',[\s\S]*toggleTeamOnlyActive\(event\.currentTarget\.checked\)/);
   assert.doesNotMatch(people, /onchange="toggleTeamOnlyActive/);
+});
+
+test('a nested data-stop-propagation control (e.g. the agreement done checkbox) does not also trigger the parent row\'s data-action-id', () => {
+  const entityUi = read('public/js/lib/entity-ui.js');
+  assert.match(entityUi, /document\.addEventListener\('click', \(event\) => \{\s*\/\/[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*if \(event\.target\.closest\?\.\('\[data-stop-propagation\]'\)\) return;\s*\n\s*const target = event\.target\.closest\?\.\('\[data-action-id\]'\)/);
+  const agreements = read('public/js/views/agreements.js');
+  assert.match(agreements, /data-stop-propagation="1"/);
+  assert.match(agreements, /data-command="toggleAgreement"/);
+});
+
+test('issue status menu reads the clicked icon from event.target, not the delegated listener\'s currentTarget', () => {
+  const entityUi = read('public/js/lib/entity-ui.js');
+  const fn = entityUi.slice(entityUi.indexOf('function openIssueStatusMenu'), entityUi.indexOf('function openIssueStatusMenu') + 900);
+  assert.doesNotMatch(fn, /event\?\.currentTarget/, 'currentTarget is document for a delegated listener and has no getBoundingClientRect, which silently broke the whole menu');
+  assert.match(fn, /event\?\.target/);
+  assert.match(fn, /closest\?\.\('\.task-status-interactive'\)/);
+});
+
+test('Issues and Agreements list "Все" tab last, after the status-specific tabs', () => {
+  const issues = read('public/js/views/issues.js');
+  const agreements = read('public/js/views/agreements.js');
+  assert.match(issues, /\{ key: 'open', label: 'Открытые'[\s\S]*?\{ key: 'resolved', label: 'Решённые'[\s\S]*?\{ key: 'all', label: 'Все'/);
+  assert.match(agreements, /\{ key: 'open', label: 'Открытые'[\s\S]*?\{ key: 'done', label: 'Выполненные'[\s\S]*?\{ key: 'all', label: 'Все'/);
+});
+
+test('deleting a problem/agreement/idea directly asks about its linked Journal entry instead of silently orphaning it', () => {
+  const entityUi = read('public/js/lib/entity-ui.js');
+  assert.match(entityUi, /function askDeleteLinkedJournal\(\)/);
+  const issues = read('public/js/views/issues.js');
+  assert.match(issues, /issue\?\.sourceJournalId \? await askDeleteLinkedJournal\(\) : false/);
+  assert.match(issues, /Resources\.journal\.remove\(issue\.sourceJournalId\)/);
+  const agreements = read('public/js/views/agreements.js');
+  assert.match(agreements, /a\.sourceJournalId \? await askDeleteLinkedJournal\(\) : false/);
+  assert.match(agreements, /Resources\.journal\.remove\(a\.sourceJournalId\)/);
+  const labs = read('public/js/views/labs.js');
+  assert.match(labs, /idea\.sourceJournalId \? await askDeleteLinkedJournal\(\) : false/);
+  assert.match(labs, /Resources\.journal\.remove\(idea\.sourceJournalId\)/);
+});
+
+test('the idea edit form still reuses the styled lab-private-checkbox class (not a bare, oversized check-row)', () => {
+  const journal = read('public/js/views/journal.js');
+  assert.match(journal, /class="lab-private-checkbox journal-idea-visibility" id="jef-idea-visibility"/);
+});
+
+test('creating a new idea asks visibility via a direct dialog instead of a checkbox, and remembers the choice through settings', () => {
+  const entityUi = read('public/js/lib/entity-ui.js');
+  const fn = entityUi.slice(entityUi.indexOf('async function askIdeaVisibility'), entityUi.indexOf('async function askIdeaVisibility') + 1800);
+  assert.match(fn, /GardenSettings\.load\(\)/, 'must consult the remembered default before showing the dialog');
+  assert.match(fn, /ideaVisibilityDefault === 'private'/);
+  assert.match(fn, /ideaVisibilityDefault === 'public'/);
+  assert.match(fn, /Применять для всех моих последующих идей/);
+  assert.match(fn, /GardenSettings\.update\(\{ ideaVisibilityDefault: isPrivate \? 'private' : 'public' \}\)/);
+
+  const journal = read('public/js/views/journal.js');
+  assert.match(journal, /if \(selectedKind === 'idea'\) payload\.private = await askIdeaVisibility\(\);/);
+  assert.doesNotMatch(journal, /journal-idea-private/, 'the composer must no longer render the old inline privacy checkbox for new entries');
+
+  const labs = read('public/js/views/labs.js');
+  assert.match(labs, /const initialPrivate = isNewIdea \? await askIdeaVisibility\(\) : Boolean\(idea\.private\);/);
+  assert.match(labs, /\.\.\.\(isNewIdea \? \[\] : \[\{ key: 'private'/, 'the create-mode schema must not show the old privacy checkbox once the dialog already asked');
+});
+
+test('checkboxes/radios inside a modal do not get the text-field focus outline (which rendered as a thick, oversized border)', () => {
+  const css = read('public/css/system.css');
+  assert.match(css, /\.modal-panel input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\):focus/, 'the heavy text-field focus style (border-color + box-shadow) must exclude checkboxes/radios');
+  assert.match(css, /\.modal-panel input\[type="checkbox"\]:focus-visible,\s*\n\.modal-panel input\[type="radio"\]:focus-visible \{/, 'checkboxes/radios need their own lighter focus ring instead');
+});
+
+test('the "Приватная" badge on a private idea in the Journal feed matches the tiny size of its sibling meta text (date/kind), not the body font size', () => {
+  const renderers = read('public/js/domain/entity-renderers.js');
+  assert.match(renderers, /class="tiny lab-private-meta"/, 'lab-private-meta has no font-size of its own — outside the Labs meta row (11px) it silently inherits the body font size, which read oversized next to the tiny je-kind-label');
+});
+
+test('the idea-visibility default is a persisted, whitelisted user setting with a Settings-page control to reset it back to "ask"', () => {
+  const settingsRoute = read('server/routes/settings.js');
+  assert.match(settingsRoute, /ideaVisibilityDefault: 'ask'/);
+  assert.match(settingsRoute, /\['ask', 'private', 'public'\]\.includes\(source\.ideaVisibilityDefault\)/);
+  const settingsView = read('public/js/views/settings.js');
+  assert.match(settingsView, /name="idea-visibility-default"/);
+  assert.match(settingsView, /GardenSettings\.update\(\{ ideaVisibilityDefault: input\.value \}\)/);
 });

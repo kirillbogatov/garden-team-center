@@ -14,6 +14,10 @@ module.exports = function registerSettingsRoutes(app, deps) {
   const DEFAULT_ACCENT = 'green';
   const DEFAULT_USER_SETTINGS = {
     theme: 'anuppuccin-latte', accentColor: DEFAULT_ACCENT, uiScale: 100, favoriteMenuItems: [], navSectionOverrides: {}, overviewDashboard: null, overviewNotesOpen: false, overviewNotesWidth: 300, overviewNoteOrder: [], projectNotesOpen: {}, personNotesOpen: {}, taskPriorityMode: 'balanced', notificationEvents: { task_assigned: true, project_load_changed: true, checkin_reminder: true, issue_created: true, lab_created: true },
+    // 'ask' — каждый раз спрашивать диалогом видимость новой идеи; 'private'/'public' —
+    // пользователь попросил больше не спрашивать и всегда использовать этот выбор
+    // (см. askIdeaVisibility в public/js/lib/entity-ui.js).
+    ideaVisibilityDefault: 'ask',
   };
   function normalizeUserSettings(value) {
     const source = value && typeof value === 'object' ? value : {};
@@ -78,10 +82,11 @@ module.exports = function registerSettingsRoutes(app, deps) {
     // другую тему и предложенном возврате к AnuPpuccin. Применяется акцент
     // только когда theme входит в ACCENT_THEMES (см. applyTheme в interactions.js).
     const accentColor = ACCENT_VALUES.includes(source.accentColor) ? source.accentColor : DEFAULT_ACCENT;
+    const ideaVisibilityDefault = ['ask', 'private', 'public'].includes(source.ideaVisibilityDefault) ? source.ideaVisibilityDefault : DEFAULT_USER_SETTINGS.ideaVisibilityDefault;
     return {
       uiScale: scaleSteps.includes(rawUiScale) ? rawUiScale : 100,
       favoriteMenuItems, navSectionOverrides, overviewDashboard, overviewNotesOpen: !!source.overviewNotesOpen, overviewNotesWidth, overviewNoteOrder, projectNotesOpen, personNotesOpen,
-      theme, accentColor, taskPriorityMode, notificationEvents,
+      theme, accentColor, taskPriorityMode, notificationEvents, ideaVisibilityDefault,
       attentionHiddenUntil,
     };
   }

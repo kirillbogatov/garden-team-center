@@ -375,28 +375,6 @@ for (const name of COLLECTIONS) {
   db[name] = collection(name);
 }
 
-// Project startDate was removed from the product model. Clean existing JSON
-// records in-place so the deprecated field is gone from SQLite as well, not
-// merely hidden by the UI/API. This migration is idempotent and preserves the
-// original updated_at timestamp.
-const deprecatedProjectRows = sqlite.prepare(`
-  SELECT workspace, id, data FROM records WHERE collection = 'projects'
-`).all();
-const updateProjectDataOnly = sqlite.prepare(`
-  UPDATE records SET data = ? WHERE workspace = ? AND collection = 'projects' AND id = ?
-`);
-for (const row of deprecatedProjectRows) {
-  try {
-    const project = JSON.parse(row.data);
-    if (!Object.prototype.hasOwnProperty.call(project, 'startDate')) continue;
-    delete project.startDate;
-    updateProjectDataOnly.run(JSON.stringify(project), row.workspace, row.id);
-  } catch (_) {
-    // Leave malformed legacy rows untouched; normal DB parsing will surface
-    // the underlying corruption instead of silently changing unrelated data.
-  }
-}
-
 db.isEmpty = () => COLLECTIONS.every((name) => db[name].all().length === 0);
 db.withWorkspace = (workspace, fn) => workspaceStorage.run(workspace || 'main', fn);
 

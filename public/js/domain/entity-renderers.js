@@ -130,6 +130,7 @@ function journalEntryHtml(j) {
       <span class="tiny">${fmtRelative(j.createdAt)}</span>
       <span class="tiny je-sep">·</span>
       <span class="tiny je-kind-label">${escapeHtml(JOURNAL_KIND_LABEL[j.kind] || '')}</span>
+      ${j.kind === 'idea' && j.private ? `<span class="tiny lab-private-meta" title="Видна только вам">${icon('eyeOff', 12)} Приватная</span>` : ''}
       ${linkedEntity}
       <span class="je-actions ${j.attentionPinned ? 'has-attention' : ''}">
         <span class="je-action-btn ${j.attentionPinned ? 'attention-active' : ''}" data-action-id="${attentionIdx}" data-action-stop="1" title="Показывать запись на главной странице" aria-label="Показывать запись на главной странице">${icon('bookmark', 16)}</span>

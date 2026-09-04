@@ -4,7 +4,7 @@ const { recordCreate: recordVersionCreate, recordUpdate: recordVersionUpdate } =
 const { notifyTaskAssigned, notifyProjectLoadChanges, notifyIssueCreated, notifyLabCreated } = require('../notifications');
 
 module.exports = function registerCrudRoutes(app, deps) {
-  const { COLLECTIONS, db, autoArchiveCompletedTasks, canReadItem, sanitizeItem, visibleItems, resolveEntity, denied, canCreate, withOwnership, taskLifecyclePatch, sanitizeKnowledgeHtmlServer, isTeamlead, canManageCollection, normalizeProjectTaskCode, uniqueProjectTaskCode, syncJournalDerivedEntity, assignTaskKey, SLUG_COLLECTIONS, uniqueSlug, nextLabKey, syncRecurringMeetingsForPerson, syncRecurringMeetingsForMeeting, canUpdate, nextTaskKey, taskKeyPrefix, teamleadOwnsPerson, memberPersonPatch, OWNER_COLLECTIONS, canDelete, assignMeetingKey, nextMeetingKey, assignProcessKey, nextProcessKey } = deps;
+  const { COLLECTIONS, db, autoArchiveCompletedTasks, canReadItem, sanitizeItem, visibleItems, resolveEntity, denied, canCreate, withOwnership, taskLifecyclePatch, sanitizeKnowledgeHtmlServer, isTeamlead, canManageCollection, validateProjectTaskCode, syncJournalDerivedEntity, syncEntityToJournal, unlinkJournalFor, assignTaskKey, SLUG_COLLECTIONS, uniqueSlug, nextLabKey, syncRecurringMeetingsForPerson, syncRecurringMeetingsForMeeting, canUpdate, nextTaskKey, taskKeyPrefix, teamleadOwnsPerson, memberPersonPatch, OWNER_COLLECTIONS, canDelete, assignMeetingKey, nextMeetingKey, assignProcessKey, nextProcessKey } = deps;
 
   const resourceConfig = {
     projects: {
@@ -22,10 +22,22 @@ module.exports = function registerCrudRoutes(app, deps) {
     labs: {
       prepareCreate: (payload) => payload.entityType === 'idea' ? payload : { ...payload, labKey: nextLabKey() },
       prepareUpdate: (current, payload) => current.entityType === 'idea' ? payload : { ...payload, labKey: current.labKey || nextLabKey() },
+      // Идея, заведённая напрямую в The Labs (а не из Журнала), заводит/обновляет
+      // связанную запись в личном Журнале её автора — см. server/domain/journal-sync.js.
+      afterSave: (item, user) => syncEntityToJournal('labs', item, user),
       cleanup: (item) => {
         db.comments.related(`lab:${item.id}`).forEach((comment) => db.comments.remove(comment.id));
         if (item.entityType !== 'idea') db.labs.related(item.id).forEach((idea) => db.labs.update(idea.id, { labProjectId: null }));
+        unlinkJournalFor(item);
       },
+    },
+    issues: {
+      afterSave: (item, user) => syncEntityToJournal('issues', item, user),
+      cleanup: (item) => unlinkJournalFor(item),
+    },
+    agreements: {
+      afterSave: (item, user) => syncEntityToJournal('agreements', item, user),
+      cleanup: (item) => unlinkJournalFor(item),
     },
     meetings: {
       prepareCreate: (payload) => assignMeetingKey(payload),
@@ -73,16 +85,16 @@ module.exports = function registerCrudRoutes(app, deps) {
   
     app.post(`/api/${name}`, (req, res) => {
       const user = req.auth.user;
-      if (!canCreate(name, user)) return denied(res);
+      if (!canCreate(name, user, req.body)) return denied(res);
       let payload = withOwnership(name, req.body, user);
       if (name === 'projects') delete payload.startDate;
       if (name === 'tasks') payload = taskLifecyclePatch(null, payload);
       if (name === 'kbDocs' && payload.contentHtml !== undefined) payload.contentHtml = sanitizeKnowledgeHtmlServer(payload.contentHtml);
-  
+
       if (name === 'people') {
-        if (isTeamlead(user) && !canManageCollection('people', user)) {
-          if (payload.type !== 'team' || !user.personId) return denied(res);
-        }
+        // canCreate() already restricted an own_manage-only teamlead to
+        // type:'team' payloads (see access-control.js), so no further gating
+        // is needed here.
         if (payload.type === 'team') {
           // Тимлид фиксируется в момент создания: это сотрудник, от чьего имени создают карточку.
           // Поля выбора тимлида в интерфейсе больше нет.
@@ -93,11 +105,9 @@ module.exports = function registerCrudRoutes(app, deps) {
       }
   
       if (name === 'projects') {
-        const requestedCode = normalizeProjectTaskCode(payload.taskCode);
-        if (payload.taskCode && requestedCode.length !== 4) return res.status(400).json({ error: 'invalid_project_task_code' });
-        payload.taskCode = requestedCode || uniqueProjectTaskCode(payload, null);
-        const duplicate = db.projects.all().some((project) => normalizeProjectTaskCode(project.taskCode) === payload.taskCode);
-        if (duplicate) return res.status(409).json({ error: 'project_task_code_exists' });
+        const result = validateProjectTaskCode(db, payload, null, { autoGenerate: true });
+        if (result.error) return res.status(result.status).json({ error: result.error });
+        payload.taskCode = result.code;
       }
   
       if (name === 'journal') {
@@ -150,11 +160,9 @@ module.exports = function registerCrudRoutes(app, deps) {
       if (name === 'projects') delete requestBody.startDate;
       if (name === 'kbDocs' && requestBody.contentHtml !== undefined) requestBody.contentHtml = sanitizeKnowledgeHtmlServer(requestBody.contentHtml);
       if (name === 'projects' && requestBody.taskCode !== undefined) {
-        const taskCode = normalizeProjectTaskCode(requestBody.taskCode);
-        if (taskCode.length !== 4) return res.status(400).json({ error: 'invalid_project_task_code' });
-        const duplicate = db.projects.all().some((project) => project.id !== current.id && normalizeProjectTaskCode(project.taskCode) === taskCode);
-        if (duplicate) return res.status(409).json({ error: 'project_task_code_exists' });
-        requestBody.taskCode = taskCode;
+        const result = validateProjectTaskCode(db, requestBody, current.id);
+        if (result.error) return res.status(result.status).json({ error: result.error });
+        requestBody.taskCode = result.code;
       }
       requestBody = configFor(name).prepareUpdate?.(current, requestBody) || requestBody;
       if (name === 'people' && isTeamlead(user) && !canManageCollection('people', user)) {
@@ -183,20 +191,37 @@ module.exports = function registerCrudRoutes(app, deps) {
         const requested = Array.isArray(requestBody.assigneeIds)
           ? [...new Set(requestBody.assigneeIds.filter(Boolean))]
           : null;
-  
+
         if (requested) {
           const currentPersonId = (current.assigneeIds || [])[0] || null;
           const related = current.taskGroupId
             ? db.tasks.related(current.taskGroupId)
             : [current];
+          const siblings = related.filter((t) => t.id !== current.id);
           const alreadyAssigned = new Set(related.flatMap((t) => t.assigneeIds || []).filter(Boolean));
+          const siblingAssigned = new Set(siblings.flatMap((t) => t.assigneeIds || []).filter(Boolean));
           let primaryPersonId = currentPersonId;
           if (!primaryPersonId || !requested.includes(primaryPersonId)) primaryPersonId = requested[0] || null;
-  
+          // A sibling copy in the same group already owns this person — this row can't
+          // also claim them, so it falls back to "no valid primary person" below.
+          if (primaryPersonId && siblingAssigned.has(primaryPersonId)) primaryPersonId = null;
+
+          if (!primaryPersonId && current.taskGroupId) {
+            // This copy only exists because it was one member of a multi-assignee
+            // group. With no valid assignee left for it, leaving it around as an
+            // unassigned duplicate would orphan it forever — delete it instead,
+            // mirroring the DELETE /api/tasks/:id handler below (same versioning
+            // and cleanup conventions).
+            db.tasks.remove(req.params.id);
+            if (isVersioned('tasks', current)) db.versions.removeEntity('tasks', current.id);
+            configFor('tasks').cleanup?.(current, user);
+            return res.status(200).json({ deleted: true, id: req.params.id });
+          }
+
           const extraPeople = requested.filter((id) => id !== primaryPersonId && !alreadyAssigned.has(id));
           let taskGroupId = current.taskGroupId || null;
           if (extraPeople.length && !taskGroupId) taskGroupId = `tgrp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-  
+
           const updatePayload = { ...requestBody, assigneeIds: primaryPersonId ? [primaryPersonId] : [] };
           if (taskGroupId) updatePayload.taskGroupId = taskGroupId;
           delete updatePayload.taskGroupIndex;

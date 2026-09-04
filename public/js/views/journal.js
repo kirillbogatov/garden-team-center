@@ -129,24 +129,20 @@ Views.journal = async function () {
     const text = serializeEditableToText(editable).trim();
     if (!text) return;
     const payload = { text, kind: selectedKind, createdAt: new Date().toISOString() };
-    const journalEntry = await Resources.journal.create(payload);
+    // Проблема/идея/договорённость сразу же появляется и в своём разделе (Проблемы/
+    // The Labs/Договорённости) — сервер синхронизирует их автоматически, см.
+    // syncJournalDerivedEntity в server/domain/journal-sync.js. Для идеи видимость
+    // спрашиваем напрямую диалогом (см. askIdeaVisibility в entity-ui.js) — вместо
+    // чекбокса, который легко проглядеть; если пользователь ранее попросил не
+    // спрашивать больше, диалог не покажется вовсе.
+    if (selectedKind === 'idea') payload.private = await askIdeaVisibility();
+    await Resources.journal.create(payload);
 
-    if (selectedKind === 'idea') {
-      // Идея всегда остаётся в личном журнале. Публикация в The Labs — дополнительное действие.
-      await Views.journal();
-      const destination = await askJournalIdeaDestination();
-      if (destination === 'labs') {
-        const labIdea = await publishJournalIdeaToLabs(text, journalEntry.id);
-        await Resources.journal.update(journalEntry.id, { labId: labIdea.id });
-        toast('Идея сохранена в журнале и опубликована в The Labs');
-        Views.journal();
-      } else if (destination === 'journal') {
-        toast('Идея сохранена в журнале');
-      }
-      return;
-    }
-
-    toast('Запись добавлена в журнал');
+    toast(selectedKind === 'idea'
+      ? (payload.private ? 'Идея сохранена (видна только вам)' : 'Идея сохранена и опубликована в The Labs')
+      : selectedKind === 'problem' ? 'Запись добавлена в журнал и в «Проблемы»'
+      : selectedKind === 'agreement' ? 'Запись добавлена в журнал и в «Договорённости»'
+      : 'Запись добавлена в журнал');
     Views.journal();
   });
 
@@ -197,33 +193,6 @@ function detectJournalKindFromText(text) {
 }
 
 
-function askJournalIdeaDestination() {
-  return new Promise((resolve) => {
-    Modal.open(`<h2>Как сохранить идею</h2>
-      <p class="muted" style="margin:0 0 4px">Добавить идею в <a class="modal-inline-link" href="/labs" target="_blank" rel="noopener">The Labs</a> или оставить в личном журнале?</p>
-      <div class="ui-modal-actions modal-actions">
-        <button class="ui-button btn" id="journal-idea-keep">Оставить в журнале</button>
-        <button class="ui-button ui-button--primary btn btn-primary" id="journal-idea-publish">Добавить в The Labs</button>
-      </div>`);
-    document.getElementById('journal-idea-keep').onclick = () => { Modal.close(); resolve('journal'); };
-    document.getElementById('journal-idea-publish').onclick = () => { Modal.close(); resolve('labs'); };
-  });
-}
-
-async function publishJournalIdeaToLabs(text, sourceJournalId) {
-  const clean = String(text || '').trim();
-  const firstLine = clean.split(/\r?\n/)[0].trim();
-  const title = firstLine.length > 80 ? `${firstLine.slice(0, 77)}…` : firstLine;
-  return Resources.labs.create({
-    entityType: 'idea',
-    title: title || 'Идея из журнала',
-    description: clean,
-    authorId: Auth.user?.personId || null,
-    sourceJournalId: sourceJournalId || null,
-  });
-}
-
-
 function openJournalEditModal(j) {
   Modal.open(
     `<h2>Редактировать запись</h2>
@@ -243,6 +212,10 @@ function openJournalEditModal(j) {
       <label class="ui-field-label field-label" for="jef-date">Дата</label>
       <input id="jef-date" type="datetime-local" value="${toDatetimeLocalValue(j.createdAt)}" />
     </div>
+    <label class="lab-private-checkbox journal-idea-visibility" id="jef-idea-visibility" style="${j.kind === 'idea' ? '' : 'display:none'}">
+      <input type="checkbox" id="jef-idea-private" ${j.private ? 'checked' : ''}/>
+      <span>Приватная идея (видна только вам)</span>
+    </label>
     <div class="ui-modal-actions modal-actions">
       <button class="ui-button ui-button--danger btn btn-danger btn-push-left" id="jef-delete">${icon('trash', 14)} Удалить</button>
       <button class="ui-button btn" id="jef-cancel">Отмена</button>
@@ -252,6 +225,7 @@ function openJournalEditModal(j) {
   );
 
   let selectedKind = ['note', 'idea', 'problem', 'agreement'].includes(j.kind) ? j.kind : 'note';
+  const ideaVisibilityRow = document.getElementById('jef-idea-visibility');
   document.querySelectorAll('#jef-kind-select .kind-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       selectedKind = btn.dataset.kind;
@@ -260,6 +234,7 @@ function openJournalEditModal(j) {
         b.classList.toggle('active', k === selectedKind);
         b.setAttribute('aria-checked', String(k === selectedKind));
       });
+      if (ideaVisibilityRow) ideaVisibilityRow.style.display = selectedKind === 'idea' ? '' : 'none';
     });
   });
 
@@ -274,31 +249,21 @@ function openJournalEditModal(j) {
     const payload = { text, kind: selectedKind };
     const dateVal = document.getElementById('jef-date').value;
     if (dateVal) payload.createdAt = new Date(dateVal).toISOString();
-    const updated = await Resources.journal.update(j.id, payload);
+    if (selectedKind === 'idea') payload.private = Boolean(document.getElementById('jef-idea-private')?.checked);
+    await Resources.journal.update(j.id, payload);
     Modal.close();
-
-    if (selectedKind === 'idea' && !updated.labId) {
-      const destination = await askJournalIdeaDestination();
-      if (destination === 'labs') {
-        const labIdea = await publishJournalIdeaToLabs(text, updated.id);
-        await Resources.journal.update(updated.id, { labId: labIdea.id });
-        toast('Идея сохранена в журнале и опубликована в The Labs');
-        Router.render();
-        return;
-      }
-    }
     toast('Сохранено');
     Router.render();
   };
 }
 
+const LINKED_ENTITY_LABEL = { problem: { noun: 'проблему', section: 'Проблемы', title: 'проблема' }, agreement: { noun: 'договорённость', section: 'Договорённости', title: 'договорённость' }, idea: { noun: 'идею', section: 'The Labs', title: 'идея' } };
+
 function askDeleteLinkedJournalEntity(kind) {
-  const isProblem = kind === 'problem';
-  const noun = isProblem ? 'проблему' : 'договорённость';
-  const section = isProblem ? 'Проблемы' : 'Договорённости';
+  const { noun, section, title } = LINKED_ENTITY_LABEL[kind];
   return new Promise((resolve) => {
     Modal.open(
-      `<h2>Связанная ${isProblem ? 'проблема' : 'договорённость'}</h2>
+      `<h2>Связанная ${title}</h2>
        <p class="muted" style="margin:0 0 4px">Удалить также ${noun} из раздела «${section}»?</p>
        <div class="ui-modal-actions modal-actions">
          <button class="ui-button btn" id="jdel-keep">Оставить</button>
@@ -314,23 +279,22 @@ async function deleteJournalEntry(j) {
   const ok = await confirmAction('Удалить эту запись из журнала?');
   if (!ok) return;
 
-  const linkedType = j.kind === 'problem' && j.issueId
-    ? 'problem'
-    : j.kind === 'agreement' && j.agreementId
-      ? 'agreement'
-      : null;
-  const linkedId = linkedType === 'problem' ? j.issueId : linkedType === 'agreement' ? j.agreementId : null;
+  const linkedType = j.kind === 'problem' && j.issueId ? 'problem'
+    : j.kind === 'agreement' && j.agreementId ? 'agreement'
+    : j.kind === 'idea' && j.labId ? 'idea'
+    : null;
+  const linkedId = linkedType === 'problem' ? j.issueId : linkedType === 'agreement' ? j.agreementId : linkedType === 'idea' ? j.labId : null;
   const deleteLinked = linkedType ? await askDeleteLinkedJournalEntity(linkedType) : false;
 
   await Resources.journal.remove(j.id);
 
   if (linkedType && linkedId) {
-    const endpoint = linkedType === 'problem' ? '/api/issues/' : '/api/agreements/';
+    const linkedResource = linkedType === 'problem' ? Resources.issues : linkedType === 'agreement' ? Resources.agreements : Resources.labs;
     try {
       if (deleteLinked) {
-        await api.del(endpoint + linkedId);
+        await linkedResource.remove(linkedId);
       } else {
-        await api.put(endpoint + linkedId, { sourceJournalId: null });
+        await linkedResource.update(linkedId, { sourceJournalId: null });
       }
     } catch (err) {
       console.warn('Не удалось обновить связанную сущность после удаления записи журнала', err);

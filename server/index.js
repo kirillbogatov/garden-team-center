@@ -24,6 +24,10 @@ const createAccessControl = require('./access-control');
 const createEntityIdentifiers = require('./entity-identifiers');
 const createJournalSync = require('./domain/journal-sync');
 const createRecurringMeetings = require('./domain/recurring-meetings');
+const { taskLifecyclePatch } = require('./domain/task-lifecycle');
+const createTaskAutoArchive = require('./domain/task-auto-archive');
+const { sanitizeKnowledgeHtmlServer } = require('./domain/knowledge-sanitize');
+const createTeamleadSync = require('./domain/teamlead-sync');
 
 const app = express();
 const PORT = process.env.PORT || 4173;
@@ -63,48 +67,21 @@ const {
   memberPersonPatch, teamleadOwnsPerson, canCreate, canUpdate, canDelete, denied, withOwnership,
 } = access;
 
-const { workspaceSettings } = registerSettingsRoutes(app, { db, authenticate, DATA_DIR, UPLOADS_DIR, path, isAdmin, isManager, hasPermission, denied, isDemoUser, autoArchiveCompletedTasks });
+// registerSettingsRoutes needs a stable autoArchiveCompletedTasks reference to call after
+// settings change, but the real implementation needs workspaceSettings back from it — broken
+// via a thin forwarding proxy, resolved to the real function right below.
+let autoArchiveCompletedTasks = () => {};
+const { workspaceSettings } = registerSettingsRoutes(app, { db, authenticate, DATA_DIR, UPLOADS_DIR, path, isAdmin, isManager, hasPermission, denied, isDemoUser, autoArchiveCompletedTasks: (...args) => autoArchiveCompletedTasks(...args) });
 
-function taskLifecyclePatch(current, patch) {
-  const next = { ...(patch || {}) };
-  if (!Object.prototype.hasOwnProperty.call(next, 'status')) return next;
-  const previousStatus = current?.status || null;
-  const newStatus = next.status;
-  if (newStatus === 'done') {
-    if (!current?.completedAt || previousStatus !== 'done') next.completedAt = new Date().toISOString();
-  } else if (previousStatus === 'done') {
-    next.completedAt = null;
-  }
-  return next;
-}
-
-function autoArchiveCompletedTasks() {
-  const days = workspaceSettings().taskAutoArchiveDays;
-  const cutoff = Date.now() - days * 86400000;
-  const nowIso = new Date().toISOString();
-  let count = 0;
-  for (const task of db.tasks.all()) {
-    if (task.status !== 'done') continue;
-    const completedAt = task.completedAt || task.updatedAt || task.createdAt;
-    const completedMs = Date.parse(completedAt || '');
-    if (!Number.isFinite(completedMs)) continue;
-    if (!task.completedAt) db.tasks.update(task.id, { completedAt });
-    if (completedMs <= cutoff) {
-      db.tasks.update(task.id, { archivedAt: nowIso, completedAt });
-      count += 1;
-    }
-  }
-  return count;
-}
-
+const taskAutoArchive = createTaskAutoArchive({ db, workspaceSettings });
+autoArchiveCompletedTasks = taskAutoArchive.autoArchiveCompletedTasks;
 autoArchiveCompletedTasks();
-const autoArchiveTimer = setInterval(autoArchiveCompletedTasks, 60 * 60 * 1000);
-if (autoArchiveTimer.unref) autoArchiveTimer.unref();
+taskAutoArchive.startAutoArchiveTimer();
 
 // ---------- Slugs and human-readable entity keys ----------
 const identifiers = createEntityIdentifiers({ db, nextNumericKey });
 const {
-  SLUG_COLLECTIONS, uniqueSlug, resolveEntity, normalizeProjectTaskCode, uniqueProjectTaskCode,
+  SLUG_COLLECTIONS, uniqueSlug, resolveEntity, validateProjectTaskCode,
   ensureSlugs, ensureProjectTaskCodes, taskKeyPrefix, nextTaskKey, assignTaskKey, nextLabKey, ensureLabKeys, ensureTaskKeys,
   nextMeetingKey, assignMeetingKey, ensureMeetingKeys, nextProcessKey, assignProcessKey, ensureProcessKeys,
 } = identifiers;
@@ -138,7 +115,7 @@ function isActiveTeamMember(person) {
   return Boolean(person && person.type === 'team' && !['dismissed', 'transferred', 'inactive'].includes(person.status));
 }
 
-const { syncJournalDerivedEntity } = createJournalSync({ db, isActiveTeamMember });
+const { syncJournalDerivedEntity, syncEntityToJournal, unlinkJournalFor } = createJournalSync({ db, isActiveTeamMember });
 
 
 
@@ -150,37 +127,12 @@ ensureRecurringMeetingSchedules();
 // Copies may share taskGroupId internally, but there is no parent/group entity in the UI.
 
 
-function sanitizeKnowledgeHtmlServer(value) {
-  return String(value || '')
-    .replace(/<(script|style|iframe|object|embed|form|button)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
-    .replace(/<\/?(?:script|style|iframe|object|embed|form|input|button)\b[^>]*>/gi, '')
-    .replace(/\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
-    .replace(/(href|src)\s*=\s*(["'])\s*javascript:[\s\S]*?\2/gi, '$1="#"');
-}
-
 // Все рабочие API ниже требуют авторизованную сессию.
 // Публичными остаются только health/login и явно защищённые auth/settings endpoints выше.
 app.use('/api', authenticate);
 app.use('/api', (req, res, next) => db.withWorkspace(isDemoUser(req.auth?.user) ? 'demo' : 'main', next));
 
-function ensureTeamleadSelfAssignment(personId, roles, actorUser) {
-  if (!normalizedRoles(roles).includes('teamlead') || !personId) return null;
-  const person = db.people.get(personId);
-  if (!person || person.type !== 'team' || person.teamLeadId) return person || null;
-  const updated = db.people.update(personId, { teamLeadId: personId });
-  try { syncRecurringMeetingsForPerson(personId, actorUser || null); } catch (err) {
-    console.warn('Не удалось обновить плановые встречи после назначения тимлида самому себе', err);
-  }
-  return updated;
-}
-
-function syncExistingTeamleadSelfAssignments() {
-  for (const user of db.auth.users.all()) {
-    if (!user.active || !isTeamlead(user) || !user.personId) continue;
-    const person = db.people.get(user.personId);
-    if (person && person.type === 'team' && !person.teamLeadId) db.people.update(person.id, { teamLeadId: person.id });
-  }
-}
+const { ensureTeamleadSelfAssignment, syncExistingTeamleadSelfAssignments } = createTeamleadSync({ db, normalizedRoles, isTeamlead, syncRecurringMeetingsForPerson });
 syncExistingTeamleadSelfAssignments();
 
 // ---------- Администрирование учётных записей ----------
@@ -188,12 +140,12 @@ registerAdminRoutes(app, { db, requireAdmin, isDemoUser, safeUser, ACCESS_ROLES,
 
 // ---------- Resource CRUD routes ----------
 registerCrudRoutes(app, {
-  COLLECTIONS, db, autoArchiveCompletedTasks, canReadItem, sanitizeItem, visibleItems, resolveEntity, denied, canCreate, withOwnership, taskLifecyclePatch, sanitizeKnowledgeHtmlServer, isTeamlead, canManageCollection, normalizeProjectTaskCode, uniqueProjectTaskCode, syncJournalDerivedEntity, assignTaskKey, SLUG_COLLECTIONS, uniqueSlug, nextLabKey, syncRecurringMeetingsForPerson, syncRecurringMeetingsForMeeting, canUpdate, nextTaskKey, taskKeyPrefix, teamleadOwnsPerson, memberPersonPatch, OWNER_COLLECTIONS, canDelete, assignMeetingKey, nextMeetingKey, assignProcessKey, nextProcessKey,
+  COLLECTIONS, db, autoArchiveCompletedTasks, canReadItem, sanitizeItem, visibleItems, resolveEntity, denied, canCreate, withOwnership, taskLifecyclePatch, sanitizeKnowledgeHtmlServer, isTeamlead, canManageCollection, validateProjectTaskCode, syncJournalDerivedEntity, syncEntityToJournal, unlinkJournalFor, assignTaskKey, SLUG_COLLECTIONS, uniqueSlug, nextLabKey, syncRecurringMeetingsForPerson, syncRecurringMeetingsForMeeting, canUpdate, nextTaskKey, taskKeyPrefix, teamleadOwnsPerson, memberPersonPatch, OWNER_COLLECTIONS, canDelete, assignMeetingKey, nextMeetingKey, assignProcessKey, nextProcessKey,
 });
 
 // ---------- Collaboration routes ----------
 registerCollaborationRoutes(app, { db, canReadItem, denied });
-registerCommentRoutes(app, { db, canReadItem, denied });
+registerCommentRoutes(app, { db, canReadItem, denied, isAdmin });
 registerVersionRoutes(app, { db, resolveEntity, canReadItem, canUpdate, sanitizeItem, denied });
 registerNotificationRoutes(app, { db, ensureCheckinReminder });
 

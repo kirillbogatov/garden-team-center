@@ -24,89 +24,6 @@ async function startGardenApp() {
   }
 }
 
-// ---------------- Клавиатура для кликабельных строк и карточек ----------------
-// В интерфейсе много строк и карточек, которые кликаются через onclick на <div>.
-// Переписывать каждую разметку рискованно (внутри строк уже есть свои кнопки),
-// поэтому один проход добавляет им роль и фокус, а один обработчик — Enter и Space.
-// Элементы со своим onkeydown не задеваются: они гасят событие раньше.
-
-const NATIVE_INTERACTIVE_TAGS = new Set(['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'LABEL', 'SUMMARY', 'OPTION']);
-const INTERACTIVE_SELECTOR = 'a[href], button, input, select, textarea, [role="button"], [role="link"], [tabindex="0"]';
-
-function accessibleTextOf(node) {
-  return (node.getAttribute('aria-label') || node.textContent || '').replace(/\s+/g, ' ').trim();
-}
-
-// Строка со вложенными кнопками не может сама быть кнопкой: скринридер тогда не
-// доберётся до вложенных действий. Поэтому в такую строку добавляется невидимая
-// кнопка-«открыть», растянутая на всю строку. Клик по ней всплывает до onclick
-// строки, поэтому обработчик ей не нужен, а вложенные кнопки лежат выше по z-index.
-function ensureRowOpenButton(row) {
-  if (row.querySelector(':scope > .row-open')) return;
-  const label = accessibleTextOf(row).slice(0, 120) || 'Открыть';
-  const cover = document.createElement('button');
-  cover.type = 'button';
-  cover.className = 'row-open';
-  cover.setAttribute('aria-label', label);
-  row.classList.add('has-row-open');
-  row.insertBefore(cover, row.firstChild);
-}
-
-function enhanceInteractive(root) {
-  const scope = root || document.body;
-  // Идём от самых вложенных к внешним: иначе строка успевает стать кнопкой раньше,
-  // чем её собственные кнопки, и получается вложенность интерактивных элементов.
-  const nodes = Array.from(scope.querySelectorAll('[onclick]')).reverse();
-  nodes.forEach((node) => {
-    if (NATIVE_INTERACTIVE_TAGS.has(node.tagName)) return;
-    if (node.closest('[hidden]')) return;
-
-    const hasInteractiveInside = !!node.querySelector(INTERACTIVE_SELECTOR);
-    if (hasInteractiveInside) { ensureRowOpenButton(node); return; }
-
-    // Иконка без текста получает имя из title — иначе кнопка будет безымянной.
-    if (!accessibleTextOf(node)) {
-      const title = node.getAttribute('title');
-      if (!title) return;
-      node.setAttribute('aria-label', title);
-    }
-    if (!node.hasAttribute('role')) {
-      node.setAttribute('role', /Router\.go/.test(node.getAttribute('onclick') || '') ? 'link' : 'button');
-    }
-    if (!node.hasAttribute('tabindex')) node.setAttribute('tabindex', '0');
-  });
-}
-
-let _enhanceScheduled = false;
-function scheduleEnhanceInteractive() {
-  if (_enhanceScheduled) return;
-  _enhanceScheduled = true;
-  requestAnimationFrame(() => {
-    _enhanceScheduled = false;
-    enhanceInteractive(document.body);
-  });
-}
-
-function watchInteractive() {
-  const observer = new MutationObserver(scheduleEnhanceInteractive);
-  // Наблюдаем только за появлением узлов: атрибуты не слушаем, иначе наши же
-  // правки вызывали бы новый проход.
-  observer.observe(document.body, { childList: true, subtree: true });
-  enhanceInteractive(document.body);
-}
-
-document.addEventListener('keydown', (e) => {
-  if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
-  const node = e.target;
-  if (!(node instanceof HTMLElement)) return;
-  if (NATIVE_INTERACTIVE_TAGS.has(node.tagName) || node.isContentEditable) return;
-  const role = node.getAttribute('role');
-  if (role !== 'button' && role !== 'link') return;
-  if (!node.hasAttribute('onclick')) return;
-  e.preventDefault();
-  node.click();
-});
-
 function initTopbarScrollState() {
   const view = document.getElementById('view');
   const topbar = document.getElementById('topbar');
@@ -120,7 +37,6 @@ function initTopbarScrollState() {
 async function boot() {
   Modal.init();
   document.querySelector('[data-close-mobile-nav]')?.addEventListener('click', () => closeMobileNav({ restoreFocus: true }));
-  watchInteractive();
   initTopbarScrollState();
   const authenticated = await Auth.init();
   if (authenticated) await startGardenApp();

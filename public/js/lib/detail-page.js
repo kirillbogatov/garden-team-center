@@ -128,6 +128,19 @@ const DetailAutosave = {
 
 window.addEventListener('pagehide', () => DetailAutosave.finalizeVersionKeepalive());
 
+// Closes an "actions" dropdown menu on the next click outside it. Attaches a
+// single self-removing `document` click listener (`{ once: true }`) instead
+// of a permanent one, so opening the menu repeatedly never stacks up leaked
+// listeners — call this each time the menu opens (a fresh one-shot listener
+// is armed per open).
+function bindOutsideClickClose(insideEl, onOutsideClick) {
+  if (typeof onOutsideClick !== 'function') return;
+  document.addEventListener('click', (event) => {
+    if (insideEl && insideEl.contains(event.target)) return;
+    onOutsideClick(event);
+  }, { once: true });
+}
+
 function bindDetailCommitOnEnter(field, commit, options) {
   if (!field || typeof commit !== 'function') return () => {};
   const opts = options || {};

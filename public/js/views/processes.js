@@ -2,9 +2,6 @@
 
 Views._processFilter = Views._processFilter || 'problems';
 
-const PROCESS_STATUS_LABEL = { ok: 'Работает', attention: 'Есть проблемы', broken: 'Сломан' };
-const PROCESS_FIX_STATUS_LABEL = { unchecked: 'Не проверялось', effective: 'Эффективно', ineffective: 'Неэффективно' };
-
 function normalizeProcessRecord(process) {
   const p = { ...(process || {}) };
   p.expectedBehavior = p.expectedBehavior ?? p.description ?? '';
@@ -146,8 +143,15 @@ function bindProcessDetailInteractions(p, context) {
   const actionsToggle = document.getElementById('process-actions-toggle');
   const actionsMenu = document.getElementById('process-actions-menu');
   if (actionsToggle && actionsMenu) {
-    actionsToggle.onclick = (event) => { event.stopPropagation(); actionsMenu.hidden = !actionsMenu.hidden; actionsToggle.setAttribute('aria-expanded', actionsMenu.hidden ? 'false' : 'true'); };
-    document.addEventListener('click', () => { if (actionsMenu) actionsMenu.hidden = true; }, { once: true });
+    const wrap = actionsToggle.closest('.task-actions-menu-wrap');
+    const setActionsOpen = (open) => { actionsMenu.hidden = !open; actionsToggle.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    actionsToggle.onclick = (event) => {
+      event.stopPropagation();
+      const open = actionsMenu.hidden;
+      setActionsOpen(open);
+      if (open) bindOutsideClickClose(wrap, () => setActionsOpen(false));
+    };
+    actionsMenu.onclick = (event) => event.stopPropagation();
   }
 
   if (canEdit && !isArchived) {

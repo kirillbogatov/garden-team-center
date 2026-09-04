@@ -14,8 +14,8 @@ Views.agreements = async function () {
 
   const filters = [
     { key: 'open', label: 'Открытые', test: (a) => a.status !== 'done' },
-    { key: 'all', label: 'Все', test: () => true },
     { key: 'done', label: 'Выполненные', test: (a) => a.status === 'done' },
+    { key: 'all', label: 'Все', test: () => true },
   ];
   const active = filters.find((f) => f.key === Views._agreementFilter) || filters[0];
   const filtered = agreements.filter(active.test);
@@ -92,7 +92,12 @@ async function openAgreementModal(id) {
     onDelete: isEdit && Auth.canDeleteItem('agreements', a) ? async () => {
       const ok = await confirmAction('Удалить эту договорённость?');
       if (!ok) return;
+      const deleteJournalToo = a.sourceJournalId ? await askDeleteLinkedJournal() : false;
       await Resources.agreements.remove(a.id);
+      if (deleteJournalToo && a.sourceJournalId) {
+        try { await Resources.journal.remove(a.sourceJournalId); }
+        catch (err) { console.warn('Не удалось удалить связанную запись журнала', err); }
+      }
       Modal.close();
       toast('Договорённость удалена');
       Router.render();

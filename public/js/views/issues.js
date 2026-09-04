@@ -17,8 +17,8 @@ Views.issues = async function () {
 
   const filters = [
     { key: 'open', label: 'Открытые', test: (i) => i.status !== 'resolved' },
-    { key: 'all', label: 'Все', test: () => true },
     { key: 'resolved', label: 'Решённые', test: (i) => i.status === 'resolved' },
+    { key: 'all', label: 'Все', test: () => true },
   ];
   const active = filters.find((f) => f.key === Views._issueFilter) || filters[0];
   const filtered = issues.filter(active.test);
@@ -161,7 +161,16 @@ async function openIssueModal(id, opts) {
 async function deleteIssue(id) {
   const ok = await confirmAction('Удалить эту проблему?');
   if (!ok) return;
+  // Проблема, заведённая из Журнала (или синхронизированная туда), несёт
+  // sourceJournalId — спрашиваем, удалять ли и связанную запись, а не молча
+  // оставлять в Журнале осиротевшую заметку без ссылки.
+  const issue = await Resources.issues.get(id).catch(() => null);
+  const deleteJournalToo = issue?.sourceJournalId ? await askDeleteLinkedJournal() : false;
   await Resources.issues.remove(id);
+  if (deleteJournalToo && issue.sourceJournalId) {
+    try { await Resources.journal.remove(issue.sourceJournalId); }
+    catch (err) { console.warn('Не удалось удалить связанную запись журнала', err); }
+  }
   Modal.close();
   toast('Проблема удалена');
   Router.render();

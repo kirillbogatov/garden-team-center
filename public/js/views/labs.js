@@ -61,6 +61,7 @@ function labIdeaRowHtml(idea) {
     <span class="task-status-icon task-status-todo" aria-hidden="true">${TASK_STATUS_SYMBOL.todo || '○'}</span>
     <span class="tl-title">${escapeHtml(title)}</span>
     <div class="tl-right">
+      ${idea.private ? `<span class="lab-private-meta" title="Видна только автору">${icon('eyeOff', 12)} Приватная</span>` : ''}
       ${project ? `<span class="ui-tag badge lab-type-badge">${escapeHtml(project.title || 'Без названия')}</span>` : ''}
       ${author ? `<div class="task-assignee-cell">${personAvatarLinkHtml(author)}</div>` : ''}
     </div>
@@ -80,10 +81,17 @@ async function openLabIdeaModal(existing, opts) {
   }
   const editable = canEditLab(idea);
   const defaultAuthorId = idea.authorId || Auth.user?.personId || '';
-  const value = { ...idea, authorId: defaultAuthorId };
+  // Видимость новой идеи спрашиваем прямым диалогом ДО открытия формы (см.
+  // askIdeaVisibility в entity-ui.js) — вместо чекбокса, который легко проглядеть.
+  // У существующей идеи видимость меняется обычным чекбоксом внутри формы, спрашивать
+  // диалогом заново при каждом редактировании было бы навязчиво.
+  const isNewIdea = !existing;
+  const initialPrivate = isNewIdea ? await askIdeaVisibility() : Boolean(idea.private);
+  const value = { ...idea, authorId: defaultAuthorId, private: initialPrivate };
   const schema = [
     { key: 'title', label: 'Название', type: 'text', trim: true },
     { key: 'description', label: 'Описание', type: 'textarea', rows: 6, trim: true },
+    ...(isNewIdea ? [] : [{ key: 'private', label: 'Видимость', type: 'checkbox', render: ({ id, value, disabled }) => `<label class="check-row lab-private-checkbox"><input id="${id}" type="checkbox" ${value ? 'checked' : ''} ${disabled}/><span>Приватная идея (видна только вам)</span></label>` }]),
     { key: 'authorId', label: 'Автор', type: 'select', emptyLabel: '—', options: () => store.team().map((person) => ({ value: person.id, label: person.name })), parse: (v) => v || null },
     { key: 'labProjectId', label: 'Проект The Labs', type: 'select', emptyLabel: 'Без проекта', options: () => (Views._theLabsProjects || []).filter((item) => item.entityType !== 'idea').map((project) => ({ value: project.id, label: project.title || 'Без названия' })), parse: (v) => v || null, hint: 'Идея может существовать отдельно или быть связана с существующим проектом.' },
   ];
@@ -100,6 +108,9 @@ async function openLabIdeaModal(existing, opts) {
     },
     onSave: async (payload) => {
       payload.entityType = 'idea';
+      // Для новой идеи 'private' не входит в схему формы (см. выше) — вернуть его
+      // спросили диалогом заранее, поэтому подставляем сюда напрямую.
+      if (isNewIdea) payload.private = initialPrivate;
       if (!payload.title) payload.title = payload.description.slice(0, 80);
       if (existing) await Resources.labs.update(idea.id, payload); else await Resources.labs.create(payload);
       Modal.close();
@@ -109,7 +120,12 @@ async function openLabIdeaModal(existing, opts) {
     onDelete: existing && editable ? async () => {
       const ok = await confirmAction('Удалить идею?');
       if (!ok) return;
+      const deleteJournalToo = idea.sourceJournalId ? await askDeleteLinkedJournal() : false;
       await Resources.labs.remove(idea.id);
+      if (deleteJournalToo && idea.sourceJournalId) {
+        try { await Resources.journal.remove(idea.sourceJournalId); }
+        catch (err) { console.warn('Не удалось удалить связанную запись журнала', err); }
+      }
       Modal.close();
       toast('Идея удалена');
       if (location.pathname.startsWith('/labs/')) Router.render(); else Views.labs();
@@ -476,9 +492,13 @@ Views.labDetail = async function (ref) {
   if (actionsToggle && actionsMenu) {
     const setActionsOpen = (open) => { actionsMenu.hidden = !open; actionsToggle.setAttribute('aria-expanded', open ? 'true' : 'false'); };
     const wrap = actionsToggle.closest('.task-actions-menu-wrap');
-    actionsToggle.onclick = (event) => { event.stopPropagation(); setActionsOpen(actionsMenu.hidden); };
+    actionsToggle.onclick = (event) => {
+      event.stopPropagation();
+      const open = actionsMenu.hidden;
+      setActionsOpen(open);
+      if (open) bindOutsideClickClose(wrap, () => setActionsOpen(false));
+    };
     actionsMenu.onclick = (event) => event.stopPropagation();
-    document.addEventListener('click', (event) => { if (!wrap?.contains(event.target)) setActionsOpen(false); });
   }
 
   const versionHistoryButton = document.getElementById('lab-version-history');

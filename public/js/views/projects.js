@@ -61,7 +61,7 @@ Views.projectDetail = async function (id) {
   const addTaskIdx = registerAction(() => FeatureLoader.run('openTaskModal', null, { prefill: { projectId: p.id } }));
 
   const [projectNotes, settings] = await Promise.all([
-    api.get(`/api/comments/project/${encodeURIComponent(p.id)}`).catch(() => []),
+    Comments.list('project', p.id).catch(() => []),
     GardenSettings.load(),
   ]);
 

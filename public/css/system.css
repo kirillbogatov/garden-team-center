@@ -1417,8 +1417,8 @@ html:is(.theme-clarity,.theme-clarity-dark) .year-month-card:hover {
   --modal-field-focus: color-mix(in srgb, var(--accent) 42%, var(--border));
   --modal-field-focus-soft: color-mix(in srgb, var(--accent) 7%, transparent);
 }
-.modal-panel input:focus,
-.modal-panel input:focus-visible,
+.modal-panel input:not([type="checkbox"]):not([type="radio"]):focus,
+.modal-panel input:not([type="checkbox"]):not([type="radio"]):focus-visible,
 .modal-panel textarea:focus,
 .modal-panel textarea:focus-visible,
 .modal-panel select:focus,
@@ -1439,6 +1439,16 @@ html:is(.theme-clarity,.theme-clarity-dark) .year-month-card:hover {
   outline: 0 !important;
   border-color: transparent !important;
   box-shadow: none !important;
+}
+
+/* Чекбоксы/радио — маленькие нативные контролы без своей рамки, а не текстовые поля:
+   тот же outline+border-color+box-shadow, что и для input/textarea выше, на них выглядел
+   как толстая непропорциональная обводка (особенно заметно на чекбоксе, получающем фокус
+   автоматически при открытии диалога, см. Modal.open). Даём им обычное тонкое кольцо фокуса. */
+.modal-panel input[type="checkbox"]:focus-visible,
+.modal-panel input[type="radio"]:focus-visible {
+  outline: 2px solid var(--modal-field-focus) !important;
+  outline-offset: 2px !important;
 }
 
 /* Overview layout and widget shelves. */

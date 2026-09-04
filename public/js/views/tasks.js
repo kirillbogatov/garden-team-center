@@ -6,7 +6,6 @@ Views._taskPersonFilter = 'all';
 Views._taskProjectFilter = 'all';
 Views._taskViewMode = 'list';
 Views._taskFiltersCollapsed = localStorage.getItem('garden:taskFiltersCollapsed') === '1';
-const TASK_STATUS_ORDER = ['todo', 'in_progress', 'in_review', 'paused', 'blocked', 'done'];
 
 Views.tasks = async function () {
   const createRequested = Router.queryParam('create') === '1';
@@ -156,8 +155,7 @@ Views.tasks = async function () {
         ? emptyState('Ничего не найдено', 'Попробуйте изменить фильтры', 'tasks')
         : emptyState('Задач пока нет', 'Создайте первую задачу', 'tasks');
   } else if (Views._taskViewMode === 'kanban') {
-    const order = ['todo', 'in_progress', 'in_review', 'paused', 'blocked', 'done'];
-    content.innerHTML = `<div class="task-kanban-wrap"><div class="kanban task-kanban">${order.map((status) => {
+    content.innerHTML = `<div class="task-kanban-wrap"><div class="kanban task-kanban">${TASK_STATUS_ORDER.map((status) => {
       const columnTasks = tasks.filter((t) => t.status === status);
       return `<section class="kanban-col task-kanban-col" data-status="${status}">
         <div class="kanban-col-title"><span>${TASK_STATUS_LABEL[status]}</span></div>
@@ -508,12 +506,11 @@ ${detailPageHeaderHtml({ title: t.title, eyebrow: '', inputId: 'tf-title', displ
     const actionsWrap = actionsToggle.closest('.task-actions-menu-wrap');
     actionsToggle.onclick = (event) => {
       event.stopPropagation();
-      setActionsOpen(actionsMenu.hidden);
+      const open = actionsMenu.hidden;
+      setActionsOpen(open);
+      if (open) bindOutsideClickClose(actionsWrap, () => setActionsOpen(false));
     };
     actionsMenu.onclick = (event) => event.stopPropagation();
-    document.addEventListener('click', (event) => {
-      if (!actionsWrap?.contains(event.target)) setActionsOpen(false);
-    });
   }
 
   const versionHistoryButton = document.getElementById('task-version-history');
@@ -779,7 +776,7 @@ async function openTaskCreateModal(opts) {
     { key: 'taskType', label: 'Тип', type: 'select', default: 'standard', options: Object.entries(TASK_TYPE_LABEL).map(([value, label]) => ({ value, label })) },
     { key: 'projectId', label: 'Проект', type: 'select', emptyLabel: '—', options: () => (store.projects || []).map((p) => ({ value: p.id, label: p.name })), parse: (v) => v || null },
     { key: 'assigneeIds', label: 'Исполнители', type: 'people', multi: true, people: () => store.team(), emptyLabel: 'Не назначено', placeholder: 'Добавить исполнителя…', hint: 'Каждый новый исполнитель получает отдельную копию задачи со своим статусом.' },
-    { key: 'status', label: 'Статус', type: 'select', default: 'todo', options: ['todo','in_progress','in_review','paused','blocked','done'].map((value) => ({ value, label: TASK_STATUS_LABEL[value] })) },
+    { key: 'status', label: 'Статус', type: 'select', default: 'todo', options: TASK_STATUS_ORDER.map((value) => ({ value, label: TASK_STATUS_LABEL[value] })) },
     { key: 'priority', label: 'Приоритет', type: 'select', default: 'normal', options: ['normal','high'].map((value) => ({ value, label: PRIORITY_LABEL[value] })) },
     {
       key: 'dueDate', label: 'Срок', type: 'date', parse: (v) => v || null,

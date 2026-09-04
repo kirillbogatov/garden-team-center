@@ -1,8 +1,8 @@
 // Общая механика папок для каталогов Документы и Инструменты.
 function resourceFolderConfig(kind) {
   return kind === 'documents'
-    ? { folderApi:'/api/docFolders', itemApi:'/api/documents', state:'_documentsFolder', render:()=>Views.documents(), label:'Документы' }
-    : { folderApi:'/api/toolFolders', itemApi:'/api/tools', state:'_toolsFolder', render:()=>Views.tools(), label:'Инструменты' };
+    ? { resource:Resources.docFolders, items:Resources.documents, state:'_documentsFolder', render:()=>Views.documents(), label:'Документы' }
+    : { resource:Resources.toolFolders, items:Resources.tools, state:'_toolsFolder', render:()=>Views.tools(), label:'Инструменты' };
 }
 function resourceFolderOptionsHtml(folders, selected, parentId = null, depth = 0) {
   return folders.filter((f)=>(f.parentId||null)===(parentId||null)).sort((a,b)=>a.title.localeCompare(b.title,'ru')).map((f)=>`<option value="${f.id}" ${f.id===selected?'selected':''}>${'— '.repeat(depth)}${escapeHtml(f.title)}</option>${resourceFolderOptionsHtml(folders, selected, f.id, depth+1)}`).join('');
@@ -25,10 +25,10 @@ function resourceFolderLayoutHtml(kind, folders, items, selected, selectedFolder
 }
 function resourceDescendantIds(folders,parentId,out=new Set()){for(const f of folders.filter((x)=>x.parentId===parentId)){if(out.has(f.id))continue;out.add(f.id);resourceDescendantIds(folders,f.id,out);}return out;}
 async function openResourceFolderModal(kind,id){
-  const cfg=resourceFolderConfig(kind); const [folders,items]=await Promise.all([api.get(cfg.folderApi),api.get(cfg.itemApi)]); const current=id?folders.find((f)=>f.id===id):null;
+  const cfg=resourceFolderConfig(kind); const [folders,items]=await Promise.all([cfg.resource.list(),cfg.items.list()]); const current=id?folders.find((f)=>f.id===id):null;
   const blocked=current?resourceDescendantIds(folders,current.id):new Set(); if(current)blocked.add(current.id);
   Modal.open(`<h2>${current?'Редактировать папку':'Новая папка'}</h2><div class="ui-field field"><label class="ui-field-label field-label" for="rf-title">Название</label><input id="rf-title" value="${escapeHtml(current?.title||'')}" autofocus /></div><div class="ui-field field"><label class="ui-field-label field-label" for="rf-parent">Родительская папка</label><select id="rf-parent"><option value="">Корень</option>${folders.filter((f)=>!blocked.has(f.id)).map((f)=>`<option value="${f.id}" ${current?.parentId===f.id?'selected':''}>${escapeHtml(f.title)}</option>`).join('')}</select></div><div class="ui-modal-actions modal-actions">${current?`<button class="ui-button ui-button--danger btn btn-danger btn-push-left" id="rf-delete">${icon('trash',14)} Удалить</button>`:''}<button class="ui-button btn" data-modal-close>Отмена</button><button class="ui-button ui-button--primary btn btn-primary" id="rf-save">Сохранить</button></div>`);
-  document.getElementById('rf-save').onclick=async()=>{const title=document.getElementById('rf-title').value.trim();if(!title){toast('Укажите название папки');return;}const body={title,parentId:document.getElementById('rf-parent').value||null};if(current)await api.put(cfg.folderApi+'/'+current.id,body);else await api.post(cfg.folderApi,body);Modal.close();cfg.render();};
-  if(current)document.getElementById('rf-delete').onclick=async()=>{if(folders.some((f)=>f.parentId===current.id)||items.some((x)=>x.folderId===current.id)){toast('Сначала переместите содержимое и вложенные папки');return;}if(!(await confirmAction('Удалить папку?')))return;await api.del(cfg.folderApi+'/'+current.id);Views[cfg.state]='all';Modal.close();cfg.render();};
+  document.getElementById('rf-save').onclick=async()=>{const title=document.getElementById('rf-title').value.trim();if(!title){toast('Укажите название папки');return;}const body={title,parentId:document.getElementById('rf-parent').value||null};if(current)await cfg.resource.update(current.id,body);else await cfg.resource.create(body);Modal.close();cfg.render();};
+  if(current)document.getElementById('rf-delete').onclick=async()=>{if(folders.some((f)=>f.parentId===current.id)||items.some((x)=>x.folderId===current.id)){toast('Сначала переместите содержимое и вложенные папки');return;}if(!(await confirmAction('Удалить папку?')))return;await cfg.resource.remove(current.id);Views[cfg.state]='all';Modal.close();cfg.render();};
 }
 

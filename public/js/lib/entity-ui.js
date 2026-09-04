@@ -20,6 +20,11 @@ function resetActionRegistry() {
 }
 
 document.addEventListener('click', (event) => {
+  // Вложенный самостоятельный контрол (чекбокс, ссылка), помеченный
+  // data-stop-propagation, не должен активировать data-action-id родительской
+  // строки — иначе, например, клик по чекбоксу «выполнено» у договорённости
+  // одновременно открывает карточку договорённости.
+  if (event.target.closest?.('[data-stop-propagation]')) return;
   const target = event.target.closest?.('[data-action-id]');
   if (!target) return;
   if (target.dataset.actionStop === '1') event.stopPropagation();
@@ -27,12 +32,65 @@ document.addEventListener('click', (event) => {
 });
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Enter' && event.key !== ' ') return;
+  if (event.target.closest?.('[data-stop-propagation]')) return;
   const target = event.target.closest?.('[data-action-id][role="button"], [data-action-id][role="link"]');
   if (!target) return;
   event.preventDefault();
   if (target.dataset.actionStop === '1') event.stopPropagation();
   runAction(target.dataset.actionId, event);
 });
+
+// Общая модалка для симметричного случая: проблему/договорённость/идею удаляют
+// напрямую в её разделе (не из Журнала) — предлагаем удалить и связанную запись
+// в Журнале, а не молча оставлять там осиротевшую заметку без ссылки.
+function askDeleteLinkedJournal() {
+  return new Promise((resolve) => {
+    Modal.open(`<h2>Связанная запись в Журнале</h2>
+      <p class="muted" style="margin:0 0 4px">Удалить также запись из Журнала?</p>
+      <div class="ui-modal-actions modal-actions">
+        <button class="ui-button btn" id="jdel-keep">Оставить</button>
+        <button class="ui-button ui-button--danger btn btn-danger-primary" id="jdel-linked">Удалить вместе</button>
+      </div>`);
+    document.getElementById('jdel-keep').onclick = () => { Modal.close(); resolve(false); };
+    document.getElementById('jdel-linked').onclick = () => { Modal.close(); resolve(true); };
+  });
+}
+
+// Вместо чекбокса «Приватная идея» при СОЗДАНИИ новой идеи прямо спрашиваем диалогом,
+// оставить её приватной или поделиться с коллегами — так выбор осознанный, а не спрятан
+// в мелком чекбоксе, который легко не заметить. Флажок «Применять для всех моих
+// последующих идей» сохраняет выбор в GardenSettings.ideaVisibilityDefault — если он уже
+// установлен в 'private'/'public' (не 'ask'), диалог вообще не показываем и молча
+// используем запомненное значение. Сбросить обратно на «каждый раз спрашивать» можно в
+// Настройках → «Идеи».
+async function askIdeaVisibility() {
+  let settings = null;
+  try { settings = await GardenSettings.load(); } catch (_) { settings = null; }
+  if (settings?.ideaVisibilityDefault === 'private') return true;
+  if (settings?.ideaVisibilityDefault === 'public') return false;
+  return new Promise((resolve) => {
+    Modal.open(`<h2>Новая идея</h2>
+      <p class="muted" style="margin:0 0 12px">Оставить идею приватной (видна только вам) или сразу поделиться с коллегами?</p>
+      <label class="lab-private-checkbox" id="idea-vis-remember-row" style="margin:0 0 14px">
+        <input type="checkbox" id="idea-vis-remember"/>
+        <span>Применять для всех моих последующих идей</span>
+      </label>
+      <div class="ui-modal-actions modal-actions">
+        <button class="ui-button btn" id="idea-vis-public">Поделиться с коллегами</button>
+        <button class="ui-button ui-button--primary btn btn-primary" id="idea-vis-private">Оставить приватной</button>
+      </div>`);
+    const finish = async (isPrivate) => {
+      const remember = document.getElementById('idea-vis-remember')?.checked;
+      Modal.close();
+      if (remember) {
+        try { await GardenSettings.update({ ideaVisibilityDefault: isPrivate ? 'private' : 'public' }); } catch (_) {}
+      }
+      resolve(isPrivate);
+    };
+    document.getElementById('idea-vis-private').onclick = () => finish(true);
+    document.getElementById('idea-vis-public').onclick = () => finish(false);
+  });
+}
 
 function avatarImgStyle(person, size) {
   if (!person) return '';
@@ -144,7 +202,14 @@ function issueStatusBadge(status, issueId) {
 
 function openIssueStatusMenu(event, issueId, currentStatus) {
   closeTaskStatusMenu();
-  const anchor = event?.currentTarget || event?.target;
+  // event.currentTarget here is document (this runs from the delegated
+  // document click listener in entity-ui.js), not the clicked icon — the
+  // same bug that openTaskStatusMenu/openLabStatusMenu avoid by reading
+  // event.target instead. Using currentTarget crashed on
+  // document.getBoundingClientRect() before the menu items got their click
+  // handlers attached, which is why clicking a problem's status never worked.
+  const eventTarget = event?.target;
+  const anchor = eventTarget?.closest?.('.task-status-interactive') || null;
   if (!anchor || !issueId) return;
 
   const order = ['open', 'in_progress', 'resolved'];
@@ -205,7 +270,6 @@ function openIssueStatusMenu(event, issueId, currentStatus) {
   menu.querySelector('.task-status-menu-item.active')?.focus();
 }
 
-const TASK_STATUS_ORDER = ['todo', 'in_progress', 'in_review', 'paused', 'blocked', 'done'];
 const TASK_STATUS_SYMBOL = {
   todo: '',
   in_progress: '◐',
