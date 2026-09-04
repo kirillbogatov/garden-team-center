@@ -50,7 +50,7 @@ Views.settings = async function () {
     const visible = themeSupportsAccent(theme) && themeSlot === slot;
     return `
       <section class="settings-section settings-section-spaced" id="settings-accent-section-${slot}" ${visible ? '' : 'hidden'}>
-        <div class="settings-section-head"><h2>Акцентный цвет</h2><p>Настройка доступна для тем AnuPpuccin Latte и AnuPpuccin Mocha.</p></div>
+        <div class="settings-section-head"><h2>Акцентный цвет</h2></div>
         <div class="ui-surface ui-surface--settings settings-card settings-accent-list">${ACCENT_COLORS.map(accentChoiceHtml(theme, activeAccent)).join('')}</div>
       </section>`;
   };

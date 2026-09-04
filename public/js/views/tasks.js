@@ -81,7 +81,7 @@ Views.tasks = async function () {
       <option value="archived" ${Views._taskStatusFilter === 'archived' ? 'selected' : ''}>Архив</option>
     </select>` : '';
 
-  const taskToolbarHtml = filtersCollapsed ? '' : `<div class="task-sticky-toolbar">
+  const taskToolbarHtml = `<div class="task-sticky-toolbar ${filtersCollapsed ? 'is-collapsed' : ''}" aria-hidden="${filtersCollapsed ? 'true' : 'false'}" ${filtersCollapsed ? 'inert' : ''}>
     <div class="task-toolbar-inner">
       <div class="task-filter-controls">
       ${statusFilterHtml}
@@ -179,13 +179,15 @@ Views.tasks = async function () {
 
   const filterToggle = document.getElementById('task-filter-toggle');
   if (filterToggle) filterToggle.onclick = () => {
-    const closing = !Views._taskFiltersCollapsed;
-    const apply = () => {
-      Views._taskFiltersCollapsed = !Views._taskFiltersCollapsed;
-      localStorage.setItem('garden:taskFiltersCollapsed', Views._taskFiltersCollapsed ? '1' : '0');
-      Views.tasks();
-    };
-    if (closing) collapseThen(document.querySelector('.task-sticky-toolbar'), apply); else apply();
+    Views._taskFiltersCollapsed = !Views._taskFiltersCollapsed;
+    localStorage.setItem('garden:taskFiltersCollapsed', Views._taskFiltersCollapsed ? '1' : '0');
+    const toolbar = document.querySelector('.task-sticky-toolbar');
+    toolbar?.classList.toggle('is-collapsed', Views._taskFiltersCollapsed);
+    toolbar?.setAttribute('aria-hidden', Views._taskFiltersCollapsed ? 'true' : 'false');
+    if (toolbar) toolbar.inert = Views._taskFiltersCollapsed;
+    filterToggle.setAttribute('aria-expanded', Views._taskFiltersCollapsed ? 'false' : 'true');
+    filterToggle.title = Views._taskFiltersCollapsed ? 'Показать фильтры' : 'Скрыть фильтры';
+    filterToggle.querySelector('.task-filter-toggle-chevron')?.classList.toggle('open', !Views._taskFiltersCollapsed);
   };
   const statusFilter = document.getElementById('task-status-filter');
   if (statusFilter) statusFilter.onchange = (e) => {
@@ -232,7 +234,7 @@ function taskKanbanCardHtml(t) {
   const overdue = t.dueDate && t.status !== 'done' && t.dueDate.slice(0, 10) < todayStr();
   const openIdx = registerAction(() => openTaskModal(t.id));
   return `<article class="kanban-card task-kanban-card" draggable="true" data-task-id="${t.id}" data-task-open-action="${openIdx}">
-    <div class="kc-title">${escapeHtml(t.title)}</div>
+    <div class="kc-title" title="${escapeHtml(t.title)}">${escapeHtml(t.title)}</div>
     <div class="task-kanban-tags">
       ${taskLabelsHtml(t)}
       ${t.dueDate ? `<span class="tiny" style="${overdue ? 'color:var(--red)' : ''}">${taskDueLabel(t)}</span>` : ''}
@@ -388,7 +390,13 @@ ${detailPageHeaderHtml({ title: t.title, eyebrow: '', inputId: 'tf-title', displ
                 <label class="task-detail-property"><span>Дедлайн</span><span class="task-inline-edit task-inline-edit-due ${canEdit ? 'is-editable' : ''}"><span id="tf-due-empty" class="task-due-empty" ${t.dueDate ? 'hidden' : ''}>Не указан</span><input id="tf-due" type="date" value="${t.dueDate ? t.dueDate.slice(0,10) : ''}" ${t.dueDate ? '' : 'hidden'} ${canEdit ? '' : 'disabled'} />${canEdit ? `<span class="task-inline-edit-icon" aria-hidden="true">${icon('edit', 11)}</span>` : ''}</span></label>
               </div>
               <div class="task-detail-details-column">
-                <div class="task-detail-property task-detail-status-property"><span>Статус</span><div class="task-detail-status-control">${taskStatusBadge(t.status || 'todo', canEdit && !isArchived ? t.id : null)}<span>${escapeHtml(TASK_STATUS_LABEL[t.status || 'todo'] || '')}</span></div></div>
+                <div class="task-detail-property task-detail-status-property"><span>Статус</span>${(() => {
+                  const status = t.status || 'todo';
+                  const label = TASK_STATUS_LABEL[status] || '';
+                  if (!(canEdit && !isArchived)) return `<div class="task-detail-status-control">${taskStatusBadge(status, null)}<span>${escapeHtml(label)}</span></div>`;
+                  const statusActionId = registerAction((event) => openTaskStatusMenu(event, t.id, status));
+                  return `<div class="task-detail-status-control task-detail-status-click-target task-status-interactive" role="button" tabindex="0" aria-label="Изменить статус: ${escapeHtml(label)}" data-action-id="${statusActionId}" data-action-stop="1">${taskStatusBadge(status, null)}<span>${escapeHtml(label)}</span></div>`;
+                })()}</div>
                 <label class="task-detail-property"><span>Тип</span><span class="task-inline-edit ${canEdit ? 'is-editable' : ''}"><select id="tf-type" ${canEdit ? '' : 'disabled'}>${['standard','development'].map((v) => `<option value="${v}" ${(t.taskType || 'standard') === v ? 'selected' : ''}>${TASK_TYPE_LABEL[v]}</option>`).join('')}</select>${canEdit ? `<span class="task-inline-edit-icon" aria-hidden="true">${icon('edit', 11)}</span>` : ''}</span></label>
                 <label class="task-detail-property"><span>Приоритет</span><span class="task-inline-edit ${canEdit ? 'is-editable' : ''}"><select id="tf-priority" ${canEdit ? '' : 'disabled'}>${['normal','high'].map((s) => `<option value="${s}" ${(t.priority || 'normal') === s ? 'selected' : ''}>${PRIORITY_LABEL[s]}</option>`).join('')}</select>${canEdit ? `<span class="task-inline-edit-icon" aria-hidden="true">${icon('edit', 11)}</span>` : ''}</span></label>
               </div>
@@ -677,7 +685,6 @@ ${detailPageHeaderHtml({ title: t.title, eyebrow: '', inputId: 'tf-title', displ
         Object.assign(t, saved || payload);
         const localIndex = (store.tasks || []).findIndex((item) => item.id === t.id);
         if (localIndex >= 0) store.tasks[localIndex] = { ...store.tasks[localIndex], ...saved };
-        toast('Версия сохранена');
         const newCopies = Number(saved?.createdCopies || 0);
         if (newCopies > 0) {
           await store.loadAll();
@@ -691,9 +698,9 @@ ${detailPageHeaderHtml({ title: t.title, eyebrow: '', inputId: 'tf-title', displ
       }
     };
 
-    const autosave = DetailAutosave.set(createAutosave(saveTaskChanges, { delay: 550 }));
+    const autosave = DetailAutosave.set(createAutosave(saveTaskChanges, { delay: 550 }), { entityType: 'tasks', entityId: t.id });
     queueTaskAutosave = (immediate = false) => autosave.schedule(immediate);
-    Router.setLeaveGuard(async () => { await autosave.flush(); return true; }, () => autosave.pending);
+    Router.setLeaveGuard(async () => { await autosave.flush(); await DetailAutosave.finalizeVersion(); return true; }, () => autosave.pending);
 
     ['tf-title','tf-desc'].forEach((fieldId) => {
       document.getElementById(fieldId)?.addEventListener('input', () => queueTaskAutosave(false));

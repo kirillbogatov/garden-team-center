@@ -425,15 +425,15 @@ Views.overview = async function () {
       const ranked = rankedPriorityTasks(sourceTasks, priorityMode, today).slice(0, 5);
       const rows = ranked.map(({ task, info }) => {
         const assignee = store.person((task.assigneeIds || [])[0]) || null;
-        const assigneeId = assignee?.id || (task.assigneeIds || [])[0] || '';
         const projectName = store.project(task.projectId)?.name || '';
         const metaParts = [...info.reasons];
         if (projectName) metaParts.push(projectName);
         return overviewMiniRow({
           title: task.title,
           meta: metaParts.join(' · '),
-          person: assignee,
-          route: assigneeId ? `/tasks?person=${encodeURIComponent(assigneeId)}&project=all` : '/tasks?project=all',
+          person: isTeamWidget ? assignee : null,
+          iconName: isTeamWidget ? '' : 'tasks',
+          route: taskPath(task),
           tone: info.days != null && info.days < 0 ? 'warning' : '',
           trailingHtml: taskStatusBadge(task.status || 'todo', task.id),
         });

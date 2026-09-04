@@ -60,7 +60,7 @@ Views.goalDetail = async function (id) {
           const overdue = t.dueDate && t.status !== 'done' && t.dueDate.slice(0, 10) < todayStr();
           return `<div class="ui-row ui-row--task list-row task-list-row" data-action-id="${idx}">
             ${taskStatusBadge(t.status, t.id)}
-            <span class="tl-title">${escapeHtml(t.title)}</span>
+            <span class="tl-title" title="${escapeHtml(t.title)}">${escapeHtml(t.title)}</span>
             <div class="tl-right">
               <div class="task-tags-cell">${taskLabelsHtml(t)}</div>
               <div class="task-due-cell">${t.dueDate ? `<span class="tiny" style="${overdue ? 'color:var(--red)' : ''}">${t.status === 'done' ? deadlineDateLabel(t.dueDate) : dueLabel(t.dueDate)}</span>` : ''}</div>

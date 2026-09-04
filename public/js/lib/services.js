@@ -41,5 +41,6 @@ const TaskService = {
 const Versions = {
   list: (entityType, entityId) => api.get(`/api/versions/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}`),
   restore: (entityType, entityId, version) => api.post(`/api/versions/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}/${encodeURIComponent(version)}/restore`, {}),
+  finalize: (entityType, entityId) => api.post(`/api/versions/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}/finalize`, {}),
   remove: (entityType, entityId, version) => api.del(`/api/versions/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}/${encodeURIComponent(version)}`),
 };

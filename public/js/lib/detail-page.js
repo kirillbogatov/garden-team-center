@@ -33,6 +33,26 @@ function entityDetailHtml({ className = '', header = '', main = '' }) {
   return `<section class="modal-panel modal-task-detail task-detail-page ${escapeHtml(className)}"><div class="task-detail-shell">${header}<div class="task-detail-layout"><main class="task-detail-main">${main}</main></div></div></section>`;
 }
 
+let detailSaveStatusTimer = null;
+
+function showDetailSaveStatus(state) {
+  const status = document.querySelector('[data-detail-save-status]');
+  if (!status) return;
+  if (detailSaveStatusTimer) { clearTimeout(detailSaveStatusTimer); detailSaveStatusTimer = null; }
+  if (state !== 'saved') {
+    status.textContent = '';
+    status.classList.remove('is-visible');
+    return;
+  }
+  status.textContent = 'Сохранено';
+  status.classList.add('is-visible');
+  detailSaveStatusTimer = setTimeout(() => {
+    if (!status.isConnected) return;
+    status.classList.remove('is-visible');
+    detailSaveStatusTimer = setTimeout(() => { if (status.isConnected && !status.classList.contains('is-visible')) status.textContent = ''; }, 180);
+  }, 1100);
+}
+
 function createAutosave(saveFn, options) {
   const opts = options || {};
   const delay = Number(opts.delay ?? 550);
@@ -40,15 +60,18 @@ function createAutosave(saveFn, options) {
   let running = Promise.resolve();
   let queued = false;
 
-  const notify = (state) => { try { opts.onState?.(state); } catch (_) {} };
+  const notify = (state) => {
+    try { opts.onState?.(state); } catch (_) {}
+    if (opts.detailStatus !== false) showDetailSaveStatus(state);
+  };
   const run = () => {
     if (timer) { clearTimeout(timer); timer = null; }
     if (!queued) return running;
     queued = false;
     notify('saving');
     const operation = running.catch(() => {}).then(async () => {
-      await saveFn();
-      notify('saved');
+      const result = await saveFn();
+      if (result !== false) notify('saved');
     });
     running = operation.catch(() => {});
     return operation.catch((error) => {
@@ -82,10 +105,28 @@ function createAutosave(saveFn, options) {
 
 const DetailAutosave = {
   controller: null,
-  set(controller) { this.controller = controller || null; return controller; },
+  versionContext: null,
+  set(controller, options) {
+    this.controller = controller || null;
+    const opts = options || {};
+    this.versionContext = opts.entityType && opts.entityId ? { entityType: opts.entityType, entityId: opts.entityId } : null;
+    return controller;
+  },
   async flush() { if (this.controller?.flush) await this.controller.flush(); },
-  clear() { this.controller?.cancel?.(); this.controller = null; },
+  async finalizeVersion() {
+    const context = this.versionContext;
+    if (context && typeof Versions !== 'undefined') await Versions.finalize(context.entityType, context.entityId);
+  },
+  finalizeVersionKeepalive() {
+    const context = this.versionContext;
+    if (!context) return;
+    const url = `/api/versions/${encodeURIComponent(context.entityType)}/${encodeURIComponent(context.entityId)}/finalize`;
+    try { fetch(url, { method: 'POST', credentials: 'same-origin', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: '{}' }); } catch (_) {}
+  },
+  clear() { this.controller?.cancel?.(); this.controller = null; this.versionContext = null; },
 };
+
+window.addEventListener('pagehide', () => DetailAutosave.finalizeVersionKeepalive());
 
 function bindDetailCommitOnEnter(field, commit, options) {
   if (!field || typeof commit !== 'function') return () => {};

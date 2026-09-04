@@ -130,7 +130,9 @@ function labStatusIconHtml(status, lab) {
 
 function labStatusHtml(status, lab) {
   const label = LAB_STATUS_LABEL[status] || status || 'Идея';
-  return `${labStatusIconHtml(status, lab)}<span>${escapeHtml(label)}</span>`;
+  if (!lab || !canEditLab(lab)) return `${labStatusIconHtml(status, null)}<span>${escapeHtml(label)}</span>`;
+  const idx = registerAction((event) => openLabStatusMenu(event, lab));
+  return `<span class="lab-status-click-target task-status-interactive" role="button" tabindex="0" aria-label="Изменить статус: ${escapeHtml(label)}" data-action-id="${idx}" data-action-stop="1">${labStatusIconHtml(status, null)}<span>${escapeHtml(label)}</span></span>`;
 }
 
 let _labStatusMenu = null;
@@ -228,7 +230,7 @@ function labRowHtml(lab) {
   return `<div class="ui-surface card lab-card clickable" data-action-id="${idx}">
     <div class="lab-card-main">
       <div class="lab-card-copy">
-        <div class="lab-card-head"><div class="lab-card-title">${escapeHtml(lab.title || 'Без названия')}</div>${lab.labKey ? `<span class="tiny lab-card-key">${escapeHtml(lab.labKey)}</span>` : ''}</div>
+        <div class="lab-card-head"><div class="lab-card-title">${escapeHtml(lab.title || 'Без названия')}</div></div>
         ${lab.description ? `<div class="tiny lab-card-description formatted-text">${escapeHtml(lab.description)}</div>` : ''}
         <div class="lab-card-meta">
           <div class="lab-card-status">${labStatusHtml(lab.status || 'idea', lab)}</div>
@@ -349,7 +351,7 @@ Views.labDetail = async function (ref) {
   const typeControl = detailInlineSelectHtml({ id: 'lab-detail-type', value: lab.projectType || 'pet', editable, options: Object.entries(LAB_TYPE_LABEL).map(([value,label]) => ({ value, label })) });
   const accessControl = detailInlineSelectHtml({ id: 'lab-detail-private', value: lab.private ? 'private' : 'public', editable, options: [{ value:'public', label:'Для команды' }, { value:'private', label:'Приватный' }] });
   const linkControl = detailInlineInputHtml({ id: 'lab-detail-links', value: normalizeLabLinks(lab.links).join(' · '), editable, placeholder: 'https://…', linked: true });
-  const statusControl = `<div class="task-detail-status-control">${labStatusIconHtml(lab.status || 'idea', editable ? lab : null)}<span>${escapeHtml(LAB_STATUS_LABEL[lab.status || 'idea'] || '')}</span></div>`;
+  const statusControl = `<div class="task-detail-status-control">${labStatusHtml(lab.status || 'idea', editable ? lab : null)}</div>`;
   const details = `<section class="task-detail-section task-detail-details-section"><div class="task-detail-details-grid"><div class="task-detail-details-column">
     ${detailPropertyHtml({ label:'Автор', control:authorControl })}
     ${detailPropertyHtml({ label:'Тип', control:typeControl })}
@@ -469,7 +471,6 @@ Views.labDetail = async function (ref) {
         Object.assign(lab, saved || payload);
         const index = (store.labs || []).findIndex((item) => item.id === lab.id);
         if (index >= 0) store.labs[index] = { ...store.labs[index], ...saved };
-        toast('Версия сохранена');
         return true;
       } catch (error) {
         console.error(error);
@@ -477,8 +478,8 @@ Views.labDetail = async function (ref) {
         throw error;
       }
     };
-    const autosave = DetailAutosave.set(createAutosave(saveLabChanges, { delay: 550 }));
-    Router.setLeaveGuard(async () => { await autosave.flush(); return true; }, () => autosave.pending);
+    const autosave = DetailAutosave.set(createAutosave(saveLabChanges, { delay: 550 }), { entityType: 'labs', entityId: lab.id });
+    Router.setLeaveGuard(async () => { await autosave.flush(); await DetailAutosave.finalizeVersion(); return true; }, () => autosave.pending);
 
     ['lab-detail-title','lab-detail-description','lab-detail-links'].forEach((id) => {
       document.getElementById(id)?.addEventListener('input', () => autosave.schedule(false));
@@ -505,4 +506,4 @@ Views.labDetail = async function (ref) {
 
 
 // Public feature commands used by the declarative command layer.
-FeatureLoader.register({ openLabIdeaModal });
+FeatureLoader.register({ openLabIdeaModal, openLabModal });

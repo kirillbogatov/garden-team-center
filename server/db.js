@@ -87,6 +87,8 @@ sqlite.exec(`
     data TEXT NOT NULL,
     author_user_id TEXT,
     created_at TEXT NOT NULL,
+    summary TEXT NOT NULL DEFAULT '',
+    finalized INTEGER NOT NULL DEFAULT 1,
     UNIQUE(workspace, entity_type, entity_id, version)
   );
 
@@ -169,26 +171,39 @@ const stmtMetaUpsert = sqlite.prepare(`
   ON CONFLICT(key) DO UPDATE SET value = excluded.value
 `);
 
+
+const versionColumns = new Set(sqlite.prepare('PRAGMA table_info(entity_versions)').all().map((column) => column.name));
+if (!versionColumns.has('summary')) sqlite.exec("ALTER TABLE entity_versions ADD COLUMN summary TEXT NOT NULL DEFAULT ''");
+if (!versionColumns.has('finalized')) sqlite.exec("ALTER TABLE entity_versions ADD COLUMN finalized INTEGER NOT NULL DEFAULT 1");
+
 const stmtVersionList = sqlite.prepare(`
-  SELECT version, data, author_user_id AS authorUserId, created_at AS createdAt
+  SELECT version, data, author_user_id AS authorUserId, created_at AS createdAt, summary, finalized
   FROM entity_versions
   WHERE workspace = ? AND entity_type = ? AND entity_id = ?
   ORDER BY version DESC
 `);
 const stmtVersionLatest = sqlite.prepare(`
-  SELECT version, data, author_user_id AS authorUserId, created_at AS createdAt
+  SELECT version, data, author_user_id AS authorUserId, created_at AS createdAt, summary, finalized
   FROM entity_versions
   WHERE workspace = ? AND entity_type = ? AND entity_id = ?
   ORDER BY version DESC LIMIT 1
 `);
 const stmtVersionGet = sqlite.prepare(`
-  SELECT version, data, author_user_id AS authorUserId, created_at AS createdAt
+  SELECT version, data, author_user_id AS authorUserId, created_at AS createdAt, summary, finalized
   FROM entity_versions
   WHERE workspace = ? AND entity_type = ? AND entity_id = ? AND version = ?
 `);
 const stmtVersionInsert = sqlite.prepare(`
-  INSERT INTO entity_versions (workspace, entity_type, entity_id, version, data, author_user_id, created_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO entity_versions (workspace, entity_type, entity_id, version, data, author_user_id, created_at, summary, finalized)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+`);
+const stmtVersionUpdateLatest = sqlite.prepare(`
+  UPDATE entity_versions SET data = ?, author_user_id = ?, summary = ?
+  WHERE workspace = ? AND entity_type = ? AND entity_id = ? AND version = ?
+`);
+const stmtVersionFinalizeLatest = sqlite.prepare(`
+  UPDATE entity_versions SET finalized = 1
+  WHERE workspace = ? AND entity_type = ? AND entity_id = ? AND version = ?
 `);
 const stmtVersionDeleteOne = sqlite.prepare(`
   DELETE FROM entity_versions WHERE workspace = ? AND entity_type = ? AND entity_id = ? AND version = ?
@@ -367,33 +382,49 @@ db.isEmpty = () => COLLECTIONS.every((name) => db[name].all().length === 0);
 db.withWorkspace = (workspace, fn) => workspaceStorage.run(workspace || 'main', fn);
 
 db.versions = {
-  list(entityType, entityId) {
-    return stmtVersionList.all(currentWorkspace(), String(entityType), String(entityId)).map((row) => ({
+  _fromRow(row) {
+    if (!row) return null;
+    return {
       version: Number(row.version),
       data: JSON.parse(row.data),
       authorUserId: row.authorUserId || null,
       createdAt: row.createdAt,
-    }));
+      summary: row.summary || '',
+      finalized: Boolean(row.finalized),
+    };
+  },
+  list(entityType, entityId) {
+    return stmtVersionList.all(currentWorkspace(), String(entityType), String(entityId)).map((row) => this._fromRow(row));
   },
   get(entityType, entityId, version) {
-    const row = stmtVersionGet.get(currentWorkspace(), String(entityType), String(entityId), Number(version));
-    if (!row) return null;
-    return { version: Number(row.version), data: JSON.parse(row.data), authorUserId: row.authorUserId || null, createdAt: row.createdAt };
+    return this._fromRow(stmtVersionGet.get(currentWorkspace(), String(entityType), String(entityId), Number(version)));
   },
   latest(entityType, entityId) {
-    const row = stmtVersionLatest.get(currentWorkspace(), String(entityType), String(entityId));
-    if (!row) return null;
-    return { version: Number(row.version), data: JSON.parse(row.data), authorUserId: row.authorUserId || null, createdAt: row.createdAt };
+    return this._fromRow(stmtVersionLatest.get(currentWorkspace(), String(entityType), String(entityId)));
   },
-  record(entityType, entityId, data, authorUserId = null) {
+  record(entityType, entityId, data, authorUserId = null, options = {}) {
     const latest = this.latest(entityType, entityId);
     const version = (latest?.version || 0) + 1;
-    const createdAt = new Date().toISOString();
-    stmtVersionInsert.run(currentWorkspace(), String(entityType), String(entityId), version, JSON.stringify(data), authorUserId || null, createdAt);
-    return { version, data, authorUserId: authorUserId || null, createdAt };
+    const createdAt = options.createdAt || new Date().toISOString();
+    const summary = String(options.summary || '');
+    const finalized = options.finalized === false ? 0 : 1;
+    stmtVersionInsert.run(currentWorkspace(), String(entityType), String(entityId), version, JSON.stringify(data), authorUserId || null, createdAt, summary, finalized);
+    return { version, data, authorUserId: authorUserId || null, createdAt, summary, finalized: Boolean(finalized) };
   },
-  ensureInitial(entityType, entityId, data, authorUserId = null) {
-    return this.latest(entityType, entityId) || this.record(entityType, entityId, data, authorUserId);
+  updateLatest(entityType, entityId, data, authorUserId = null, summary = '') {
+    const latest = this.latest(entityType, entityId);
+    if (!latest) return this.record(entityType, entityId, data, authorUserId, { summary, finalized: false });
+    stmtVersionUpdateLatest.run(JSON.stringify(data), authorUserId || null, String(summary || ''), currentWorkspace(), String(entityType), String(entityId), latest.version);
+    return { ...latest, data, authorUserId: authorUserId || null, summary: String(summary || ''), finalized: false };
+  },
+  finalizeLatest(entityType, entityId) {
+    const latest = this.latest(entityType, entityId);
+    if (!latest || latest.finalized) return latest;
+    stmtVersionFinalizeLatest.run(currentWorkspace(), String(entityType), String(entityId), latest.version);
+    return { ...latest, finalized: true };
+  },
+  ensureInitial(entityType, entityId, data, authorUserId = null, options = {}) {
+    return this.latest(entityType, entityId) || this.record(entityType, entityId, data, authorUserId, options);
   },
   remove(entityType, entityId, version) {
     const result = stmtVersionDeleteOne.run(currentWorkspace(), String(entityType), String(entityId), Number(version));

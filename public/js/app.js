@@ -432,6 +432,10 @@ function setTopbar(html, opts) {
     bar.innerHTML = html;
   }
   bar.classList.toggle('topbar-plain', isPlainHeader);
+  const detailActions = bar.querySelector('.task-detail-topbar-actions');
+  if (detailActions && !detailActions.querySelector('[data-detail-save-status]')) {
+    detailActions.insertAdjacentHTML('afterbegin', '<span class="detail-save-status" data-detail-save-status aria-live="polite" aria-atomic="true"></span>');
+  }
 }
 
 function navSectionActive(section, currentPath) {

@@ -39,6 +39,7 @@ async function openVersionHistory(entityType, entity, options) {
         <div class="version-history-row ${entry.version === currentVersion ? 'is-current' : ''}">
           <div class="version-history-copy">
             <div class="version-history-title"><strong>Версия ${entry.version}</strong>${entry.version === currentVersion ? '<span class="ui-tag badge">Текущая</span>' : ''}</div>
+            <div class="version-history-summary">${escapeHtml(entry.summary || 'Без описания изменений')}</div>
             <div class="version-history-preview">${versionHistoryValue(entityType, entry.data || {})}</div>
             <div class="version-history-meta">${escapeHtml(versionHistoryDate(entry.createdAt))}${entry.authorName ? ` · ${escapeHtml(entry.authorName)}` : ''}</div>
           </div>

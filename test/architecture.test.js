@@ -654,8 +654,8 @@ test('employee detail exposes project-style sticky sidebar and journals notes wi
 test('meeting rows render up to five overlapping participant avatars with an overflow count', () => {
   const meetings = read('public/js/views/meetings.js');
   const css = read('public/css/system.css');
-  assert.match(meetings, /participants\.slice\(0, 5\)/);
-  assert.match(meetings, /и ещё \$\{extra\}/);
+  assert.match(meetings, /function meetingParticipantsHtml\(participants\)[\s\S]*participants\.slice\(0, 5\)/);
+  assert.match(meetings, /и ещё \$\{extra\}…/);
   assert.match(meetings, /meeting-participants-stack/);
   assert.doesNotMatch(meetings, /const employee = participants\[0\]/);
   assert.match(css, /\.meeting-participants-stack \.ui-person-avatar[\s\S]*margin-left:\s*-7px/);
@@ -672,8 +672,8 @@ test('repository includes a README describing Garden Team Center capabilities', 
 
 test('work area width adapts to large screens while detail and table views keep suitable widths', () => {
   const css = fs.readFileSync(path.join(ROOT, 'public/css/system.css'), 'utf8');
-  assert.match(css, /--content-max:\s*clamp\(980px,\s*64vw,\s*1240px\)/);
-  assert.match(css, /--detail-content-max:\s*clamp\(880px,\s*54vw,\s*1020px\)/);
+  assert.match(css, /--content-max:\s*clamp\(900px,\s*51vw,\s*1180px\)/);
+  assert.match(css, /--detail-content-max:\s*clamp\(840px,\s*50vw,\s*960px\)/);
   assert.match(css, /\.view\.task-detail-page-view\s*\{[\s\S]*?--detail-content-max/);
   assert.match(css, /\.view\.gcal-wide,\s*\n\.view\.checkins-wide\s*\{[\s\S]*?--wide-content-gutter/);
 });
@@ -715,15 +715,24 @@ test('stakeholders do not expose birthday in create/edit forms or detail context
   assert.match(people, /p\.type === 'team' && p\.birthday/, 'birthday should only be shown in team member context');
 });
 
-test('team cards use a bounded container-responsive 1/2/3-column grid and keep local time at the top', () => {
+test('team cards fill each row responsively and keep local time at the top', () => {
   const css = read('public/css/system.css');
   const people = read('public/js/views/people.js');
   assert.match(people, /people-grid-responsive/);
   assert.match(css, /\.people-grid-responsive \{ container-type: inline-size; \}/);
-  assert.match(css, /\.people-grid--team \{[\s\S]*grid-template-columns: minmax\(0, 400px\) !important;[\s\S]*justify-content: start !important;/);
-  assert.match(css, /@container \(min-width: 810px\)[\s\S]*repeat\(2, minmax\(0, 400px\)\)/);
-  assert.match(css, /@container \(min-width: 1220px\)[\s\S]*repeat\(3, minmax\(0, 400px\)\)/);
+  assert.match(css, /\.people-grid--team \{[\s\S]*repeat\(auto-fit, minmax\(min\(100%, 320px\), 1fr\)\) !important;[\s\S]*justify-content: stretch !important;/);
+  assert.doesNotMatch(css, /repeat\(2, minmax\(0, 370px\)\)/);
+  assert.doesNotMatch(css, /repeat\(3, minmax\(0, 370px\)\)/);
   assert.match(css, /\.pc-local-time \{[\s\S]*align-self: start;[\s\S]*margin-top: 0 !important;/);
+});
+
+test('The Labs project cards do not show LABS identifiers', () => {
+  const labs = read('public/js/views/labs.js');
+  const rowStart = labs.indexOf('function labRowHtml');
+  const rowEnd = labs.indexOf('function canEditLab', rowStart);
+  const row = labs.slice(rowStart, rowEnd);
+  assert.doesNotMatch(row, /lab-card-key/);
+  assert.doesNotMatch(row, /escapeHtml\(lab\.labKey\)/);
 });
 
 test('Office demo data exercises current Garden entities, including Check-in, Processes and Clubs', () => {
@@ -924,7 +933,7 @@ test('overview operational widgets deep-link to the relevant filtered context', 
   assert.match(overview, /route: `\$\{personPath\(p\)\}\?tab=load`/);
   assert.match(people, /Router\.queryParam\('tab'\)/);
   assert.match(people, /Views\._personTab = requestedTab/);
-  assert.match(overview, /route: assigneeId \? `\/tasks\?person=\$\{encodeURIComponent\(assigneeId\)\}&project=all` : '\/tasks\?project=all'/);
+  assert.match(overview, /route: taskPath\(task\)/);
   assert.match(tasks, /Router\.queryParam\('person'\)/);
   assert.match(tasks, /requestedPerson \? requestedPerson\.id : Views\._taskPersonFilter/);
   assert.match(tasks, /Router\.queryParam\('project'\)/);
@@ -938,7 +947,7 @@ test('overview task links clear stale project filters and entity task rows use c
   const people = read('public/js/views/people.js');
   const css = read('public/css/system.css');
   assert.match(overview, /\/tasks\?mine=1&project=all[\s\S]*?Все мои задачи/);
-  assert.match(overview, /\/tasks\?person=\$\{encodeURIComponent\(assigneeId\)\}&project=all/);
+  assert.match(overview, /route: taskPath\(task\)/);
   assert.match(projects, /ui-row ui-row--task list-row task-list-row project-task-row/);
   assert.match(projects, /class="tl-title"/);
   assert.match(projects, /personAvatarLinkHtml/);
@@ -947,4 +956,132 @@ test('overview task links clear stale project filters and entity task rows use c
   assert.match(css, /\.project-detail-page-shell \.task-list-row \.tl-title,[\s\S]*\.person-detail \.task-list-row \.tl-title[\s\S]*font-size: 13px;[\s\S]*font-weight: 400/);
   assert.doesNotMatch(people, /task-assignee-cell\" aria-hidden=\"true/);
   assert.match(css, /\.person-detail \.task-list-row \.tl-right,[\s\S]*grid-template-columns: minmax\(170px, 220px\) 118px/);
+});
+
+
+test('The Labs project create command is registered and lazy-loadable', () => {
+  const loader = fs.readFileSync(path.join(ROOT, 'public/js/lib/view-loader.js'), 'utf8');
+  const labs = fs.readFileSync(path.join(ROOT, 'public/js/views/labs.js'), 'utf8');
+  assert.match(loader, /openLabModal:\s*['"]labs['"]/);
+  assert.match(labs, /FeatureLoader\.register\(\{[^}]*openLabModal[^}]*\}\)/);
+  assert.match(labs, /data-command=\"\$\{isIdeas \? 'openLabIdeaModal' : 'openLabModal'\}\"/);
+});
+
+
+test('editable status fields make both icon and adjacent label clickable', () => {
+  const tasks = read('public/js/views/tasks.js');
+  const labs = read('public/js/views/labs.js');
+  const detailCss = read('public/css/detail-page.css');
+  assert.match(tasks, /task-detail-status-click-target task-status-interactive/);
+  assert.match(tasks, /openTaskStatusMenu\(event, t\.id, status\)/);
+  assert.match(labs, /lab-status-click-target task-status-interactive/);
+  assert.match(labs, /openLabStatusMenu\(event, lab\)/);
+  assert.match(detailCss, /Status fields: icon and adjacent label share one interactive hit area/);
+});
+
+
+test('task titles expose full text on hover and filter panel collapses without rerender', () => {
+  const tasks = read('public/js/views/tasks.js');
+  const renderers = read('public/js/domain/entity-renderers.js');
+  const css = read('public/css/system.css');
+  assert.match(renderers, /class="tl-title" title="\$\{escapeHtml\(t\.title\)\}"/);
+  assert.match(tasks, /class="kc-title" title="\$\{escapeHtml\(t\.title\)\}"/);
+  assert.match(tasks, /task-sticky-toolbar \$\{filtersCollapsed \? 'is-collapsed' : ''\}/);
+  assert.match(tasks, /toolbar\?\.classList\.toggle\('is-collapsed'/);
+  const start = tasks.indexOf('if (filterToggle) filterToggle.onclick');
+  const end = tasks.indexOf('const statusFilter', start);
+  const toggleBlock = start >= 0 && end > start ? tasks.slice(start, end) : '';
+  assert.doesNotMatch(toggleBlock, /Views\.tasks\(\)/);
+  assert.match(css, /Task filter panel: keep one DOM node[\s\S]*?\.task-sticky-toolbar\.is-collapsed/);
+});
+
+
+test('checkins toolbar hides current-week action on current week and supports XLSX CSV MD export', () => {
+  const checkins = read('public/js/views/checkins.js');
+  const index = read('public/index.html');
+  const exporter = read('public/js/lib/tabular-export.js');
+  assert.match(checkins, /if \(Views\._checkinsWeek === current\) return '';/, 'current week button should be hidden when it would be redundant');
+  assert.match(checkins, /data-command="openCheckinsExportModal"/, 'Check-in toolbar should expose export action');
+  assert.match(checkins, /<option value="xlsx">XLSX<\/option>/);
+  assert.match(checkins, /<option value="csv">CSV<\/option>/);
+  assert.match(checkins, /<option value="md">MD<\/option>/);
+  assert.match(checkins, /Все сотрудники/);
+  assert.match(checkins, /checkinsExportRows\(_lastCheckins, personId, from, to\)/);
+  assert.match(index, /\/js\/lib\/tabular-export\.js/);
+  assert.match(exporter, /application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet/);
+  assert.match(exporter, /function toCsv/);
+  assert.match(exporter, /function toMarkdown/);
+});
+
+
+test('checkins period picker is a public feature command and opens from the toolbar period', () => {
+  const checkins = read('public/js/views/checkins.js');
+  const loader = read('public/js/lib/view-loader.js');
+  assert.match(checkins, /data-command="openCheckinsWeekPicker"/, 'the visible period should invoke the week picker');
+  assert.match(checkins, /function openCheckinsWeekPicker\(\)/, 'Check-in should provide a period picker');
+  assert.match(checkins, /Дата внутри нужной недели/, 'the picker should let the user choose a date inside the target week');
+  assert.match(checkins, /Views\._checkinsWeek = localDateKey\(mondayOf/, 'the selected date should normalize to the week start');
+  assert.match(loader, /openCheckinsWeekPicker: 'checkins'/, 'week picker command must be lazy-loadable even before the view command registry is ready');
+});
+
+test('meeting detail caps participants at two while related context is limited by meeting type', () => {
+  const meetings = read('public/js/views/meetings.js');
+  assert.match(meetings, /function meetingDetailParticipantsHtml\(participants\)[\s\S]*participants\.slice\(0, 2\)/, 'meeting detail should show only two people');
+  assert.match(meetings, /и ещё \$\{extra\}…/, 'detail view should show the remaining participant count');
+  assert.match(meetings, /meeting-detail-participant-name/, 'detail participants should have a dedicated no-wrap name element');
+  assert.match(meetings, /const showParticipantContext = meetingType === 'one_on_one' \|\| meetingType === 'pr';/);
+  assert.match(meetings, /const tasksPromise = showParticipantContext \? Resources\.tasks\.list\(\) : Promise\.resolve\(\[\]\);/);
+  assert.match(meetings, /const issuesPromise = showParticipantContext \? Resources\.issues\.list\(\) : Promise\.resolve\(\[\]\);/);
+  assert.match(meetings, /const journalPromise = showParticipantContext \? Resources\.journal\.list\(\) : Promise\.resolve\(\[\]\);/);
+  assert.match(meetings, /renderMeetingRelatedPanel\(participantsPicker\?\.getSelected\?\.\(\) \|\| m\.participantIds \|\| \[\], event\.target\.value\)/, 'changing meeting type should refresh the contextual sidebar');
+});
+
+test('detail pages show one transient saved status and meeting key is not duplicated above the title', () => {
+  const app = read('public/js/app.js');
+  const detail = read('public/js/lib/detail-page.js');
+  const meetings = read('public/js/views/meetings.js');
+  const tasks = read('public/js/views/tasks.js');
+  const labs = read('public/js/views/labs.js');
+  const processes = read('public/js/views/processes.js');
+  const css = read('public/css/system.css');
+
+  assert.match(meetings, /<h1 class="topbar-h1-key">\$\{escapeHtml\(m\.meetingKey \|\| ''\)\}<\/h1>/, 'meeting key should remain in the topbar');
+  assert.match(meetings, /detailPageHeaderHtml\(\{ title: meetingDisplayTitle\(m\), eyebrow: ''/, 'meeting key should not repeat above the meeting title');
+
+  assert.match(app, /data-detail-save-status/, 'detail topbars should get a shared save-status slot');
+  assert.match(detail, /status\.textContent = 'Сохранено'/, 'autosave feedback should use the short Saved label');
+  assert.match(detail, /if \(result !== false\) notify\('saved'\)/, 'failed validation must not display a false saved confirmation');
+  assert.match(css, /\.detail-save-status[\s\S]*opacity: 0[\s\S]*\.detail-save-status\.is-visible \{ opacity: 1; \}/, 'save feedback should be unobtrusive and transient');
+
+  for (const source of [tasks, labs, processes, meetings]) {
+    assert.doesNotMatch(source, /Версия сохранена|Изменения сохранены/, 'detail pages should not use legacy save-copy toasts');
+  }
+});
+
+test('version history batches autosaves and shows concise change summaries', () => {
+  const versioning = read('server/versioning.js');
+  const versionsRoute = read('server/routes/versions.js');
+  const history = read('public/js/lib/version-history.js');
+  const services = read('public/js/lib/services.js');
+  const detail = read('public/js/lib/detail-page.js');
+  assert.match(versioning, /VERSION_WINDOW_MS\s*=\s*10 \* 60 \* 1000/);
+  assert.match(versioning, /updateLatest/);
+  assert.match(versioning, /isImportantChange/);
+  assert.match(versionsRoute, /\/finalize/);
+  assert.match(history, /entry\.summary/);
+  assert.match(services, /finalize:\s*\(entityType, entityId\)/);
+  assert.match(detail, /pagehide/);
+});
+
+
+test('overview task rows open task detail, my tasks use task icon, and Garden brand stays visually quiet', () => {
+  const overview = read('public/js/views/overview.js');
+  const appJs = read('public/js/app.js');
+  const css = read('public/css/style.css');
+  assert.match(overview, /person: isTeamWidget \? assignee : null/);
+  assert.match(overview, /iconName: isTeamWidget \? '' : 'tasks'/);
+  assert.match(overview, /route: taskPath\(task\)/, 'task widget rows should open the task detail');
+  assert.match(css, /\.sidebar-brand-name:hover\{background: transparent;color: var\(--text-primary\);\}/, 'Garden brand should not get a hover background');
+  assert.doesNotMatch(appJs, /garden-hover-sprig/, 'Garden brand should not render decorative animation markup');
+  assert.doesNotMatch(css, /garden-branch-grow|garden-leaf-one|garden-leaf-two/, 'Garden brand should not include decorative hover animation');
 });

@@ -49,7 +49,7 @@ Views.checkins = async function () {
       <div class="gcal-toolbar checkins-toolbar">
         <div class="checkins-toolbar-left">${modeTabsHtml}</div>
         <div class="checkins-toolbar-center">${checkinsWeekNavHtml()}</div>
-        <div class="checkins-toolbar-right">${checkinsCurrentWeekButtonHtml()}</div>
+        <div class="checkins-toolbar-right"><div class="checkins-toolbar-actions">${checkinsCurrentWeekButtonHtml()}<button type="button" class="ui-button ui-button--sm btn btn-sm checkins-export-btn" data-command="openCheckinsExportModal">Экспорт</button></div></div>
       </div>
       ${bodyHtml}
     </div>
@@ -72,7 +72,87 @@ function checkinsWeekNavHtml() {
 
 function checkinsCurrentWeekButtonHtml() {
   const current = localDateKey(mondayOf(new Date()));
-  return `<button type="button" class="ui-button ui-button--sm btn btn-sm btn-ghost checkins-today-btn" data-view-state="_checkinsWeek" data-view-value="${current}" data-view-render="checkins">Текущая неделя</button>`;
+  if (Views._checkinsWeek === current) return '';
+  return `<button type="button" class="ui-button ui-button--sm btn btn-sm checkins-today-btn" data-view-state="_checkinsWeek" data-view-value="${current}" data-view-render="checkins">Текущая неделя</button>`;
+}
+
+
+function checkinsExportRows(checkins, personId, fromDate, toDate) {
+  const rows = (checkins || []).filter((checkin) => {
+    if (!checkin?.weekStart) return false;
+    if (personId && personId !== 'all' && checkin.personId !== personId) return false;
+    const weekEnd = checkinWeekEnd(checkin.weekStart);
+    return checkin.weekStart <= toDate && weekEnd >= fromDate;
+  });
+  rows.sort((a, b) => {
+    const aName = store.person(a.personId)?.name || '';
+    const bName = store.person(b.personId)?.name || '';
+    return aName.localeCompare(bName, 'ru') || String(a.weekStart).localeCompare(String(b.weekStart));
+  });
+  return rows.map((checkin) => [
+    store.person(checkin.personId)?.name || 'Неизвестный сотрудник',
+    checkin.weekStart,
+    checkinWeekEnd(checkin.weekStart),
+    checkin.did || '',
+    checkin.willDo || '',
+    checkin.blockers || '',
+  ]);
+}
+
+function openCheckinsExportModal() {
+  const selectedWeek = Views._checkinsWeek || localDateKey(mondayOf(new Date()));
+  const defaultFrom = selectedWeek;
+  const defaultTo = checkinWeekEnd(selectedWeek);
+  const people = store.team().slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ru'));
+  const personOptions = [`<option value="all">Все сотрудники</option>`, ...people.map((person) => `<option value="${escapeHtml(person.id)}">${escapeHtml(person.name)}</option>`)].join('');
+
+  Modal.open(`
+    <h2>Экспорт Check-in</h2>
+    <div class="checkins-export-period">
+      <div class="ui-field field">
+        <label class="ui-field-label field-label" for="checkins-export-from">Период с</label>
+        <input id="checkins-export-from" type="date" value="${defaultFrom}" />
+      </div>
+      <div class="ui-field field">
+        <label class="ui-field-label field-label" for="checkins-export-to">По</label>
+        <input id="checkins-export-to" type="date" value="${defaultTo}" />
+      </div>
+    </div>
+    <div class="ui-field field">
+      <label class="ui-field-label field-label" for="checkins-export-person">Сотрудники</label>
+      <select id="checkins-export-person">${personOptions}</select>
+    </div>
+    <div class="ui-field field">
+      <label class="ui-field-label field-label" for="checkins-export-format">Формат</label>
+      <select id="checkins-export-format">
+        <option value="xlsx">XLSX</option>
+        <option value="csv">CSV</option>
+        <option value="md">MD</option>
+      </select>
+    </div>
+    <div class="ui-modal-actions modal-actions">
+      <button type="button" class="ui-button btn" data-modal-close>Отмена</button>
+      <button type="button" class="ui-button ui-button--primary btn btn-primary" id="checkins-export-submit">Выгрузить</button>
+    </div>
+  `);
+
+  const submit = document.getElementById('checkins-export-submit');
+  if (!submit) return;
+  submit.onclick = () => {
+    const from = document.getElementById('checkins-export-from')?.value || '';
+    const to = document.getElementById('checkins-export-to')?.value || '';
+    const personId = document.getElementById('checkins-export-person')?.value || 'all';
+    const format = document.getElementById('checkins-export-format')?.value || 'xlsx';
+    if (!from || !to) { toast('Укажите период выгрузки'); return; }
+    if (from > to) { toast('Начало периода должно быть раньше конца'); return; }
+    const rows = checkinsExportRows(_lastCheckins, personId, from, to);
+    if (!rows.length) { toast('За выбранный период нет данных Check-in'); return; }
+    const headers = ['Сотрудник', 'Неделя с', 'Неделя по', 'Что делал', 'Что буду делать', 'Что мешает'];
+    const personSuffix = personId === 'all' ? 'all' : (store.person(personId)?.name || personId).replace(/[^a-zA-Zа-яА-ЯёЁ0-9_-]+/g, '-');
+    TabularExport.download({ headers, rows, format, filename: `checkins_${from}_${to}_${personSuffix}` });
+    Modal.close();
+    toast('Экспорт готов');
+  };
 }
 
 function openCheckinsWeekPicker() {
@@ -273,4 +353,4 @@ async function spinOffIssueFromCheckin(checkinId) {
   });
 }
 
-FeatureLoader.register({ openCheckinModal, deleteCheckin, spinOffTaskFromCheckin, spinOffIssueFromCheckin });
+FeatureLoader.register({ openCheckinsWeekPicker, openCheckinsExportModal, openCheckinModal, deleteCheckin, spinOffTaskFromCheckin, spinOffIssueFromCheckin });

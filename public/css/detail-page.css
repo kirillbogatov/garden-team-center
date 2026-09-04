@@ -2078,3 +2078,59 @@ nnn.task-detail-topbar-actions {n  margin-left: auto;n}n.task-detail-topbar-acti
   justify-content: flex-end;
   white-space: nowrap;
 }
+
+/* Status fields: icon and adjacent label share one interactive hit area. */
+.view.task-detail-page-view .task-detail-status-click-target,
+.view.task-detail-page-view .task-detail-status-control .lab-status-click-target {
+  cursor: pointer;
+  border-radius: 6px;
+  width: fit-content;
+}
+.view.task-detail-page-view .task-detail-status-click-target:hover,
+.view.task-detail-page-view .task-detail-status-click-target:focus-visible,
+.view.task-detail-page-view .task-detail-status-control .lab-status-click-target:hover,
+.view.task-detail-page-view .task-detail-status-control .lab-status-click-target:focus-visible {
+  background: var(--bg-hover);
+  outline: none;
+}
+.view.task-detail-page-view .task-detail-status-click-target .task-status-icon,
+.view.task-detail-page-view .task-detail-status-control .lab-status-click-target .task-status-icon {
+  cursor: inherit;
+  background: transparent;
+  transform: none;
+}
+
+/* Meeting detail: keep participant names readable and compact. */
+.view.task-detail-page-view .meeting-detail-participants {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: fit-content;
+}
+.view.task-detail-page-view .meeting-detail-participant {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  white-space: nowrap;
+}
+.view.task-detail-page-view .meeting-detail-participant-name {
+  white-space: nowrap;
+}
+.view.task-detail-page-view .meeting-detail-participants-more {
+  display: block;
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+/* Meeting participants can span several rows; keep the field label aligned with the first row. */
+.view.meeting-detail-page-view .task-detail-assignee-property {
+  align-items: start;
+}
+.view.meeting-detail-page-view .task-detail-assignee-property > span:first-child {
+  padding-top: 5px;
+}
+.version-history-summary { color: var(--text-secondary); font-size: 11.5px; line-height: 1.35; }

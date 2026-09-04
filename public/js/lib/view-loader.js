@@ -12,6 +12,7 @@ const ACTION_FEATURES = {
   openJournalEditModal: 'journal',
   deleteJournalEntry: 'journal',
   openLabIdeaModal: 'labs',
+  openLabModal: 'labs',
   openMeetingModal: 'meetings',
   openPersonLoadModal: 'projects',
   openDocumentModal: 'documents',
@@ -19,6 +20,8 @@ const ACTION_FEATURES = {
   openProcessModal: 'processes',
   openTaskModal: 'tasks',
   openCheckinModal: 'checkins',
+  openCheckinsWeekPicker: 'checkins',
+  openCheckinsExportModal: 'checkins',
 };
 
 function loadViewScript(name) {

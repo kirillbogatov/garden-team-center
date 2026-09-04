@@ -174,7 +174,6 @@ function bindProcessDetailInteractions(p, context) {
       Object.assign(p, saved || payload);
       lastSaved = serialized;
       titleDisplay.textContent = payload.title;
-      toast('Изменения сохранены');
       return true;
     };
     const autosave = DetailAutosave.set(createAutosave(save, { delay: 550 }));

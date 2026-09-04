@@ -1,5 +1,7 @@
 'use strict';
 
+const { recordCreate: recordVersionCreate, recordUpdate: recordVersionUpdate } = require('../versioning');
+
 module.exports = function registerCrudRoutes(app, deps) {
   const { COLLECTIONS, db, autoArchiveCompletedTasks, canReadItem, sanitizeItem, visibleItems, resolveEntity, denied, canCreate, withOwnership, taskLifecyclePatch, sanitizeKnowledgeHtmlServer, isTeamlead, canManageCollection, normalizeProjectTaskCode, uniqueProjectTaskCode, syncJournalDerivedEntity, assignTaskKey, SLUG_COLLECTIONS, uniqueSlug, nextLabKey, syncRecurringMeetingsForPerson, syncRecurringMeetingsForMeeting, canUpdate, nextTaskKey, taskKeyPrefix, teamleadOwnsPerson, memberPersonPatch, OWNER_COLLECTIONS, canDelete, assignMeetingKey, nextMeetingKey, assignProcessKey, nextProcessKey } = deps;
 
@@ -39,12 +41,11 @@ module.exports = function registerCrudRoutes(app, deps) {
   const isVersioned = (name, item) => name === 'tasks' || name === 'meetings' || (name === 'labs' && item?.entityType !== 'idea');
   const recordVersionedCreate = (name, item, user) => {
     if (!isVersioned(name, item) || !item) return;
-    db.versions.record(name, item.id, item, user?.id || null);
+    recordVersionCreate(db, name, item, user?.id || null);
   };
   const recordVersionedUpdate = (name, before, after, user) => {
     if (!isVersioned(name, before) || !after) return;
-    db.versions.ensureInitial(name, before.id, before, before.createdByUserId || null);
-    db.versions.record(name, after.id, after, user?.id || null);
+    recordVersionUpdate(db, name, before, after, user?.id || null);
   };
   for (const name of COLLECTIONS) {
     app.get(`/api/${name}`, (req, res) => {

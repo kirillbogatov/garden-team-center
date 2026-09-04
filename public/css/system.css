@@ -623,7 +623,7 @@ html.theme-dark input[type="month"]::-webkit-calendar-picker-indicator {
 .team-list-toolbar {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   margin: 0 0 12px;
 }
 .team-active-toggle {
@@ -638,9 +638,9 @@ html.theme-dark input[type="month"]::-webkit-calendar-picker-indicator {
 .team-active-toggle input { margin: 0; }
 .people-grid--team {
   display: grid !important;
-  grid-template-columns: minmax(0, 400px) !important;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)) !important;
   gap: 10px !important;
-  justify-content: start !important;
+  justify-content: stretch !important;
 }
 .people-grid-responsive { container-type: inline-size; }
 .person-card--team {
@@ -697,12 +697,6 @@ html.theme-dark input[type="month"]::-webkit-calendar-picker-indicator {
   font-variant-numeric: tabular-nums;
 }
 .pc-local-time-label { display: none; }
-@container (min-width: 810px) {
-  .people-grid--team { grid-template-columns: repeat(2, minmax(0, 400px)) !important; }
-}
-@container (min-width: 1220px) {
-  .people-grid--team { grid-template-columns: repeat(3, minmax(0, 400px)) !important; }
-}
 @media (max-width: 760px) {
   .people-grid--team { grid-template-columns: 1fr !important; }
 }
@@ -3457,8 +3451,8 @@ textarea { field-sizing:content; }
 
 /* Adaptive work-area widths — grow with the viewport instead of locking every page to 980px. */
 :root {
-  --content-max: clamp(980px, 64vw, 1240px);
-  --detail-content-max: clamp(880px, 54vw, 1020px);
+  --content-max: clamp(900px, 51vw, 1180px);
+  --detail-content-max: clamp(840px, 50vw, 960px);
   --wide-content-gutter: clamp(24px, 2.5vw, 44px);
 }
 
@@ -3493,8 +3487,8 @@ textarea { field-sizing:content; }
 
 @media (max-width: 1100px) {
   :root {
-    --content-max: 980px;
-    --detail-content-max: 920px;
+    --content-max: 920px;
+    --detail-content-max: 880px;
   }
 }
 
@@ -3533,3 +3527,48 @@ textarea { field-sizing:content; }
 .person-development-tab .task-list-row .task-assignee-cell {
   display: none;
 }
+
+
+/* Task filter panel: keep one DOM node and animate its full box in one step. */
+.task-sticky-toolbar {
+  overflow: clip;
+  height: auto;
+  opacity: 1;
+  padding-top: 10px;
+  padding-bottom: 30px;
+  transition: height 220ms cubic-bezier(.22,.75,.18,1), opacity 150ms ease, padding 220ms cubic-bezier(.22,.75,.18,1), margin 220ms cubic-bezier(.22,.75,.18,1);
+}
+.task-sticky-toolbar.is-collapsed {
+  height: 0 !important;
+  opacity: 0;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  margin-bottom: 0 !important;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .task-sticky-toolbar { transition: none !important; }
+}
+
+/* Check-in toolbar actions and export dialog. */
+.checkins-toolbar-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; }
+.checkins-export-period { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+@media (max-width: 620px) {
+  .checkins-toolbar-actions { justify-content:flex-start; flex-wrap:wrap; }
+  .checkins-export-period { grid-template-columns:1fr; }
+}
+
+/* Detail autosave feedback: stable slot in the header prevents buttons from shifting. */
+.detail-save-status {
+  min-width: 64px;
+  text-align: right;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0;
+  transition: opacity .16s ease;
+  pointer-events: none;
+}
+.detail-save-status.is-visible { opacity: 1; }
+@media (max-width: 720px) { .detail-save-status { min-width: 0; } }
+@media (prefers-reduced-motion: reduce) { .detail-save-status { transition: none; } }

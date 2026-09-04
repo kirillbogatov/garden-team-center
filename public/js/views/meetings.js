@@ -167,8 +167,15 @@ function meetingParticipantsHtml(participants) {
   const extra = participants.length - visible.length;
   return `<span class="meeting-participants" aria-label="Участники встречи: ${escapeHtml(participants.map((p) => p.name).join(', '))}">
     <span class="meeting-participants-stack">${visible.map((person) => personAvatarLinkHtml(person)).join('')}</span>
-    ${extra > 0 ? `<span class="meeting-participants-more">и ещё ${extra}</span>` : ''}
+    ${extra > 0 ? `<span class="meeting-participants-more">и ещё ${extra}…</span>` : ''}
   </span>`;
+}
+
+function meetingDetailParticipantsHtml(participants) {
+  if (!participants.length) return '<span class="muted">Нет участников</span>';
+  const visible = participants.slice(0, 2);
+  const extra = participants.length - visible.length;
+  return `${visible.map((p) => `<span class="meeting-detail-participant">${avatarHtml(p)}<span class="meeting-detail-participant-name">${escapeHtml(p.name)}</span></span>`).join('')}${extra > 0 ? `<span class="meeting-detail-participants-more">и ещё ${extra}…</span>` : ''}`;
 }
 
 function meetingRowHtml(m) {
@@ -296,7 +303,7 @@ async function renderMeetingDetailPage(m) {
 
   const meetingDetailMarkup = `
     <div class="task-detail-shell">
-${detailPageHeaderHtml({ title: meetingDisplayTitle(m), eyebrow: m.meetingKey, inputId: 'mf-title', displayId: 'mf-title-display', shellId: 'mf-title-shell', editable: canEdit, ariaLabel: 'Название встречи' })}
+${detailPageHeaderHtml({ title: meetingDisplayTitle(m), eyebrow: '', inputId: 'mf-title', displayId: 'mf-title-display', shellId: 'mf-title-shell', editable: canEdit, ariaLabel: 'Название встречи' })}
 
       <div class="task-detail-layout">
         <main class="task-detail-main">
@@ -312,7 +319,7 @@ ${detailPageHeaderHtml({ title: meetingDisplayTitle(m), eyebrow: m.meetingKey, i
                 <label class="task-detail-property"><span>Проект</span><span class="task-inline-edit is-editable"><select id="mf-project"><option value="">—</option>${optionsHtml(store.projects, 'id', (p) => p.name, m.projectId)}</select><span class="task-inline-edit-icon" aria-hidden="true">${icon('edit', 11)}</span></span></label>
                 <div class="task-detail-property task-detail-assignee-property"><span>Участники</span>
                   <div class="task-inline-edit task-inline-edit-assignees is-editable" id="mf-participants-shell">
-                    <div id="mf-participants-display" class="task-detail-assignee-read task-detail-assignee-display" role="button" tabindex="0">${participants.length ? participants.map((p) => `<span>${avatarHtml(p)}${escapeHtml(p.name)}</span>`).join('') : '<span class="muted">Нет участников</span>'}</div>
+                    <div id="mf-participants-display" class="task-detail-assignee-read task-detail-assignee-display meeting-detail-participants" role="button" tabindex="0">${meetingDetailParticipantsHtml(participants)}</div>
                     <div id="mf-participants-edit" class="task-detail-assignee-edit" hidden><div id="mf-participants-wrap" class="task-detail-assignees">${peoplePickerHtml('Добавить участника…')}</div></div>
                     <span class="task-inline-edit-icon" aria-hidden="true">${icon('edit', 11)}</span>
                   </div>
@@ -371,7 +378,7 @@ ${detailPageHeaderHtml({ title: meetingDisplayTitle(m), eyebrow: m.meetingKey, i
   `;
 
   const view = document.getElementById('view');
-  view.classList.add('task-detail-page-view');
+  view.classList.add('task-detail-page-view', 'meeting-detail-page-view');
   view.innerHTML = `<section class="modal-panel modal-task-detail task-detail-page">${meetingDetailMarkup}</section>`;
   if (!canEdit) {
     view.querySelectorAll('#mf-type, #mf-date, #mf-project, #mf-notes').forEach((el) => { el.disabled = true; });
@@ -433,9 +440,9 @@ ${detailPageHeaderHtml({ title: meetingDisplayTitle(m), eyebrow: m.meetingKey, i
   const participantsPicker = initPeoplePicker(document.getElementById('mf-participants-wrap'), store.people, m.participantIds, {
     multi: true,
     placeholder: 'Добавить участника…',
-    onChange: (ids) => { renderMeetingRelatedPanel(ids); queueMeetingAutosave?.(true); },
+    onChange: (ids) => { renderMeetingRelatedPanel(ids, document.getElementById('mf-type')?.value || m.type); queueMeetingAutosave?.(true); },
   });
-  renderMeetingRelatedPanel(m.participantIds || []);
+  renderMeetingRelatedPanel(m.participantIds || [], m.type);
 
   const titleShell = document.getElementById('mf-title-shell');
   const titleDisplay = document.getElementById('mf-title-display');
@@ -471,9 +478,7 @@ ${detailPageHeaderHtml({ title: meetingDisplayTitle(m), eyebrow: m.meetingKey, i
   let participantsOutsideHandler = null;
   const refreshParticipantsDisplay = () => {
     const selected = [...(participantsPicker?.getSelected?.() || [])].map((id) => store.person(id)).filter(Boolean);
-    participantsDisplay.innerHTML = selected.length
-      ? selected.map((p) => `<span>${avatarHtml(p)}${escapeHtml(p.name)}</span>`).join('')
-      : '<span class="muted">Нет участников</span>';
+    participantsDisplay.innerHTML = meetingDetailParticipantsHtml(selected);
   };
   const closeParticipantsEdit = () => {
     if (participantsEdit.hidden) return;
@@ -705,9 +710,9 @@ ${detailPageHeaderHtml({ title: meetingDisplayTitle(m), eyebrow: m.meetingKey, i
     return true;
   };
 
-  const autosave = DetailAutosave.set(createAutosave(saveMeetingChanges, { delay: 550 }));
+  const autosave = DetailAutosave.set(createAutosave(saveMeetingChanges, { delay: 550 }), { entityType: 'meetings', entityId: m.id });
   queueMeetingAutosave = (immediate = false) => autosave.schedule(immediate);
-  Router.setLeaveGuard(async () => { await autosave.flush(); return true; }, () => autosave.pending);
+  Router.setLeaveGuard(async () => { await autosave.flush(); await DetailAutosave.finalizeVersion(); return true; }, () => autosave.pending);
 
   if (canEdit) {
     ['mf-title','mf-notes'].forEach((id) => {
@@ -715,6 +720,9 @@ ${detailPageHeaderHtml({ title: meetingDisplayTitle(m), eyebrow: m.meetingKey, i
     });
     ['mf-type','mf-date','mf-project'].forEach((id) => {
       document.getElementById(id)?.addEventListener('change', () => queueMeetingAutosave(true));
+    });
+    document.getElementById('mf-type')?.addEventListener('change', (event) => {
+      renderMeetingRelatedPanel(participantsPicker?.getSelected?.() || m.participantIds || [], event.target.value);
     });
     titleInput.addEventListener('blur', () => queueMeetingAutosave(true));
     document.getElementById('mf-notes')?.addEventListener('blur', () => queueMeetingAutosave(true));
@@ -731,12 +739,16 @@ ${detailPageHeaderHtml({ title: meetingDisplayTitle(m), eyebrow: m.meetingKey, i
 
 // Панель "Связанное с участниками" в форме встречи — активные задачи, проблемы, договорённости
 // и свежие заметки о выбранных людях.
-function renderMeetingRelatedPanel(personIds) {
+function renderMeetingRelatedPanel(personIds, meetingType = '') {
   const container = document.getElementById('mf-related');
   if (!container) return;
   if (!personIds || !personIds.length) { container.innerHTML = `<div class="tiny">Выберите участников</div>`; return; }
   container.innerHTML = `<div class="tiny">Загрузка…</div>`;
-  Promise.all([Resources.tasks.list(), Resources.issues.list(), Resources.agreements.list(), Resources.journal.list()]).then(([allTasks, allIssues, allAgreements, allJournal]) => {
+  const showParticipantContext = meetingType === 'one_on_one' || meetingType === 'pr';
+  const tasksPromise = showParticipantContext ? Resources.tasks.list() : Promise.resolve([]);
+  const issuesPromise = showParticipantContext ? Resources.issues.list() : Promise.resolve([]);
+  const journalPromise = showParticipantContext ? Resources.journal.list() : Promise.resolve([]);
+  Promise.all([tasksPromise, issuesPromise, Resources.agreements.list(), journalPromise]).then(([allTasks, allIssues, allAgreements, allJournal]) => {
     if (!document.getElementById('mf-related')) return;
     const relTasks = allTasks.filter((t) =>
       !t.archivedAt && t.status === 'in_progress' && (t.assigneeIds || []).some((id) => personIds.includes(id))
