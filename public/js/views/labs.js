@@ -2,6 +2,8 @@
 
 Views._labTypeFilter = Views._labTypeFilter || 'all';
 Views._labAuthorFilter = Views._labAuthorFilter || 'all';
+Views._labIdeaStatusFilter = Views._labIdeaStatusFilter || 'all';
+Views._labProjectStatusFilter = Views._labProjectStatusFilter || 'all';
 Views._labsTab = Views._labsTab || 'ideas';
 Views._labOnlyUnassignedIdeas = Views._labOnlyUnassignedIdeas !== false;
 
@@ -21,6 +23,8 @@ Views.labs = async function () {
   const allItems = (await Resources.labs.list()).sort((a,b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
   Views._theLabsProjects = allItems.filter((lab) => lab.entityType !== 'idea');
   let items = allItems.filter((lab) => isIdeas ? lab.entityType === 'idea' : lab.entityType !== 'idea');
+  const statusFilter = isIdeas ? Views._labIdeaStatusFilter : Views._labProjectStatusFilter;
+  if (statusFilter !== 'all') items = items.filter((lab) => (lab.status || 'idea') === statusFilter);
   if (!isIdeas && Views._labTypeFilter !== 'all') items = items.filter((lab) => (lab.projectType || 'pet') === Views._labTypeFilter);
   if (Views._labAuthorFilter !== 'all') items = items.filter((lab) => lab.authorId === Views._labAuthorFilter);
   if (isIdeas && Views._labOnlyUnassignedIdeas) items = items.filter((idea) => !idea.labProjectId);
@@ -31,6 +35,10 @@ Views.labs = async function () {
     </div>
     <div class="labs-sticky-toolbar">
       <div class="labs-filter-controls">
+        <select id="labs-status-filter" class="task-filter-select task-filter-status" aria-label="Фильтр по статусу">
+          <option value="all" ${statusFilter === 'all' ? 'selected' : ''}>${isIdeas ? 'Все идеи' : 'Все проекты'}</option>
+          ${Object.entries(isIdeas ? IDEA_STATUS_LABEL : LAB_STATUS_LABEL).map(([value,label]) => `<option value="${value}" ${statusFilter === value ? 'selected' : ''}>${label}</option>`).join('')}
+        </select>
         ${!isIdeas ? `<select id="labs-type-filter" class="task-filter-select" aria-label="Фильтр по типу">
           <option value="all" ${Views._labTypeFilter === 'all' ? 'selected' : ''}>Все типы</option>
           ${Object.entries(LAB_TYPE_LABEL).map(([value,label]) => `<option value="${value}" ${Views._labTypeFilter === value ? 'selected' : ''}>${label}</option>`).join('')}
@@ -39,12 +47,18 @@ Views.labs = async function () {
           <option value="all" ${Views._labAuthorFilter === 'all' ? 'selected' : ''}>Все сотрудники</option>
           ${store.team().map((person) => `<option value="${person.id}" ${Views._labAuthorFilter === person.id ? 'selected' : ''}>${escapeHtml(person.name)}</option>`).join('')}
         </select>
-        ${isIdeas ? `<label class="task-dense-toggle labs-unassigned-toggle"><input id="labs-unassigned-filter" type="checkbox" ${Views._labOnlyUnassignedIdeas ? 'checked' : ''}/> Только задачи без проектов</label>` : ''}
+        ${isIdeas ? `<label class="task-dense-toggle labs-unassigned-toggle"><input id="labs-unassigned-filter" type="checkbox" ${Views._labOnlyUnassignedIdeas ? 'checked' : ''}/> Только идеи без проектов</label>` : ''}
       </div>
     </div>
     <p class="labs-intro">${isIdeas ? 'Идеи команды. Идея может существовать отдельно или быть прикреплена к проекту The Labs.' : 'Экспериментальные проекты команды — от идеи до готового результата.'}</p>
     ${items.length ? `<div class="labs-list ${isIdeas ? 'labs-ideas-list task-list-unified' : ''}">${items.map(isIdeas ? labIdeaRowHtml : labRowHtml).join('')}</div>` : `<div class="zen-empty">${isIdeas ? 'Идей пока нет' : 'Проектов не найдено'}</div>`}
   </div>`;
+  const statusSelect = document.getElementById('labs-status-filter');
+  if (statusSelect) statusSelect.onchange = (e) => {
+    if (isIdeas) Views._labIdeaStatusFilter = e.target.value;
+    else Views._labProjectStatusFilter = e.target.value;
+    Views.labs();
+  };
   const unassignedFilter = document.getElementById('labs-unassigned-filter');
   if (unassignedFilter) unassignedFilter.onchange = (e) => { Views._labOnlyUnassignedIdeas = e.target.checked; Views.labs(); };
   const typeFilter = document.getElementById('labs-type-filter');
@@ -58,9 +72,10 @@ function labIdeaRowHtml(idea) {
   const editIdx = registerAction(() => openLabIdeaModal(idea));
   const title = idea.title || idea.description || 'Без названия';
   return `<div class="ui-row list-row task-list-row labs-idea-row" data-action-id="${editIdx}">
-    <span class="task-status-icon task-status-todo" aria-hidden="true">${TASK_STATUS_SYMBOL.todo || '○'}</span>
+    ${labStatusIconHtml(idea.status || 'idea', idea)}
     <span class="tl-title">${escapeHtml(title)}</span>
     <div class="tl-right">
+      ${idea.private ? `<span class="lab-private-meta" title="Видна только автору">${icon('eyeOff', 12)} Приватная</span>` : ''}
       ${project ? `<span class="ui-tag badge lab-type-badge">${escapeHtml(project.title || 'Без названия')}</span>` : ''}
       ${author ? `<div class="task-assignee-cell">${personAvatarLinkHtml(author)}</div>` : ''}
     </div>
@@ -69,7 +84,7 @@ function labIdeaRowHtml(idea) {
 
 async function openLabIdeaModal(existing, opts) {
   opts = opts || {};
-  const idea = existing || { labProjectId: opts.labProjectId || null };
+  const idea = existing || { ...(opts.prefill || {}), labProjectId: opts.prefill?.labProjectId || opts.labProjectId || null };
   if (!Array.isArray(Views._theLabsProjects)) {
     try {
       const all = await Resources.labs.list();
@@ -80,11 +95,15 @@ async function openLabIdeaModal(existing, opts) {
   }
   const editable = canEditLab(idea);
   const defaultAuthorId = idea.authorId || Auth.user?.personId || '';
-  const value = { ...idea, authorId: defaultAuthorId };
+  // Приватность идеи задаётся прямо в стандартной форме создания/редактирования.
+  // Новые идеи по умолчанию публичные, если значение явно не пришло в prefill.
+  const value = { ...idea, authorId: defaultAuthorId, private: Boolean(idea.private), status: idea.status || 'idea' };
   const schema = [
     { key: 'title', label: 'Название', type: 'text', trim: true },
     { key: 'description', label: 'Описание', type: 'textarea', rows: 6, trim: true },
+    { key: 'private', label: 'Видимость', type: 'checkbox', render: ({ id, value, disabled }) => `<label class="check-row lab-private-checkbox"><input id="${id}" type="checkbox" ${value ? 'checked' : ''} ${disabled}/><span>Приватная идея (видна только вам и тимлиду)</span></label>` },
     { key: 'authorId', label: 'Автор', type: 'select', emptyLabel: '—', options: () => store.team().map((person) => ({ value: person.id, label: person.name })), parse: (v) => v || null },
+    { key: 'status', label: 'Статус', type: 'select', options: Object.entries(IDEA_STATUS_LABEL).map(([value,label]) => ({ value, label })) },
     { key: 'labProjectId', label: 'Проект The Labs', type: 'select', emptyLabel: 'Без проекта', options: () => (Views._theLabsProjects || []).filter((item) => item.entityType !== 'idea').map((project) => ({ value: project.id, label: project.title || 'Без названия' })), parse: (v) => v || null, hint: 'Идея может существовать отдельно или быть связана с существующим проектом.' },
   ];
   EntityForm.open({
@@ -101,10 +120,12 @@ async function openLabIdeaModal(existing, opts) {
     onSave: async (payload) => {
       payload.entityType = 'idea';
       if (!payload.title) payload.title = payload.description.slice(0, 80);
-      if (existing) await Resources.labs.update(idea.id, payload); else await Resources.labs.create(payload);
+      const saved = existing ? await Resources.labs.update(idea.id, payload) : await Resources.labs.create(payload);
       Modal.close();
       toast('Идея сохранена');
-      if (location.pathname.startsWith('/labs/')) Router.render(); else Views.labs();
+      if (typeof opts.onSaved === 'function') opts.onSaved(saved);
+      if (location.pathname.startsWith('/labs/')) Router.render();
+      else if (location.pathname.startsWith('/labs')) Views.labs();
     },
     onDelete: existing && editable ? async () => {
       const ok = await confirmAction('Удалить идею?');
@@ -117,10 +138,15 @@ async function openLabIdeaModal(existing, opts) {
   });
 }
 
+function labStatusLabels(lab) {
+  return lab?.entityType === 'idea' ? IDEA_STATUS_LABEL : LAB_STATUS_LABEL;
+}
+
 function labStatusIconHtml(status, lab) {
   const taskStatus = LAB_TASK_STATUS[status] || 'todo';
   const symbol = TASK_STATUS_SYMBOL[taskStatus] ?? '○';
-  const label = LAB_STATUS_LABEL[status] || status || 'Идея';
+  const labels = labStatusLabels(lab);
+  const label = labels[status] || status || (lab?.entityType === 'idea' ? 'Новая' : 'Идея');
   if (!lab || !canEditLab(lab)) {
     return `<span class="task-status-icon task-status-${taskStatus}" aria-label="${escapeHtml(label)}">${symbol}</span>`;
   }
@@ -129,7 +155,8 @@ function labStatusIconHtml(status, lab) {
 }
 
 function labStatusHtml(status, lab) {
-  const label = LAB_STATUS_LABEL[status] || status || 'Идея';
+  const labels = labStatusLabels(lab);
+  const label = labels[status] || status || (lab?.entityType === 'idea' ? 'Новая' : 'Идея');
   if (!lab || !canEditLab(lab)) return `${labStatusIconHtml(status, null)}<span>${escapeHtml(label)}</span>`;
   const idx = registerAction((event) => openLabStatusMenu(event, lab));
   return `<span class="lab-status-click-target task-status-interactive" role="button" tabindex="0" aria-label="Изменить статус: ${escapeHtml(label)}" data-action-id="${idx}" data-action-stop="1">${labStatusIconHtml(status, null)}<span>${escapeHtml(label)}</span></span>`;
@@ -157,13 +184,14 @@ function openLabStatusMenu(event, lab) {
   const menu = document.createElement('div');
   menu.className = 'task-status-menu lab-status-menu';
   menu.setAttribute('role','menu');
-  menu.innerHTML = Object.keys(LAB_STATUS_LABEL).map((status) => {
+  const labels = labStatusLabels(lab);
+  menu.innerHTML = Object.keys(labels).map((status) => {
     const taskStatus = LAB_TASK_STATUS[status] || 'todo';
     const symbol = TASK_STATUS_SYMBOL[taskStatus] ?? '○';
     const active = status === (lab.status || 'idea');
     return `<button type="button" class="task-status-menu-item ${active ? 'active' : ''}" role="menuitemradio" aria-checked="${active}" data-status="${status}">
       <span class="task-status-icon task-status-${taskStatus}" aria-hidden="true">${symbol}</span>
-      <span class="task-status-menu-label">${escapeHtml(LAB_STATUS_LABEL[status])}</span>
+      <span class="task-status-menu-label">${escapeHtml(labels[status])}</span>
       ${active ? '<span class="task-status-menu-check">✓</span>' : ''}
     </button>`;
   }).join('');
@@ -186,7 +214,7 @@ function openLabStatusMenu(event, lab) {
         if (typeof DetailAutosave !== 'undefined') await DetailAutosave.flush();
         await Resources.labs.update(lab.id, { status });
         closeLabStatusMenu();
-        toast(`Статус: ${LAB_STATUS_LABEL[status]}`);
+        toast(`Статус: ${labels[status]}`);
         await store.loadAll();
         await Router.render();
       } catch (err) {
@@ -239,7 +267,6 @@ function labLinksEditorHtml(id, value, editable = true) {
     <button type="button" class="ui-button ui-button--sm btn btn-sm meeting-document-inline-add" data-lab-link-add>Добавить</button>
   </div>` : '';
   return `<div id="${id}" class="lab-links-editor ${editable ? 'is-editable' : ''}">
-    <div class="meeting-document-head" aria-hidden="true"><span>Название</span><span>Ссылка</span><span></span></div>
     <div class="meeting-document-list" data-lab-link-list>${rows}${composer}</div>
   </div>`;
 }
@@ -419,20 +446,25 @@ Views.labDetail = async function (ref) {
   const authorControl = detailInlineSelectHtml({ id: 'lab-detail-author', value: lab.authorId || '', editable, emptyLabel: '—', options: authors.map((person) => ({ value: person.id, label: person.name })) });
   const typeControl = detailInlineSelectHtml({ id: 'lab-detail-type', value: lab.projectType || 'pet', editable, options: Object.entries(LAB_TYPE_LABEL).map(([value,label]) => ({ value, label })) });
   const canManagePrivacy = Boolean(Auth.isTeamlead() || (Auth.user?.personId && Auth.user.personId === lab.authorId));
-  const accessControl = canManagePrivacy ? `<label class="check-row lab-private-checkbox"><input id="lab-detail-private" type="checkbox" ${lab.private ? 'checked' : ''} ${editable ? '' : 'disabled'}/><span>Приватный проект (Виден только вам и вашему тимлиду)</span></label>` : '';
+  const accessControl = canManagePrivacy ? `<label class="lab-detail-access-toggle"><input id="lab-detail-private" type="checkbox" ${lab.private ? 'checked' : ''} ${editable ? '' : 'disabled'}/><span>Приватный проект (виден только вам и тимлиду)</span></label>` : '';
   const linkControl = labLinksEditorHtml('lab-detail-links', lab.links, editable);
   const statusControl = `<div class="task-detail-status-control">${labStatusHtml(lab.status || 'idea', editable ? lab : null)}</div>`;
-  const details = `<section class="task-detail-section task-detail-details-section"><div class="task-detail-details-grid"><div class="task-detail-details-column">
-    ${detailPropertyHtml({ label:'Автор', control:authorControl })}
-    ${detailPropertyHtml({ label:'Тип', control:typeControl })}
-    ${canManagePrivacy ? detailPropertyHtml({ label:'Доступ', control:accessControl }) : ''}
-    ${detailPropertyHtml({ label:'Статус', control:statusControl, className:'task-detail-status-property' })}
-    ${detailPropertyHtml({ label:'Ссылки', control:linkControl })}
-  </div><div class="task-detail-details-column lab-tree-column"><div class="lab-detail-progress-tree" aria-label="Прогресс проекта">${goalTreeHtml(progress, 'compact', lab.labKey || lab.id)}</div></div></div></section>`;
+  // Дерево — второй колонкой рядом с полями, без процентной подписи (это просто декоративный
+  // индикатор стадии, а не отдельная метрика); высота выровнена по колонке полей через CSS.
+  const treeColumn = `<div class="task-detail-details-column lab-tree-column"><div class="lab-detail-progress-tree" aria-label="Стадия проекта">${goalTreeHtml(progress, 'compact', lab.labKey || lab.id)}</div></div>`;
+  const details = `<section class="task-detail-section task-detail-details-section">
+    <div class="task-detail-details-grid"><div class="task-detail-details-column">
+      ${detailPropertyHtml({ label:'Автор', control:authorControl })}
+      ${detailPropertyHtml({ label:'Тип', control:typeControl })}
+      ${detailPropertyHtml({ label:'Статус', control:statusControl, className:'task-detail-status-property' })}
+    </div>${treeColumn}</div>
+    ${canManagePrivacy ? `<div class="lab-detail-privacy-row">${accessControl}</div>` : ''}
+  </section>`;
   const description = `<section class="task-detail-section task-detail-description-section"><div class="task-detail-section-label task-detail-section-title">Описание</div><div class="task-inline-edit task-inline-edit-description ${editable ? 'is-editable' : ''}">${editable ? `<textarea id="lab-detail-description" class="task-detail-description" rows="4" placeholder="Добавьте описание проекта">${escapeHtml(lab.description || '')}</textarea><span class="task-inline-edit-icon" aria-hidden="true">${icon('edit',11)}</span>` : `<textarea id="lab-detail-description" class="task-detail-description" hidden disabled>${escapeHtml(lab.description || '')}</textarea><div class="task-detail-description task-detail-description-readonly">${renderLinkedText(lab.description || '') || '<span class="muted">Описание не добавлено</span>'}</div>`}</div></section>`;
+  const linksSection = detailSectionHtml('Ссылки', linkControl);
   const ideasSection = detailSectionHtml('Идеи', `<div class="task-relation-list task-relation-list-unified" id="lab-detail-ideas">${ideasHtml}</div>`, `<button type="button" class="task-section-add-btn" id="lab-detail-add-idea" aria-label="Добавить идею" title="Добавить идею">+</button>`).replace('task-detail-section"','task-detail-section task-relations-section"');
   const commentsSection = `<section class="task-comments-section"><div class="task-comments-head"><span>Комментарии</span><span class="task-comments-count" id="lab-comments-count">${comments.length || ''}</span></div><div class="task-comments-list" id="lab-comments-list">${commentThreadHtml(comments)}</div><div class="task-comment-compose"><textarea id="lab-comment-input" rows="2" placeholder="Оставить комментарий…"></textarea><button type="button" class="ui-button btn task-comment-send-inline" id="lab-comment-send" hidden>Отправить</button></div></section>`;
-  view.innerHTML = entityDetailHtml({ className:'lab-task-detail-page', header:detailPageHeaderHtml({ title: lab.title, eyebrow: '', inputId:'lab-detail-title', displayId:'lab-title-display', shellId:'lab-title-shell', editable, ariaLabel:'Название проекта The Labs' }), main:details + description + ideasSection + commentsSection });
+  view.innerHTML = entityDetailHtml({ className:'lab-task-detail-page', header:detailPageHeaderHtml({ title: lab.title, eyebrow: '', inputId:'lab-detail-title', displayId:'lab-title-display', shellId:'lab-title-shell', editable, ariaLabel:'Название проекта The Labs' }), main:details + description + linksSection + ideasSection + commentsSection });
 
   Views._labDetailIdeas = ideas;
 
@@ -476,9 +508,13 @@ Views.labDetail = async function (ref) {
   if (actionsToggle && actionsMenu) {
     const setActionsOpen = (open) => { actionsMenu.hidden = !open; actionsToggle.setAttribute('aria-expanded', open ? 'true' : 'false'); };
     const wrap = actionsToggle.closest('.task-actions-menu-wrap');
-    actionsToggle.onclick = (event) => { event.stopPropagation(); setActionsOpen(actionsMenu.hidden); };
+    actionsToggle.onclick = (event) => {
+      event.stopPropagation();
+      const open = actionsMenu.hidden;
+      setActionsOpen(open);
+      if (open) bindOutsideClickClose(wrap, () => setActionsOpen(false));
+    };
     actionsMenu.onclick = (event) => event.stopPropagation();
-    document.addEventListener('click', (event) => { if (!wrap?.contains(event.target)) setActionsOpen(false); });
   }
 
   const versionHistoryButton = document.getElementById('lab-version-history');

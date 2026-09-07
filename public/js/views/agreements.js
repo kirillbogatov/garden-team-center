@@ -14,8 +14,8 @@ Views.agreements = async function () {
 
   const filters = [
     { key: 'open', label: 'Открытые', test: (a) => a.status !== 'done' },
-    { key: 'all', label: 'Все', test: () => true },
     { key: 'done', label: 'Выполненные', test: (a) => a.status === 'done' },
+    { key: 'all', label: 'Все', test: () => true },
   ];
   const active = filters.find((f) => f.key === Views._agreementFilter) || filters[0];
   const filtered = agreements.filter(active.test);
@@ -58,9 +58,12 @@ async function toggleAgreement(id, checked) {
   Views.agreements();
 }
 
-async function openAgreementModal(id) {
+async function openAgreementModal(id, opts) {
+  opts = opts || {};
   const isEdit = !!id;
-  const a = isEdit ? await Resources.agreements.get(id) : {};
+  // prefill приходит из «Умного поиска»: «создай договорённость …» открывает форму
+  // с уже подставленным текстом, чтобы фразу не пришлось набирать второй раз.
+  const a = isEdit ? await Resources.agreements.get(id) : (opts.prefill ? { ...opts.prefill } : {});
   const editable = !isEdit || Auth.canEditItem('agreements', a, ['withPersonIds']);
   return EntityForm.open({
     title: isEdit ? 'Редактировать договорённость' : 'Новая договорённость',
@@ -83,11 +86,13 @@ async function openAgreementModal(id) {
     validate: (payload) => payload.text ? null : 'Опишите договорённость',
     onSave: async (payload) => {
       payload.withPersonIds = extractMentionIdsClient(payload.text);
-      if (isEdit) await Resources.agreements.update(a.id, payload);
-      else await Resources.agreements.create(payload);
+      let saved;
+      if (isEdit) saved = await Resources.agreements.update(a.id, payload);
+      else saved = await Resources.agreements.create(payload);
       Modal.close();
       toast('Сохранено');
-      Views.agreements();
+      if (!isEdit && opts.onSaved) await opts.onSaved(saved);
+      else Views.agreements();
     },
     onDelete: isEdit && Auth.canDeleteItem('agreements', a) ? async () => {
       const ok = await confirmAction('Удалить эту договорённость?');

@@ -71,26 +71,6 @@ function plainJournalText(text) {
   return String(text || '').replace(/@\[([^\]]+)\]\((?:person|project|stakeholder|team):[a-zA-Z0-9_]+\)/g, '$1').trim();
 }
 
-function agreementDateFromText(text, now = new Date()) {
-  const raw = plainJournalText(text).toLowerCase();
-  let m = raw.match(/\b(20\d{2})-(\d{1,2})-(\d{1,2})\b/);
-  if (m) return `${m[1]}-${String(Number(m[2])).padStart(2, '0')}-${String(Number(m[3])).padStart(2, '0')}`;
-  m = raw.match(/\b(\d{1,2})[.\/-](\d{1,2})(?:[.\/-](20\d{2}))?\b/);
-  if (m) {
-    const year = Number(m[3] || now.getFullYear());
-    return `${year}-${String(Number(m[2])).padStart(2, '0')}-${String(Number(m[1])).padStart(2, '0')}`;
-  }
-  const months = { января:0, февраля:1, марта:2, апреля:3, мая:4, июня:5, июля:6, августа:7, сентября:8, октября:9, ноября:10, декабря:11 };
-  m = raw.match(/\b(\d{1,2})\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)(?:\s+(20\d{2}))?\b/);
-  if (m) {
-    let year = Number(m[3] || now.getFullYear());
-    const d = new Date(year, months[m[2]], Number(m[1]));
-    if (!m[3] && d < new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)) year += 1;
-    return localDateKey(new Date(year, months[m[2]], Number(m[1])));
-  }
-  return null;
-}
-
 function fmtDate(dateStr, opts) {
   if (!dateStr) return '';
   const d = new Date(dateStr);

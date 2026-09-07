@@ -205,13 +205,14 @@ async function deleteMeeting(id) {
 
 // Existing meetings open as a dedicated routed page (an "instance", by analogy
 // with task instances) — the modal below is reserved for creating a new one.
-function openMeetingModal(existing) {
+function openMeetingModal(existing, opts) {
   if (existing && existing.id) { Router.go(meetingPath(existing)); return; }
-  openMeetingCreateModal(existing);
+  openMeetingCreateModal(existing, opts);
 }
 
-function openMeetingCreateModal(prefill) {
+function openMeetingCreateModal(prefill, opts) {
   const m = prefill || {};
+  opts = opts || {};
   const dt = m.date ? m.date.slice(0, 10) : todayStr();
   Modal.open(`
     <h2>Новая встреча</h2>
@@ -254,11 +255,15 @@ function openMeetingCreateModal(prefill) {
       actionItems: [],
       prepNotes: '',
       documentLinks: [],
+      ...(m.sourceTechnologyEventId ? { sourceTechnologyEventId: m.sourceTechnologyEventId } : {}),
     };
     const saved = await Resources.meetings.create(payload);
     Modal.close();
     toast('Встреча создана');
-    Router.go(meetingPath(saved));
+    // Ассистент сообщает о результате сам и остаётся на Обзоре, поэтому переход
+    // на страницу встречи делаем только когда вызывающий не перехватил сохранение.
+    if (opts.onSaved) await opts.onSaved(saved);
+    else Router.go(meetingPath(saved));
   };
 }
 
@@ -425,9 +430,13 @@ ${detailPageHeaderHtml({ title: meetingDisplayTitle(m), eyebrow: '', inputId: 'm
   if (actionsToggle && actionsMenu) {
     const setActionsOpen = (open) => { actionsMenu.hidden = !open; actionsToggle.setAttribute('aria-expanded', open ? 'true' : 'false'); };
     const wrap = actionsToggle.closest('.task-actions-menu-wrap');
-    actionsToggle.onclick = (event) => { event.stopPropagation(); setActionsOpen(actionsMenu.hidden); };
+    actionsToggle.onclick = (event) => {
+      event.stopPropagation();
+      const open = actionsMenu.hidden;
+      setActionsOpen(open);
+      if (open) bindOutsideClickClose(wrap, () => setActionsOpen(false));
+    };
     actionsMenu.onclick = (event) => event.stopPropagation();
-    document.addEventListener('click', (event) => { if (!wrap?.contains(event.target)) setActionsOpen(false); });
   }
   const versionHistoryButton = document.getElementById('meeting-version-history');
   if (versionHistoryButton) versionHistoryButton.onclick = async () => {
@@ -744,7 +753,7 @@ function renderMeetingRelatedPanel(personIds, meetingType = '') {
   if (!container) return;
   if (!personIds || !personIds.length) { container.innerHTML = `<div class="tiny">Выберите участников</div>`; return; }
   container.innerHTML = `<div class="tiny">Загрузка…</div>`;
-  const showParticipantContext = meetingType === 'one_on_one' || meetingType === 'pr';
+  const showParticipantContext = meetingType === '1:1' || meetingType === 'pr';
   const tasksPromise = showParticipantContext ? Resources.tasks.list() : Promise.resolve([]);
   const issuesPromise = showParticipantContext ? Resources.issues.list() : Promise.resolve([]);
   const journalPromise = showParticipantContext ? Resources.journal.list() : Promise.resolve([]);

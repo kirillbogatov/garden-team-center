@@ -160,9 +160,10 @@ async function renderMonthCalendar() {
   const gridStart = new Date(y, m - 1, 1 - startOffset);
   const todayKey = todayStr();
 
-  // Всегда 6 недель: календарь не меняет число строк при переключении месяцев
-  // (высота отдельной строки может вырасти, если в неё попадает много многодневных событий).
-  const cells = Array.from({ length: 42 }, (_, i) => {
+  // Месячный вид всегда держит шесть недель. Это сохраняет стабильную геометрию
+  // календаря и показывает хвост следующего месяца вместо визуально обрезанной сетки.
+  const weekCount = 6;
+  const cells = Array.from({ length: weekCount * 7 }, (_, i) => {
     const date = new Date(gridStart);
     date.setDate(gridStart.getDate() + i);
     return { date, key: calDateKey(date), outside: date.getMonth() !== m - 1 };
@@ -248,7 +249,7 @@ async function renderMonthCalendar() {
     return { html: spans.map((s) => s.html).join(''), laneCount: lanes.length };
   }
 
-  const weeks = Array.from({ length: 6 }, (_, i) => cells.slice(i * 7, i * 7 + 7));
+  const weeks = Array.from({ length: weekCount }, (_, i) => cells.slice(i * 7, i * 7 + 7));
 
   view.innerHTML = `
     <div class="gcal-shell">
@@ -264,7 +265,7 @@ async function renderMonthCalendar() {
                 const isToday = cell.key === todayKey;
                 const evs = dayEvents(cell);
                 const createDate = cell.key;
-                return `<div class="gcal-cell ${cell.outside ? 'outside' : ''} ${isToday ? 'today-cell' : ''}" style="grid-column:${i + 1}" ${cell.outside ? '' : `data-command="openMeetingOnDate" data-command-arg="${createDate}"`}>
+                return `<div class="gcal-cell ${cell.outside ? 'outside' : ''} ${isToday ? 'today-cell' : ''}" style="grid-column:${i + 1}" data-cal-date="${createDate}" ${cell.outside ? '' : `data-command="openMeetingOnDate" data-command-arg="${createDate}"`}>
                   <div class="gcal-dayline"><span class="gcal-day ${isToday ? 'today' : ''}">${cell.date.getDate()}</span>${isToday ? '<span class="gcal-today-label">сегодня</span>' : ''}</div>
                   <div class="gcal-events">${evs.map(eventHtml).join('')}</div>
                 </div>`;
@@ -293,8 +294,6 @@ function fitMonthCalendar() {
   root.querySelectorAll('.gcal-event, .gcal-span-event').forEach((el) => { el.style.display = ''; });
   root.querySelectorAll('.gcal-more').forEach((el) => el.remove());
 
-  const sample = root.querySelector('.gcal-event');
-  const eventHeight = (sample && sample.offsetHeight) || 19;
   const anyBox = root.querySelector('.gcal-events');
   const gap = anyBox ? (parseFloat(getComputedStyle(anyBox).rowGap) || 0) : 2;
   let moreHeight = 14;
@@ -306,8 +305,6 @@ function fitMonthCalendar() {
     moreHeight = probe.offsetHeight || moreHeight;
     probe.remove();
   }
-  // Минимум, который стоит оставить дню: одна строка события либо счётчик «ещё N».
-  const minLine = Math.max(eventHeight, moreHeight);
   const laneOf = (bar) => Number(bar.style.getPropertyValue('--lane')) || 0;
 
   weeks.forEach((week) => {
@@ -315,24 +312,23 @@ function fitMonthCalendar() {
     if (!rowHeight) return;
     const cells = Array.from(week.querySelectorAll('.gcal-cell'));
     const probeCell = cells[0];
-    const probeBox = probeCell && probeCell.querySelector('.gcal-events');
     const padBottom = probeCell ? (parseFloat(getComputedStyle(probeCell).paddingBottom) || 0) : 0;
-    const weekHasEvents = !!week.querySelector('.gcal-event');
     const bars = Array.from(week.querySelectorAll('.gcal-span-event'));
 
-    // 1. Сколько дорожек многодневных событий показать. Важно не только чтобы сама
-    //    полоса влезла в ряд, но и чтобы под события дня осталась хотя бы одна строка —
-    //    иначе полосы съедают ячейку целиком и «ещё N» уже некуда поставить.
+    // 1. Многодневные события раскладываются по настоящим дорожкам и не прячутся
+    //    ради заранее рассчитанного «резерва» под обычные события. Именно этот резерв
+    //    раньше мог скрыть вторую полосу даже при большом количестве свободного места.
+    //    Уменьшаем число дорожек только если сама нижняя полоса физически выходит за
+    //    границу недели. Обычные события ниже проверяются отдельно по геометрии ячейки.
     let lanes = bars.reduce((max, bar) => Math.max(max, laneOf(bar) + 1), 0);
-    while (lanes > 0) {
-      week.style.setProperty('--span-lanes', String(lanes));
-      const barsFit = bars.every((bar) => laneOf(bar) >= lanes ||
-        bar.offsetTop + bar.offsetHeight <= rowHeight);
-      const roomLeft = probeBox ? probeCell.clientHeight - probeBox.offsetTop - padBottom : rowHeight;
-      if (barsFit && (!weekHasEvents || roomLeft >= minLine)) break;
-      lanes--;
-    }
     week.style.setProperty('--span-lanes', String(lanes));
+    while (lanes > 0) {
+      const barsFit = bars.every((bar) => laneOf(bar) >= lanes ||
+        bar.offsetTop + bar.offsetHeight <= rowHeight + 0.5);
+      if (barsFit) break;
+      lanes--;
+      week.style.setProperty('--span-lanes', String(lanes));
+    }
 
     const hiddenBarsByColumn = new Map();
     bars.forEach((bar) => {
@@ -354,30 +350,94 @@ function fitMonthCalendar() {
       const hiddenBars = hiddenBarsByColumn.get(index + 1) || 0;
       if (!events.length && !hiddenBars) return;
 
-      const available = cell.clientHeight - box.offsetTop - padBottom;
-      // Все события одной высоты, поэтому вместимость считается, а не накапливается.
-      const capacity = (reserve) => {
-        const space = available - (reserve > 0 ? reserve + gap : 0);
-        if (space < eventHeight) return 0;
-        return Math.min(events.length, Math.floor((space + gap) / (eventHeight + gap)));
+      const cellBottom = cell.clientHeight - padBottom;
+      const fits = (event, reserve = 0) => {
+        if (!event) return false;
+        const bottom = box.offsetTop + event.offsetTop + event.offsetHeight;
+        return bottom + (reserve > 0 ? gap + reserve : 0) <= cellBottom + 0.5;
       };
 
-      let visible = capacity(0);
+      // Не оцениваем вместимость по средней высоте строки: при разных масштабах,
+      // шрифтах и количестве многодневных полос это давало ранний «Ещё N» даже
+      // в визуально пустой ячейке. Сначала проверяем фактическую геометрию каждой
+      // строки конкретного дня.
+      let visible = events.length;
+      while (visible > 0 && !fits(events[visible - 1], 0)) visible--;
       let rest = (events.length - visible) + hiddenBars;
+
       if (rest > 0) {
-        visible = capacity(moreHeight);
+        // Для ссылки «Ещё N» освобождаем место только тогда, когда она действительно
+        // нужна. Сохраняем максимально возможное число обычных событий.
+        while (visible > 0 && !fits(events[visible - 1], moreHeight)) visible--;
+        if (events.length && visible === 0 && fits(events[0], 0)) visible = 1;
         rest = (events.length - visible) + hiddenBars;
       }
       for (let i = visible; i < events.length; i++) events[i].style.display = 'none';
 
-      if (rest > 0 && available >= moreHeight) {
-        const more = document.createElement('div');
+      if (rest > 0 && box.offsetTop + moreHeight <= cellBottom) {
+        const more = document.createElement('button');
+        more.type = 'button';
         more.className = 'gcal-more';
-        more.textContent = `ещё ${rest}`;
+        more.textContent = calendarMoreLabel(rest);
+        more.title = 'Показать все события этого дня';
+        more.onclick = (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          openCalendarDayOverflow(cell, index);
+        };
         box.appendChild(more);
       }
     });
   });
+}
+
+
+function calendarMoreLabel(count) {
+  const n = Math.abs(Number(count) || 0);
+  const mod100 = n % 100;
+  const mod10 = n % 10;
+  const word = mod100 >= 11 && mod100 <= 14 ? 'событий' : mod10 === 1 ? 'событие' : mod10 >= 2 && mod10 <= 4 ? 'события' : 'событий';
+  return `Ещё ${n} ${word}`;
+}
+
+function openCalendarDayOverflow(cell, columnIndex) {
+  if (!cell) return;
+  const week = cell.closest('.gcal-week');
+  const date = cell.dataset.calDate || '';
+  const rows = [];
+
+  cell.querySelectorAll('.gcal-event').forEach((event) => {
+    rows.push({
+      label: event.getAttribute('title') || event.textContent.trim(),
+      actionId: event.dataset.actionId || '',
+      cls: event.classList.contains('ev-birthday') ? 'birthday' : 'meeting',
+    });
+  });
+
+  if (week) {
+    week.querySelectorAll('.gcal-span-event').forEach((event) => {
+      const span = String(event.style.gridColumn || '').split('/');
+      const from = parseInt(span[0], 10) || 1;
+      const to = (parseInt(span[1], 10) || from + 1) - 1;
+      const column = columnIndex + 1;
+      if (column < from || column > to) return;
+      rows.push({
+        label: event.getAttribute('title') || event.textContent.trim(),
+        actionId: event.dataset.actionId || '',
+        cls: 'absence',
+      });
+    });
+  }
+
+  const unique = rows.filter((row, index, all) => all.findIndex((candidate) => candidate.label === row.label && candidate.actionId === row.actionId) === index);
+  const dateLabel = date ? new Date(`${date}T12:00:00`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : 'День';
+  Modal.open(`<h2>${escapeHtml(dateLabel)}</h2>
+    <div class="gcal-day-overflow-list">
+      ${unique.length ? unique.map((row) => `<button type="button" class="gcal-day-overflow-item" ${row.actionId ? `data-action-id="${escapeHtml(row.actionId)}" data-action-stop="1"` : ''}>
+        <span class="gcal-day-overflow-icon">${row.cls === 'birthday' ? CAL_EMOJI.birthday : row.cls === 'absence' ? CAL_EMOJI.vacation : CAL_EMOJI.meeting}</span>
+        <span>${escapeHtml(row.label)}</span>
+      </button>`).join('') : '<div class="tiny">Событий нет</div>'}
+    </div>`);
 }
 
 // Пересчитываем после отрисовки и при изменении размера окна.

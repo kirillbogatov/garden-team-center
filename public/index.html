@@ -4,36 +4,23 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Garden</title>
+<script src="/js/domain/appearance-config.js"></script>
 <script>
-  // Применяем сохранённую тему ещё до отрисовки страницы, чтобы избежать "вспышки" неверной темы.
+  // Применяем сохранённое оформление до первого рендера, чтобы не было FOUC.
   try {
-    // Список и режимы должны совпадать с GARDEN_THEMES в js/lib/interactions.js.
-    const THEME_MODES = {
-      'chernika': 'light', 'myata': 'light', 'lavanda': 'light', 'tuman': 'light',
-      'grafit': 'dark', 'khvoya': 'dark', 'noch': 'dark',
-      'anuppuccin-latte': 'light', 'anuppuccin-mocha': 'dark',
-    };
-    const THEMES = Object.keys(THEME_MODES);
-    // Темы с настраиваемым акцентом — должно совпадать с ACCENT_THEMES в js/lib/interactions.js.
-    const ACCENT_THEMES = ['anuppuccin-latte', 'anuppuccin-mocha'];
-    const ACCENT_NAMES = ['rosewater', 'flamingo', 'pink', 'mauve', 'red', 'maroon', 'peach', 'yellow', 'green', 'teal', 'sky', 'lavender'];
-    // Для новых пользователей используем AnuPpuccin Latte независимо от системной темы.
-    // Сохранённый пользовательский выбор по-прежнему имеет приоритет.
-    const defaultTheme = 'anuppuccin-latte';
-    let savedTheme = localStorage.getItem('garden-theme') || defaultTheme;
-    if (!THEMES.includes(savedTheme)) savedTheme = defaultTheme;
+    const cfg = GardenAppearance;
+    let savedTheme = localStorage.getItem('garden-theme') || cfg.defaultTheme;
+    if (!cfg.themeValues.includes(savedTheme)) savedTheme = cfg.defaultTheme;
     localStorage.setItem('garden-theme', savedTheme);
-    // Все пользовательские темы применяются явным классом; базовые :root-токены служат только fallback.
     document.documentElement.classList.add(`theme-${savedTheme}`);
-    if (THEME_MODES[savedTheme] === 'dark') document.documentElement.classList.add('theme-dark');
-    // Акцентный цвет применяем тем же способом, что и тему — до отрисовки, чтобы
-    // не мигать цветом по умолчанию для тем с поддержкой настройки акцента.
-    if (ACCENT_THEMES.includes(savedTheme)) {
+    if (cfg.themeModes[savedTheme] === 'dark') document.documentElement.classList.add('theme-dark');
+    if (cfg.accentThemes.includes(savedTheme)) {
       let savedAccent = localStorage.getItem('garden-accent');
-      if (!ACCENT_NAMES.includes(savedAccent)) savedAccent = 'green';
+      if (!cfg.accentValues.includes(savedAccent)) savedAccent = cfg.defaultAccent;
       localStorage.setItem('garden-accent', savedAccent);
       document.documentElement.classList.add(`accent-${savedAccent}`);
     }
+    if (cfg.themeModes[savedTheme] === 'dark' && localStorage.getItem('garden-glow') === '1') document.documentElement.classList.add('glow-enabled');
   } catch (e) {}
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -62,6 +49,7 @@
 
 <script src="/js/lib/icons.js"></script>
 <script src="/js/domain/constants.js"></script>
+<script src="/js/domain/smart-search-ui-config.js"></script>
 <script src="/js/lib/util.js"></script>
 <script src="/js/lib/tabular-export.js"></script>
 <script src="/js/lib/api.js"></script>

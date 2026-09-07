@@ -2,6 +2,19 @@
 
 Views._issueFilter = 'open';
 
+function issueListTitleRowHtml(issue) {
+  const openIdx = registerAction(() => FeatureLoader.run('openIssueModal', issue.id));
+  const people = (issue.relatedPersonIds || []).map((id) => store.person(id)).filter(Boolean);
+  return `<div class="ui-row ui-row--issue list-row issue-list-row" data-action-id="${openIdx}">
+    ${issueStatusBadge(issue.status, issue.id)}
+    <span class="issue-list-title">${escapeHtml(issue.title)}</span>
+    <div class="issue-list-right">
+      ${issue.severity === 'high' ? '<span class="ui-tag badge issue-serious-badge">серьёзная</span>' : ''}
+      ${people.length ? `<div class="work-row-avatars issue-list-avatars">${people.slice(0, 3).map((person) => personAvatarLinkHtml(person)).join('')}${people.length > 3 ? `<span class="issue-list-avatar-more" aria-label="Ещё ${people.length - 3} причастных">+${people.length - 3}</span>` : ''}</div>` : ''}
+    </div>
+  </div>`;
+}
+
 Views.issues = async function () {
   const mineOnly = Router.queryParam('mine') === '1';
   setTopbar(`<h1>${mineOnly ? 'Мои проблемы' : 'Проблемы'}</h1>${Auth.canCreate('issues') ? `<div class="actions"><button class="ui-button ui-button--primary btn btn-primary" data-command="openIssueModal">+ Добавить проблему</button></div>` : ''}`);
@@ -17,8 +30,9 @@ Views.issues = async function () {
 
   const filters = [
     { key: 'open', label: 'Открытые', test: (i) => i.status !== 'resolved' },
-    { key: 'all', label: 'Все', test: () => true },
+    { key: 'paused', label: 'Отложенные', test: (i) => i.status === 'paused' },
     { key: 'resolved', label: 'Решённые', test: (i) => i.status === 'resolved' },
+    { key: 'all', label: 'Все', test: () => true },
   ];
   const active = filters.find((f) => f.key === Views._issueFilter) || filters[0];
   const filtered = issues.filter(active.test);
@@ -32,7 +46,7 @@ Views.issues = async function () {
   view.innerHTML = `
     <div class="view-narrow work-list-page issues-view">
       <div class="work-list-toolbar">${tabsHtml}</div>
-      <div class="work-list-body">${filtered.length ? filtered.map(issueCardHtml).join('') : emptyState('Проблем не найдено', '', 'issues')}</div>
+      <div class="work-list-body">${filtered.length ? filtered.map(issueListTitleRowHtml).join('') : emptyState('Проблем не найдено', '', 'issues')}</div>
     </div>
   `;
 };
@@ -58,7 +72,7 @@ async function openIssueModal(id, opts) {
       <div class="ui-field field"><label class="ui-field-label field-label" for="if-severity">Серьёзность</label><select id="if-severity">${['normal','high'].map((s) => `<option value="${s}" ${(i.severity || 'normal') === s ? 'selected' : ''}>${ISSUE_SEVERITY_LABEL[s]}</option>`).join('')}</select></div>
     </div>
     <div class="ui-field field"><label class="ui-field-label field-label" for="if-status">Статус</label>
-      <select id="if-status">${['open','in_progress','resolved'].map((s) => `<option value="${s}" ${i.status === s ? 'selected' : ''}>${ISSUE_STATUS_LABEL[s]}</option>`).join('')}</select>
+      <select id="if-status">${['open','in_progress','paused','resolved'].map((s) => `<option value="${s}" ${i.status === s ? 'selected' : ''}>${ISSUE_STATUS_LABEL[s]}</option>`).join('')}</select>
     </div>
     <div class="ui-field field"><span class="ui-field-label field-label">Причастные люди</span>
       <div id="if-people-wrap">${peoplePickerHtml('Добавить человека…')}</div>
@@ -144,8 +158,7 @@ async function openIssueModal(id, opts) {
       relatedPersonIds: peoplePicker.getSelected(),
       solutionOptions,
     };
-    // Обратная ссылка на Check-in, из которого создана проблема — та же
-    // однонаправленная схема, что и sourceJournalId в journal.js.
+    // Обратная ссылка на Check-in, из которого создана проблема.
     if (!isEdit && opts.prefill?.sourceCheckinId) payload.sourceCheckinId = opts.prefill.sourceCheckinId;
     if (!payload.title) { toast('Укажите название проблемы'); return; }
     let saved;

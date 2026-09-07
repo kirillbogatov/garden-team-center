@@ -15,12 +15,6 @@ function detailPropertyHtml({ label, control, className = '' }) {
   return `<div class="task-detail-property ${escapeHtml(className)}"><span>${escapeHtml(label)}</span>${control || ''}</div>`;
 }
 
-function detailInlineInputHtml({ id, value = '', editable = true, placeholder = '', type = 'text', linked = false }) {
-  if (!editable) return `<span class="task-inline-readonly" id="${escapeHtml(id)}-readonly">${value ? renderLinkedText(value) : `<span class="muted">${escapeHtml(placeholder || '—')}</span>`}</span>`;
-  if (linked) return `<span class="task-inline-edit task-inline-edit-linked is-editable" data-linked-inline-shell="${escapeHtml(id)}"><span class="task-inline-linked-display" data-linked-inline-display="${escapeHtml(id)}" role="button" tabindex="0">${value ? renderLinkedText(value) : `<span class="muted">${escapeHtml(placeholder || '—')}</span>`}</span><input id="${escapeHtml(id)}" type="${escapeHtml(type)}" value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}" hidden /><span class="task-inline-edit-icon" aria-hidden="true">${icon('edit',11)}</span></span>`;
-  return `<span class="task-inline-edit is-editable"><input id="${escapeHtml(id)}" type="${escapeHtml(type)}" value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}" /><span class="task-inline-edit-icon" aria-hidden="true">${icon('edit',11)}</span></span>`;
-}
-
 function detailInlineSelectHtml({ id, value = '', options = [], editable = true, emptyLabel }) {
   const empty = emptyLabel !== undefined ? `<option value="">${escapeHtml(emptyLabel)}</option>` : '';
   return `<span class="task-inline-edit task-inline-select ${editable ? 'is-editable' : ''}"><select id="${escapeHtml(id)}" ${editable ? '' : 'disabled'}>${empty}${options.map((option) => {
@@ -127,6 +121,19 @@ const DetailAutosave = {
 };
 
 window.addEventListener('pagehide', () => DetailAutosave.finalizeVersionKeepalive());
+
+// Closes an "actions" dropdown menu on the next click outside it. Attaches a
+// single self-removing `document` click listener (`{ once: true }`) instead
+// of a permanent one, so opening the menu repeatedly never stacks up leaked
+// listeners — call this each time the menu opens (a fresh one-shot listener
+// is armed per open).
+function bindOutsideClickClose(insideEl, onOutsideClick) {
+  if (typeof onOutsideClick !== 'function') return;
+  document.addEventListener('click', (event) => {
+    if (insideEl && insideEl.contains(event.target)) return;
+    onOutsideClick(event);
+  }, { once: true });
+}
 
 function bindDetailCommitOnEnter(field, commit, options) {
   if (!field || typeof commit !== 'function') return () => {};

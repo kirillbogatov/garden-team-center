@@ -1,19 +1,18 @@
 'use strict';
 
+const { themeValues: THEME_VALUES, accentValues: ACCENT_VALUES, defaultAccent: DEFAULT_ACCENT, defaultTheme: DEFAULT_THEME } = require('../../public/js/domain/appearance-config');
+
 module.exports = function registerSettingsRoutes(app, deps) {
   const { db, authenticate, DATA_DIR, UPLOADS_DIR, path, isAdmin, isManager, hasPermission, denied, isDemoUser, autoArchiveCompletedTasks } = deps;
-  // Список должен совпадать с GARDEN_THEMES в public/js/lib/interactions.js.
-  const THEME_VALUES = [
-    'chernika', 'myata', 'lavanda', 'tuman',
-    'grafit', 'khvoya', 'noch',
-    'anuppuccin-latte', 'anuppuccin-mocha',
-  ];
-  // Допустимые значения акцента — должны совпадать с ACCENT_COLORS
-  // в public/js/lib/interactions.js.
-  const ACCENT_VALUES = ['rosewater', 'flamingo', 'pink', 'mauve', 'red', 'maroon', 'peach', 'yellow', 'green', 'teal', 'sky', 'lavender'];
-  const DEFAULT_ACCENT = 'green';
   const DEFAULT_USER_SETTINGS = {
-    theme: 'anuppuccin-latte', accentColor: DEFAULT_ACCENT, uiScale: 100, favoriteMenuItems: [], navSectionOverrides: {}, overviewDashboard: null, overviewNotesOpen: false, overviewNotesWidth: 300, overviewNoteOrder: [], projectNotesOpen: {}, personNotesOpen: {}, taskPriorityMode: 'balanced', notificationEvents: { task_assigned: true, project_load_changed: true, checkin_reminder: true, issue_created: true, lab_created: true },
+    theme: DEFAULT_THEME, accentColor: DEFAULT_ACCENT, glowEnabled: false, uiScale: 100, favoriteMenuItems: [], navSectionOverrides: {}, overviewDashboard: null, overviewNotesOpen: false, overviewNotesWidth: 300, overviewNoteOrder: [], projectNotesOpen: {}, personNotesOpen: {}, taskPriorityMode: 'balanced', notificationEvents: { task_assigned: true, project_load_changed: true, checkin_reminder: true, issue_created: true, lab_created: true },
+    // Что показывать на главном экране: 'widgets' — привычный набор виджетов,
+    // 'assistant' — строка ассистента («Умный поиск») во всю рабочую область.
+    overviewHomeMode: 'widgets',
+    // Ассистент: последние запросы и запомненные разрешения неоднозначных
+    // имён («маша» → id конкретного человека), см. server/domain/smart-search.js.
+    smartSearchHistory: [],
+    smartSearchPersonHints: {},
   };
   function normalizeUserSettings(value) {
     const source = value && typeof value === 'object' ? value : {};
@@ -78,10 +77,25 @@ module.exports = function registerSettingsRoutes(app, deps) {
     // другую тему и предложенном возврате к AnuPpuccin. Применяется акцент
     // только когда theme входит в ACCENT_THEMES (см. applyTheme в interactions.js).
     const accentColor = ACCENT_VALUES.includes(source.accentColor) ? source.accentColor : DEFAULT_ACCENT;
+    const glowEnabled = typeof source.glowEnabled === 'boolean'
+      ? source.glowEnabled
+      : ['grafit', 'khvoya', 'noch', 'anuppuccin-mocha'].includes(theme);
+    const overviewHomeMode = ['widgets', 'assistant'].includes(source.overviewHomeMode) ? source.overviewHomeMode : DEFAULT_USER_SETTINGS.overviewHomeMode;
+    const smartSearchHistory = Array.isArray(source.smartSearchHistory)
+      ? source.smartSearchHistory.map((item) => String(item || '').trim().slice(0, 200)).filter(Boolean).slice(0, 12)
+      : [];
+    const hintsSource = source.smartSearchPersonHints && typeof source.smartSearchPersonHints === 'object' && !Array.isArray(source.smartSearchPersonHints) ? source.smartSearchPersonHints : {};
+    const smartSearchPersonHints = {};
+    Object.entries(hintsSource).slice(0, 40).forEach(([key, value]) => {
+      const fragment = String(key || '').trim().slice(0, 80);
+      const personId = String(value || '').trim().slice(0, 120);
+      if (fragment && personId) smartSearchPersonHints[fragment] = personId;
+    });
     return {
       uiScale: scaleSteps.includes(rawUiScale) ? rawUiScale : 100,
       favoriteMenuItems, navSectionOverrides, overviewDashboard, overviewNotesOpen: !!source.overviewNotesOpen, overviewNotesWidth, overviewNoteOrder, projectNotesOpen, personNotesOpen,
-      theme, accentColor, taskPriorityMode, notificationEvents,
+      theme, accentColor, glowEnabled, taskPriorityMode, notificationEvents,
+      overviewHomeMode, smartSearchHistory, smartSearchPersonHints,
       attentionHiddenUntil,
     };
   }

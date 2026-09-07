@@ -26,7 +26,10 @@ Reusable application/UI infrastructure:
 HTTP adapters. Standard collection CRUD, comments, auth, settings, search, aggregates and photos live in independent route modules.
 
 ### `server/domain/`
-Server-side workflows that are not HTTP concerns, currently journal-derived entities and recurring meetings.
+Server-side workflows that are not HTTP concerns, including journal-derived entities, recurring meetings and smart-search digests.
+
+### Search / NLU
+`server/routes/search.js` exposes one structured `parseQuery()` result for ordinary content requests: intent, entity and domain filters. Regular search executes that plan directly, and `server/domain/smart-search.js` reuses the same parsed plan for its fallback instead of reparsing natural language. Special assistant-only create/digest intents remain in `smart-search.js` until they can be moved without changing product behavior.
 
 ### persistence
 SQLite is the source of truth. `workspace` and `relation_key` are indexed columns so common filtering does not require loading every JSON record into Node.

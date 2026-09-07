@@ -1,25 +1,11 @@
 const crypto = require('crypto');
 const db = require('./db');
+const createAuthCore = require('./auth-core');
 
-const PASSWORD_MIN_LENGTH = 8;
-
-function passwordDigest(password, salt) {
-  return crypto.scryptSync(String(password), salt, 64, { N: 16384, r: 8, p: 1 }).toString('hex');
-}
-
-function hashPassword(password) {
-  const salt = crypto.randomBytes(16).toString('hex');
-  return { salt, hash: passwordDigest(password, salt) };
-}
-
-function generatePassword() {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-  return Array.from(crypto.randomBytes(16), (b) => alphabet[b % alphabet.length]).join('');
-}
-
-function cleanUsername(value) {
-  return String(value || '').trim().toLowerCase();
-}
+// Reuses the same scrypt-based hashing (and the same password-generation
+// alphabet) as the running server, instead of keeping an independent copy
+// that could silently drift from auth-core.js.
+const { PASSWORD_MIN_LENGTH, hashPassword, generatePassword, cleanUsername } = createAuthCore({ db, crypto });
 
 try {
   const requestedUsername = cleanUsername(process.argv[2]);

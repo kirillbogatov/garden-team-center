@@ -38,7 +38,7 @@ const ALL_THEMES = [
 // совпадать с ACCENT_COLORS в public/js/lib/interactions.js. Каждый вариант
 // переопределяет только завязанные на акцент токены (см. html.theme-X.accent-Y
 // в style.css), остальные наследуются от базового блока темы.
-const ACCENT_NAMES = ['rosewater', 'flamingo', 'pink', 'mauve', 'red', 'maroon', 'peach', 'yellow', 'green', 'teal', 'sky', 'lavender'];
+const ACCENT_NAMES = ['red', 'maroon', 'peach', 'yellow', 'green', 'teal', 'sky', 'sapphire', 'blue', 'lavender', 'mauve', 'pink', 'flamingo', 'rosewater', 'slate'];
 const ACCENT_THEMES = ['anuppuccin-latte', 'anuppuccin-mocha'];
 
 function readThemeTokens(css, name) {
@@ -169,11 +169,11 @@ test('theme swatches use exact bg-base and accent tokens with a vertical 50/50 s
   }
 });
 
-test('AnuPpuccin swatches show a smooth rainbow gradient of all 12 accents, not one fixed color', () => {
+test('AnuPpuccin swatches show a smooth rainbow gradient of all accent colors, not one fixed color', () => {
   // Запрошено пользователем: свотч AnuPpuccin Latte/Mocha в списке тем не должен
   // показывать один зафиксированный акцент (было — мальва/фиолетовый) — акцент
   // у AnuPpuccin настраиваемый, и свотч должен это отражать. Правая половина —
-  // плавный градиент по всем 12 официальным акцентам Catppuccin в порядке
+  // плавный градиент по всем доступным акцентам в порядке
   // ACCENT_NAMES, тем же цветом, что и --accent конкретной связки темы+акцента
   // (html.theme-X.accent-Y в этом же style.css, см. readAccentTokens выше).
   const css = fs.readFileSync(path.join(__dirname, '..', 'public/css/style.css'), 'utf8');

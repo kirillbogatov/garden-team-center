@@ -6,48 +6,15 @@
 // иконка в сайдбаре (см. cycleTheme ниже) переключает исключительно между
 // Туман/Хвоя, а не по кругу через все темы — остальные выбираются
 // осознанно, по имени, в «Настройках».
-const GARDEN_THEMES = [
-  { value: 'chernika', label: 'Черника', mode: 'light', note: 'прохладная' },
-  { value: 'myata', label: 'Мята', mode: 'light', note: 'свежая' },
-  { value: 'lavanda', label: 'Лаванда', mode: 'light', note: 'мягкая' },
-  { value: 'tuman', label: 'Туман', mode: 'light', note: 'нейтральная' },
-  { value: 'grafit', label: 'Графит', mode: 'dark', note: 'строгая' },
-  { value: 'khvoya', label: 'Хвоя', mode: 'dark', note: 'природная' },
-  { value: 'noch', label: 'Ночь', mode: 'dark', note: 'глубокая' },
-  // Семейство AnuPpuccin: палитры Catppuccin, перенесённые в стиле темы AnuPpuccin
-  // для Obsidian — https://github.com/AnubisNekhet/AnuPpuccin (сама AnuPpuccin
-  // построена поверх Catppuccin — https://github.com/catppuccin/catppuccin).
-  { value: 'anuppuccin-latte', label: 'AnuPpuccin Latte', mode: 'light', note: 'настраиваемая' },
-  { value: 'anuppuccin-mocha', label: 'AnuPpuccin Mocha', mode: 'dark', note: 'настраиваемая' },
-];
-const THEME_VALUES = GARDEN_THEMES.map((t) => t.value);
-
-// Темы с настраиваемым акцентным цветом (см. ACCENT_COLORS ниже) — сейчас это
-// только семейство AnuPpuccin. Значения должны совпадать с ACCENT_THEMES в
-// public/index.html (анти-FOUC скрипт) и с server/routes/settings.js.
-const ACCENT_THEMES = new Set(['anuppuccin-latte', 'anuppuccin-mocha']);
-
-// 12 официальных акцентов Catppuccin (https://github.com/catppuccin/catppuccin),
-// доступных независимо от базовой палитры темы. latte/mocha — цвет свотча для
-// светлого/тёмного варианта AnuPpuccin соответственно (см. CSS-переопределения
-// html.theme-anuppuccin-<flavor>.accent-<name> в style.css).
-const ACCENT_COLORS = [
-  { value: 'rosewater', label: 'Розовая вода', latte: '#DC8A78', mocha: '#F5E0DC' },
-  { value: 'flamingo', label: 'Фламинго', latte: '#DD7878', mocha: '#F2CDCD' },
-  { value: 'pink', label: 'Розовый', latte: '#EA76CB', mocha: '#F5C2E7' },
-  { value: 'mauve', label: 'Мальва', latte: '#8839EF', mocha: '#CBA6F7' },
-  { value: 'red', label: 'Красный', latte: '#D20F39', mocha: '#F38BA8' },
-  { value: 'maroon', label: 'Бордовый', latte: '#E64553', mocha: '#EBA0AC' },
-  { value: 'peach', label: 'Персиковый', latte: '#FE640B', mocha: '#FAB387' },
-  { value: 'yellow', label: 'Жёлтый', latte: '#DF8E1D', mocha: '#F9E2AF' },
-  { value: 'green', label: 'Зелёный', latte: '#40A02B', mocha: '#A6E3A1' },
-  { value: 'teal', label: 'Бирюзовый', latte: '#179299', mocha: '#94E2D5' },
-  { value: 'sky', label: 'Небесный', latte: '#04A5E5', mocha: '#89DCEB' },
-  { value: 'lavender', label: 'Лавандовый', latte: '#7287FD', mocha: '#B4BEFE' },
-];
-const ACCENT_VALUES = ACCENT_COLORS.map((a) => a.value);
-// Зелёный — акцент по умолчанию для AnuPpuccin Latte/Mocha у новых пользователей.
-const DEFAULT_ACCENT = 'green';
+const {
+  themes: GARDEN_THEMES,
+  themeValues: THEME_VALUES,
+  accentThemes: GARDEN_ACCENT_THEMES,
+  accents: ACCENT_COLORS,
+  accentValues: ACCENT_VALUES,
+  defaultAccent: DEFAULT_ACCENT,
+} = GardenAppearance;
+const ACCENT_THEMES = new Set(GARDEN_ACCENT_THEMES);
 
 function themeMeta(value) {
   return GARDEN_THEMES.find((t) => t.value === value) || GARDEN_THEMES[0];
@@ -77,6 +44,14 @@ function applyAccent(accent, options = {}) {
   const value = ACCENT_VALUES.includes(accent) ? accent : DEFAULT_ACCENT;
   root.classList.add(`accent-${value}`);
   if (options.persistLocal !== false) { try { localStorage.setItem('garden-accent', value); } catch (e) {} }
+}
+
+function applyGlow(enabled, options = {}) {
+  const value = !!enabled;
+  document.documentElement.classList.toggle('glow-enabled', value);
+  if (options.persistLocal !== false) {
+    try { localStorage.setItem('garden-glow', value ? '1' : '0'); } catch (e) {}
+  }
 }
 
 function applyTheme(theme, options = {}) {
@@ -161,7 +136,8 @@ function searchSectionRoute(query) {
     .replace(/\s+/g, ' ');
   const wrappers = [
     'покажи мне ', 'покажи ', 'показать ', 'найди мне ', 'найди ', 'найти ', 'открой мне ', 'открой ', 'открыть ',
-    'перейди в ', 'перейти в ', 'хочу открыть ', 'хочу посмотреть ', 'где ',
+    'перейди в ', 'перейди на ', 'перейти в ', 'перейти на ', 'переключись на ', 'зайди в ', 'зайти в ',
+    'запусти ', 'отправься в ', 'перейди к ', 'проведи к ', 'покажи раздел ', 'хочу открыть ', 'хочу посмотреть ', 'где ',
   ];
   for (const prefix of wrappers) {
     if (normalized.startsWith(prefix)) { normalized = normalized.slice(prefix.length).trim(); break; }
@@ -188,23 +164,46 @@ function openPalette() {
   const input = document.getElementById('palette-input');
   input.focus();
   renderPaletteQuickActions();
+  let suggestionRequest = 0;
   const fetchPaletteResults = debounce(async () => {
     const query = input.value.trim();
     if (!query) return;
     const data = await api.get('/api/search?q=' + encodeURIComponent(query));
-    // Не подменяем результаты, если пользователь уже успел изменить запрос.
+    // Не подменяем подсказки/результаты, если пользователь уже успел изменить запрос.
     if (input.value.trim() === query) renderPaletteResults(data);
   }, 180);
-  input.addEventListener('input', () => {
-    paletteState.query = input.value.trim();
-    if (!paletteState.query) { renderPaletteQuickActions(); return; }
-    // Сразу снимаем выбор: Enter уже сейчас должен открыть все результаты,
-    // даже если сетевой поиск ещё не успел завершиться.
+
+  const updatePaletteForInput = async () => {
+    const query = input.value;
+    const trimmed = query.trim();
+    paletteState.query = trimmed;
+    const request = ++suggestionRequest;
+    if (!trimmed) { renderPaletteQuickActions(); return; }
+
     paletteState.searchMode = true;
     paletteState.activeIndex = -1;
+    try {
+      await FeatureLoader.load('smart-search');
+      const suggestions = await FeatureLoader.run('smartSearchSuggestions', query);
+      if (request !== suggestionRequest || input.value !== query) return;
+      if (suggestions?.length) {
+        renderPaletteSuggestions(suggestions);
+        return;
+      }
+    } catch (error) {
+      console.error(error);
+    }
+
+    // Незавершённые команды Ассистента не превращаем в обычный полнотекстовый поиск.
+    if (paletteUsesAssistantCommand(trimmed)) {
+      renderPaletteCommandContinuation();
+      return;
+    }
     markActivePaletteItem();
     fetchPaletteResults();
-  });
+  };
+
+  input.addEventListener('input', updatePaletteForInput);
 }
 
 function closePalette() {
@@ -212,35 +211,125 @@ function closePalette() {
   document.removeEventListener('keydown', paletteKeyHandler);
 }
 
+function paletteInsertCommand(value) {
+  const input = document.getElementById('palette-input');
+  if (!input) return false;
+  input.value = value;
+  paletteState.query = value.trim();
+  paletteState.searchMode = true;
+  paletteState.activeIndex = -1;
+  input.focus();
+  input.setSelectionRange(value.length, value.length);
+  // input.value меняется программно, поэтому явно запускаем ту же цепочку подсказок.
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  return false;
+}
+
+function paletteUsesAssistantCommand(query) {
+  const value = String(query || '').trim().toLowerCase().replace(/ё/g, 'е');
+  return /^(создай|создать|открой|открыть|покажи мои|покажи все мои|запиши в журнал|записать в журнал)(?:\s|:|$)/.test(value);
+}
+
+function paletteHasShowIntent(query) {
+  const value = String(query || '').trim().toLowerCase().replace(/ё/g, 'е');
+  return /^(покажи|показать|найди|найти|выведи|отобрази|перечисли|подбери|отфильтруй|поищи|отыщи|дай список|список)(?:\s|$)/.test(value);
+}
+
+async function runPaletteShowQuery(query) {
+  const data = await api.get('/api/search?q=' + encodeURIComponent(query));
+  // Семантический parser вернул конкретный тип контента — значит показываем
+  // отфильтрованную выдачу прямо в палитре и не закрываем её.
+  if (data?.command?.group) {
+    renderPaletteResults(data);
+    return true;
+  }
+  return false;
+}
+
+function renderPaletteSuggestions(suggestions) {
+  const items = (suggestions || []).slice(0, 6);
+  paletteState.searchMode = true;
+  paletteState.activeIndex = items.length ? 0 : -1;
+  paletteState.flatItems = items.map((item) => () => {
+    const input = document.getElementById('palette-input');
+    if (!input) return false;
+    input.value = item.insert || item.label || '';
+    paletteState.query = input.value.trim();
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    if (item.submit) {
+      const query = input.value;
+      if (paletteHasShowIntent(query)) {
+        paletteState.activeIndex = -1;
+        runPaletteShowQuery(query).then((handled) => {
+          if (!handled) {
+            closePalette();
+            return runPaletteAssistantCommand(query);
+          }
+          return null;
+        }).catch((error) => {
+          console.error(error);
+          toast?.('Не удалось выполнить поиск');
+        });
+        return false;
+      }
+      closePalette();
+      runPaletteAssistantCommand(query).catch((error) => {
+        console.error(error);
+        toast?.('Не удалось выполнить команду');
+      });
+      return false;
+    }
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    return false;
+  });
+
+  document.getElementById('palette-results').innerHTML = `
+    <div class="palette-group-title">Предложения</div>
+    ${items.map((item, idx) => `<div class="palette-item ${idx === 0 ? 'active' : ''}" data-idx="${idx}" data-palette-index="${idx}">
+      ${item.person ? avatarHtml(item.person) : icon(item.icon || 'search')}
+      <span>${escapeHtml(item.label || '')}</span>
+      ${item.hint ? `<span class="pi-sub">${escapeHtml(item.hint)}</span>` : ''}
+    </div>`).join('')}
+  `;
+}
+
+function renderPaletteCommandContinuation() {
+  paletteState.flatItems = [];
+  paletteState.activeIndex = -1;
+  document.getElementById('palette-results').innerHTML = '<div class="palette-empty">Продолжите запрос или нажмите Enter</div>';
+}
+
+async function runPaletteAssistantCommand(query) {
+  await FeatureLoader.load('smart-search');
+  await FeatureLoader.run('smartSearchAsk', query);
+}
+
 function renderPaletteQuickActions() {
   paletteState.searchMode = false;
-  const actions = [
-    { label: 'Новая задача', icon: 'tasks', run: () => FeatureLoader.run('openTaskModal') },
-    { label: 'Новая встреча', icon: 'meetings', run: () => FeatureLoader.run('openMeetingModal') },
-    { label: 'Новая запись в журнал', icon: 'journal', run: () => Router.go('/journal') },
+  const commands = [
+    { label: 'Создай…', value: 'Создай ', icon: 'plus' },
+    { label: 'Открой…', value: 'Открой ', icon: 'folder' },
+    { label: 'Покажи мои…', value: 'Покажи мои ', icon: 'search' },
+    { label: 'Запиши в журнал', value: 'Запиши в журнал: ', icon: 'journal' },
   ];
   const help = [
     { label: 'Горячие клавиши', icon: 'help', run: () => openShortcutsHelp() },
   ];
-  const transitions = [
-    { label: 'Мои задачи', icon: 'tasks', run: () => Router.go('/tasks?mine=1') },
-    { label: 'Мои идеи', icon: 'journal', run: () => Router.go('/journal?kind=idea') },
-    { label: 'Мои проблемы', icon: 'issues', run: () => Router.go('/issues?mine=1') },
-    { label: 'Мои договорённости', icon: 'agreements', run: () => Router.go('/agreements?mine=1') },
+  const allItems = [...commands, ...help];
+  paletteState.flatItems = [
+    ...commands.map((item) => () => paletteInsertCommand(item.value)),
+    ...help.map((item) => () => setTimeout(item.run, 0)),
   ];
-  const allItems = [...actions, ...transitions, ...help];
-  paletteState.flatItems = allItems.map((a) => () => setTimeout(a.run, 0));
-  const renderItems = (items, offset) => items.map((a, i) => {
+  const renderItems = (items, offset) => items.map((item, i) => {
     const idx = offset + i;
-    return `<div class="palette-item ${idx === 0 ? 'active' : ''}" data-idx="${idx}" data-palette-index="${idx}">${icon(a.icon)}<span>${a.label}</span></div>`;
+    return `<div class="palette-item ${idx === 0 ? 'active' : ''}" data-idx="${idx}" data-palette-index="${idx}">${icon(item.icon)}<span>${item.label}</span></div>`;
   }).join('');
   document.getElementById('palette-results').innerHTML = `
-    <div class="palette-group-title">Быстрые действия</div>
-    ${renderItems(actions, 0)}
-    <div class="palette-group-title">Быстрые переходы</div>
-    ${renderItems(transitions, actions.length)}
+    <div class="palette-group-title">Команды</div>
+    ${renderItems(commands, 0)}
     <div class="palette-group-title">Помощь</div>
-    ${renderItems(help, actions.length + transitions.length)}
+    ${renderItems(help, commands.length)}
   `;
   paletteState.activeIndex = 0;
 }
@@ -287,6 +376,9 @@ function renderPaletteResults(data) {
 
   const agrItems = groups.agreements.map((a) => ({ ...a, _go: () => FeatureLoader.run('openAgreementModal', a.id) }));
   html += section('Договорённости', agrItems, (a) => `${icon('agreements')}<span>${previewText(a.text, 60)}</span>`);
+
+  const linkItems = (groups.links || []).map((d) => ({ ...d, _go: () => window.open(d.url, '_blank', 'noopener') }));
+  html += section('Ссылки и материалы', linkItems, (d) => `${icon('documents')}<span>${escapeHtml(d.title || d.url)}</span><span class="pi-sub">${escapeHtml(d.sourceTitle || '')}</span>`);
 
   const docItems = groups.documents.map((d) => ({ ...d, _go: () => window.open(d.url, '_blank') }));
   html += section('Документы', docItems, (d) => `${icon('documents')}<span>${escapeHtml(d.title)}</span>`);
@@ -348,8 +440,8 @@ document.addEventListener('click', (event) => {
   const action = paletteState.flatItems[index];
   if (typeof action !== 'function') return;
   event.preventDefault();
-  action();
-  closePalette();
+  const result = action();
+  if (result !== false) closePalette();
 });
 
 function paletteKeyHandler(e) {
@@ -371,13 +463,37 @@ function paletteKeyHandler(e) {
     e.preventDefault();
     // Точное название раздела без уточнений сразу открывает этот раздел.
     if (paletteState.searchMode && paletteState.activeIndex < 0 && paletteState.query) {
+      if (paletteHasShowIntent(paletteState.query)) {
+        const query = paletteState.query;
+        runPaletteShowQuery(query).then((handled) => {
+          if (handled) return;
+          closePalette();
+          return runPaletteAssistantCommand(query);
+        }).catch((error) => {
+          console.error(error);
+          toast?.('Не удалось выполнить поиск');
+        });
+        return;
+      }
+      if (paletteUsesAssistantCommand(paletteState.query)) {
+        const query = paletteState.query;
+        closePalette();
+        runPaletteAssistantCommand(query).catch((error) => {
+          console.error(error);
+          toast?.('Не удалось выполнить команду');
+        });
+        return;
+      }
       const sectionRoute = searchSectionRoute(paletteState.query);
       if (sectionRoute) Router.go(sectionRoute);
       else Router.go('/search?q=' + encodeURIComponent(paletteState.query));
       closePalette();
       return;
     }
-    if (items[paletteState.activeIndex]) { items[paletteState.activeIndex](); closePalette(); }
+    if (items[paletteState.activeIndex]) {
+      const result = items[paletteState.activeIndex]();
+      if (result !== false) closePalette();
+    }
   }
 }
 
@@ -389,7 +505,6 @@ function shortcutModifierLabel() {
 }
 
 const GARDEN_GO_SHORTCUTS = [
-  { code: 'KeyF', path: '/overview', label: 'Обзор' },
   { code: 'KeyJ', path: '/journal', label: 'Журнал' },
   { code: 'KeyT', path: '/team', label: 'Команда' },
   { code: 'KeyM', path: '/meetings', label: 'Встречи' },
@@ -401,11 +516,23 @@ const GARDEN_GO_SHORTCUTS = [
   { code: 'KeyD', path: '/agreements', label: 'Договорённости' },
   { code: 'KeyL', path: '/labs', label: 'The Labs' },
   { code: 'KeyB', path: '/knowledge-base', label: 'База знаний' },
-  { code: 'KeyO', path: '/knowledge-base', label: 'База знаний' },
   { code: 'KeyU', path: '/tools', label: 'Инструменты' },
   { code: 'KeyR', path: '/processes', label: 'Процессы' },
   { code: 'KeyS', path: '/settings', label: 'Настройки' },
 ];
+
+function homeGoShortcut() {
+  const assistant = GardenSettings.value?.overviewHomeMode === 'assistant';
+  return {
+    code: assistant ? 'KeyA' : 'KeyO',
+    path: '/overview',
+    label: assistant ? 'Ассистент' : 'Обзор',
+  };
+}
+
+function gardenGoShortcuts() {
+  return [homeGoShortcut(), ...GARDEN_GO_SHORTCUTS];
+}
 
 function isEditableTarget(node) {
   if (!node) return false;
@@ -440,7 +567,7 @@ function openShortcutsHelp() {
     ['Список горячих клавиш', ['?']],
     ['Закрыть диалог или меню', ['Esc']],
   ];
-  const goRows = GARDEN_GO_SHORTCUTS.map((item) => [item.label, ['G', item.code.replace('Key', '')]]);
+  const goRows = gardenGoShortcuts().map((item) => [item.label, ['G', item.code.replace('Key', '')]]);
   const render = (list, separator = 'или') => list.map(([label, keys]) => `<div class="shortcut-row"><span>${escapeHtml(label)}</span><span class="shortcut-keys">${keys.map((k) => `<kbd>${escapeHtml(k)}</kbd>`).join(`<span class="shortcut-or">${escapeHtml(separator)}</span>`)}</span></div>`).join('');
   Modal.open(`<h2>Горячие клавиши</h2>
     <div class="shortcut-group">
@@ -471,7 +598,7 @@ document.addEventListener('keydown', (e) => {
 
   // Второй шаг последовательности «G, затем буква».
   if (_goSequenceUntil > Date.now()) {
-    const target = GARDEN_GO_SHORTCUTS.find((item) => item.code === e.code);
+    const target = gardenGoShortcuts().find((item) => item.code === e.code);
     _goSequenceUntil = 0;
     if (target) { e.preventDefault(); Router.go(target.path); return; }
   }

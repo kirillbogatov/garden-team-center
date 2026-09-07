@@ -20,6 +20,11 @@ function resetActionRegistry() {
 }
 
 document.addEventListener('click', (event) => {
+  // Вложенный самостоятельный контрол (чекбокс, ссылка), помеченный
+  // data-stop-propagation, не должен активировать data-action-id родительской
+  // строки — иначе, например, клик по чекбоксу «выполнено» у договорённости
+  // одновременно открывает карточку договорённости.
+  if (event.target.closest?.('[data-stop-propagation]')) return;
   const target = event.target.closest?.('[data-action-id]');
   if (!target) return;
   if (target.dataset.actionStop === '1') event.stopPropagation();
@@ -27,6 +32,7 @@ document.addEventListener('click', (event) => {
 });
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Enter' && event.key !== ' ') return;
+  if (event.target.closest?.('[data-stop-propagation]')) return;
   const target = event.target.closest?.('[data-action-id][role="button"], [data-action-id][role="link"]');
   if (!target) return;
   event.preventDefault();
@@ -122,32 +128,124 @@ function severityBadge(severity) {
 const ISSUE_STATUS_SYMBOL = {
   open: '',
   in_progress: '◐',
+  paused: 'Ⅱ',
   resolved: '✓',
 };
 const ISSUE_STATUS_ICON_CLASS = {
   open: 'todo',
   in_progress: 'in_progress',
+  paused: 'paused',
   resolved: 'done',
 };
 
-// Статус проблемы показываем теми же иконками, что и в задачах: новая, в работе, решена.
-function issueStatusBadge(status, issueId) {
+// Статус проблемы показываем теми же иконками, что и в задачах: новая, в работе, отложена, решена.
+function issueStatusBadge(status, issueId, { withTitle = true } = {}) {
   const label = ISSUE_STATUS_LABEL[status] || status || 'Статус';
   const iconClass = ISSUE_STATUS_ICON_CLASS[status] || 'todo';
   const symbol = ISSUE_STATUS_SYMBOL[status] ?? '';
   if (!issueId) {
-    return `<span class="task-status-icon task-status-${escapeHtml(iconClass)} issue-status-icon" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">${symbol}</span>`;
+    return `<span class="task-status-icon task-status-${escapeHtml(iconClass)} issue-status-icon" aria-label="${escapeHtml(label)}"${withTitle ? ` title="${escapeHtml(label)}"` : ''}>${symbol}</span>`;
   }
   const actionIdx = registerAction((event) => openIssueStatusMenu(event, issueId, status));
-  return `<span class="task-status-icon task-status-${escapeHtml(iconClass)} issue-status-icon task-status-interactive" aria-label="Изменить статус: ${escapeHtml(label)}" title="${escapeHtml(label)}" role="button" tabindex="0" data-action-id="${actionIdx}" data-action-stop="1">${symbol}</span>`;
+  return `<span class="task-status-icon task-status-${escapeHtml(iconClass)} issue-status-icon task-status-interactive" aria-label="Изменить статус: ${escapeHtml(label)}"${withTitle ? ` title="${escapeHtml(label)}"` : ''} role="button" tabindex="0" data-action-id="${actionIdx}" data-action-stop="1">${symbol}</span>`;
 }
 
-function openIssueStatusMenu(event, issueId, currentStatus) {
+
+// В карточках ассистента договорённости тоже показывают редактируемый статус,
+// поэтому используем тот же компактный паттерн выпадающего меню, что у задач/проблем.
+function agreementStatusBadge(status, agreementId, { withLabel = false, withTitle = true, onChanged = null } = {}) {
+  const value = status === 'done' ? 'done' : 'open';
+  const label = AGREEMENT_STATUS_LABEL[value] || value;
+  const symbol = value === 'done' ? '✓' : '';
+  const iconClass = value === 'done' ? 'done' : 'todo';
+  const inner = `<span class="task-status-icon task-status-${iconClass}" aria-hidden="true">${symbol}</span>${withLabel ? `<span class="smart-status-label">${escapeHtml(label)}</span>` : ''}`;
+  if (!agreementId) return `<span class="smart-status-control"${withTitle ? ` title="${escapeHtml(label)}"` : ''}>${inner}</span>`;
+  const agreement = (store.agreements || []).find((item) => item.id === agreementId);
+  if (window.Auth && agreement && !Auth.canEditItem('agreements', agreement, ['withPersonIds'])) {
+    return `<span class="smart-status-control"${withTitle ? ` title="${escapeHtml(label)}"` : ''}>${inner}</span>`;
+  }
+  const actionIdx = registerAction((event) => openAgreementStatusMenu(event, agreementId, value, onChanged));
+  return `<span class="smart-status-control task-status-interactive" role="button" tabindex="0" aria-label="Изменить статус: ${escapeHtml(label)}"${withTitle ? ` title="${escapeHtml(label)}"` : ''} data-action-id="${actionIdx}" data-action-stop="1">${inner}</span>`;
+}
+
+function openAgreementStatusMenu(event, agreementId, currentStatus, onChanged = null) {
   closeTaskStatusMenu();
-  const anchor = event?.currentTarget || event?.target;
+  const eventTarget = event?.target;
+  const anchor = eventTarget?.closest?.('.smart-status-control') || null;
+  if (!anchor || !agreementId) return;
+
+  const order = ['open', 'done'];
+  const menu = document.createElement('div');
+  menu.className = 'task-status-menu agreement-status-menu';
+  menu.setAttribute('role', 'menu');
+  menu.innerHTML = order.map((status) => {
+    const label = AGREEMENT_STATUS_LABEL[status] || status;
+    const symbol = status === 'done' ? '✓' : '';
+    const iconClass = status === 'done' ? 'done' : 'todo';
+    return `<button type="button" class="task-status-menu-item ${status === currentStatus ? 'active' : ''}" role="menuitemradio" aria-checked="${status === currentStatus ? 'true' : 'false'}" data-status="${status}">
+      <span class="task-status-icon task-status-${iconClass}" aria-hidden="true">${symbol}</span>
+      <span class="task-status-menu-label">${escapeHtml(label)}</span>
+      ${status === currentStatus ? `<span class="task-status-menu-check">✓</span>` : ''}
+    </button>`;
+  }).join('');
+  document.body.appendChild(menu);
+  _taskStatusMenu = menu;
+
+  const rect = anchor.getBoundingClientRect();
+  const menuRect = menu.getBoundingClientRect();
+  const gap = 7;
+  let left = rect.left;
+  let top = rect.bottom + gap;
+  if (left + menuRect.width > window.innerWidth - 10) left = window.innerWidth - menuRect.width - 10;
+  if (top + menuRect.height > window.innerHeight - 10) top = Math.max(10, rect.top - menuRect.height - gap);
+  menu.style.left = `${Math.max(10, left)}px`;
+  menu.style.top = `${Math.max(10, top)}px`;
+
+  menu.querySelectorAll('.task-status-menu-item').forEach((item) => {
+    item.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const newStatus = item.dataset.status;
+      if (!newStatus || newStatus === currentStatus) { closeTaskStatusMenu(); return; }
+      menu.classList.add('is-saving');
+      try {
+        await Resources.agreements.update(agreementId, { status: newStatus });
+        closeTaskStatusMenu();
+        toast(`Статус: ${AGREEMENT_STATUS_LABEL[newStatus]}`);
+        await store.loadAll();
+        if (onChanged) await onChanged(newStatus);
+        else await Router.render();
+      } catch (err) {
+        console.error(err);
+        menu.classList.remove('is-saving');
+        toast('Не удалось изменить статус');
+      }
+    });
+  });
+
+  _taskStatusMenuOutsideHandler = (e) => {
+    if (!_taskStatusMenu?.contains(e.target) && e.target !== anchor) closeTaskStatusMenu();
+  };
+  _taskStatusMenuKeyHandler = (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); closeTaskStatusMenu(); anchor.focus?.(); }
+  };
+  setTimeout(() => document.addEventListener('mousedown', _taskStatusMenuOutsideHandler, true), 0);
+  document.addEventListener('keydown', _taskStatusMenuKeyHandler, true);
+  menu.querySelector('.task-status-menu-item.active')?.focus();
+}
+
+function openIssueStatusMenu(event, issueId, currentStatus, onChanged = null) {
+  closeTaskStatusMenu();
+  // event.currentTarget here is document (this runs from the delegated
+  // document click listener in entity-ui.js), not the clicked icon — the
+  // same bug that openTaskStatusMenu/openLabStatusMenu avoid by reading
+  // event.target instead. Using currentTarget crashed on
+  // document.getBoundingClientRect() before the menu items got their click
+  // handlers attached, which is why clicking a problem's status never worked.
+  const eventTarget = event?.target;
+  const anchor = eventTarget?.closest?.('.task-status-interactive') || null;
   if (!anchor || !issueId) return;
 
-  const order = ['open', 'in_progress', 'resolved'];
+  const order = ['open', 'in_progress', 'paused', 'resolved'];
   const menu = document.createElement('div');
   menu.className = 'task-status-menu issue-status-menu';
   menu.setAttribute('role', 'menu');
@@ -185,7 +283,8 @@ function openIssueStatusMenu(event, issueId, currentStatus) {
         closeTaskStatusMenu();
         toast(`Статус: ${ISSUE_STATUS_LABEL[newStatus]}`);
         await store.loadAll();
-        await Router.render();
+        if (onChanged) await onChanged(newStatus);
+        else await Router.render();
       } catch (err) {
         console.error(err);
         menu.classList.remove('is-saving');
@@ -205,7 +304,6 @@ function openIssueStatusMenu(event, issueId, currentStatus) {
   menu.querySelector('.task-status-menu-item.active')?.focus();
 }
 
-const TASK_STATUS_ORDER = ['todo', 'in_progress', 'in_review', 'paused', 'blocked', 'done'];
 const TASK_STATUS_SYMBOL = {
   todo: '',
   in_progress: '◐',
@@ -242,7 +340,7 @@ function closeTaskStatusMenu() {
   _taskStatusMenuKeyHandler = null;
 }
 
-function openTaskStatusMenu(event, taskId, currentStatus) {
+function openTaskStatusMenu(event, taskId, currentStatus, onChanged = null) {
   closeTaskStatusMenu();
   const eventTarget = event?.target;
   const anchor = eventTarget?.closest?.('.task-status-interactive') || (eventTarget?.classList?.contains('task-status-icon') ? eventTarget : null);
@@ -285,7 +383,8 @@ function openTaskStatusMenu(event, taskId, currentStatus) {
         closeTaskStatusMenu();
         toast(`Статус: ${TASK_STATUS_LABEL[newStatus]}`);
         await store.loadAll();
-        await Router.render();
+        if (onChanged) await onChanged(newStatus);
+        else await Router.render();
       } catch (err) {
         console.error(err);
         menu.classList.remove('is-saving');

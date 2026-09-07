@@ -129,8 +129,11 @@ function initPeoplePicker(container, list, selectedIds, opts) {
     const availableBelow = window.innerHeight - rect.bottom - 12;
     const estimatedHeight = Math.min(260, 34 + candidates.length * 42);
     const openAbove = availableBelow < Math.min(180, estimatedHeight) && rect.top > availableBelow;
-    menuEl.style.left = `${Math.round(rect.left)}px`;
-    menuEl.style.width = `${Math.round(rect.width)}px`;
+    const requestedWidth = Math.max(rect.width, Number(opts.menuMinWidth || 0));
+    const menuWidth = Math.min(requestedWidth, Math.max(180, window.innerWidth - 16));
+    const menuLeft = Math.max(8, Math.min(rect.left, window.innerWidth - menuWidth - 8));
+    menuEl.style.left = `${Math.round(menuLeft)}px`;
+    menuEl.style.width = `${Math.round(menuWidth)}px`;
     menuEl.style.top = openAbove
       ? `${Math.max(8, Math.round(rect.top - estimatedHeight - 5))}px`
       : `${Math.round(rect.bottom + 5)}px`;
@@ -161,7 +164,8 @@ function initPeoplePicker(container, list, selectedIds, opts) {
     closeMenu();
     if (!candidates.length || document.activeElement !== inputEl) return;
     const query = inputEl.value.trim();
-    menuEl = el(`<div class="pp-menu pp-menu-portal"><div class="pp-menu-label">Подсказки</div></div>`);
+    const menuClass = String(opts.menuClass || '').trim();
+    menuEl = el(`<div class="pp-menu pp-menu-portal ${escapeHtml(menuClass)}"><div class="pp-menu-label">Подсказки</div></div>`);
     candidates.forEach((p, i) => {
       const nameHtml = highlightPersonMatch(p.name, query);
       const leading = p._selectAll ? `<span class="pp-all-mark">${icon('people', 14)}</span>` : avatarHtml(p);

@@ -1,7 +1,7 @@
 // Domain/service facade. Views use semantic resource objects rather than URLs.
 const Resources = Object.fromEntries([
   'tasks','labs','projects','goals','issues','meetings','people','agreements','journal',
-  'documents','tools','processes','vacations','kbFolders','kbDocs','docFolders','toolFolders','checkins'
+  'documents','tools','processes','vacations','kbFolders','kbDocs','docFolders','toolFolders','checkins','technologyEvents'
 ].map((name) => [name, api.resource(`/api/${name}`)]));
 
 const Comments = {

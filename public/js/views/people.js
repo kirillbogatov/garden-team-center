@@ -17,7 +17,7 @@ function renderPeopleList(type, title, emptyHint) {
   setTopbar(`<h1>${title}</h1>${(Auth.canManage('people') || (Auth.isTeamlead() && type === 'team')) ? `<div class="actions"><button class="ui-button ui-button--primary btn btn-primary" data-command="openPersonModal" data-command-arg="${type}">${type === 'team' ? '+ Добавить сотрудника' : '+ Добавить стейкхолдера'}</button></div>` : ''}`);
   const view = document.getElementById('view');
 
-  const teamFilter = type === 'team' ? `<div class="team-list-toolbar"><label class="team-active-toggle"><input type="checkbox" id="team-only-active" ${Views._teamOnlyActive ? 'checked' : ''} /><span>Только активные</span></label></div>` : '';
+  const teamFilter = type === 'team' ? `<div class="work-list-toolbar team-list-toolbar"><label class="team-active-toggle"><input type="checkbox" id="team-only-active" ${Views._teamOnlyActive ? 'checked' : ''} /><span>Только активные</span></label></div>` : '';
   const bindTeamFilter = () => {
     if (type !== 'team') return;
     document.getElementById('team-only-active')?.addEventListener('change', (event) => {
@@ -373,7 +373,7 @@ Views.personDetail = async function (id) {
 
   const [personNotes, settings] = p.type === 'team'
     ? await Promise.all([
-        api.get(`/api/comments/person/${encodeURIComponent(p.id)}`).catch(() => []),
+        Comments.list('person', p.id).catch(() => []),
         GardenSettings.load(),
       ])
     : [[], await GardenSettings.load()];
@@ -404,13 +404,14 @@ Views.personDetail = async function (id) {
     .slice()
     .sort((a, b) => TASK_STATUS_ORDER.indexOf(a.status) - TASK_STATUS_ORDER.indexOf(b.status));
 
-  const journalRegular = data.journal.filter((entry) => entry.kind !== 'problem' && entry.kind !== 'agreement');
-  const journalTotal = journalRegular.length + data.issues.length + data.agreements.length;
+  const journalRegular = data.journal.filter((entry) => !entry.kind || entry.kind === 'note');
   const developmentCount = data.tasks.filter((t) => t.taskType === 'development').length + data.labs.filter((lab) => lab.entityType !== 'idea').length;
   const tabs = [
     { key: 'tasks', label: 'Задачи' },
     ...(p.type === 'team' ? [{ key: 'development', label: 'Развитие' }] : []),
     { key: 'meetings', label: 'Встречи' },
+    { key: 'issues', label: 'Проблемы' },
+    { key: 'agreements', label: 'Договорённости' },
     { key: 'journal', label: 'Журнал' },
     ...(p.type === 'team' ? [{ key: 'load', label: 'Загрузка' }] : []),
   ];
@@ -451,50 +452,24 @@ Views.personDetail = async function (id) {
           }).join('')
         : emptyState('Встреч ещё не было', '', 'meetings');
     }
+    if (key === 'issues') {
+      return data.issues.length ? data.issues.map((issue) => {
+        const idx = registerAction(() => FeatureLoader.run('openIssueModal', issue.id));
+        return `<div class="ui-row list-row" data-action-id="${idx}">
+          ${issueStatusBadge(issue.status, issue.id)}<span class="title">${escapeHtml(issue.title)}</span>${severityBadge(issue.severity)}
+        </div>`;
+      }).join('') : emptyState('Проблем нет', '', 'issues');
+    }
+    if (key === 'agreements') {
+      return data.agreements.length ? data.agreements.map((agreement) => {
+        const idx = registerAction(() => FeatureLoader.run('openAgreementModal', agreement.id));
+        return `<div class="ui-row list-row" data-action-id="${idx}">
+          <span class="title">${renderMentionText(agreement.text)}</span><span class="meta">${fmtDate(agreement.date)}</span>
+        </div>`;
+      }).join('') : emptyState('Договорённостей нет', '', 'agreements');
+    }
     if (key === 'journal') {
-      const filterDefs = [
-        { key: 'all', label: 'Все', count: journalTotal },
-        { key: 'entries', label: 'Записи', count: journalRegular.length },
-        { key: 'issues', label: 'Проблемы', count: data.issues.length },
-        { key: 'agreements', label: 'Договорённости', count: data.agreements.length },
-      ];
-      if (!filterDefs.some((filter) => filter.key === Views._personJournalFilter)) Views._personJournalFilter = 'all';
-      const rows = [];
-      if (Views._personJournalFilter === 'all' || Views._personJournalFilter === 'entries') {
-        journalRegular.forEach((entry) => rows.push({
-          date: entry.createdAt || '',
-          html: journalEntryHtml(entry),
-        }));
-      }
-      if (Views._personJournalFilter === 'all' || Views._personJournalFilter === 'issues') {
-        data.issues.forEach((issue) => {
-          const idx = registerAction(() => FeatureLoader.run('openIssueModal', issue.id));
-          rows.push({
-            date: issue.createdAt || issue.updatedAt || '',
-            html: `<div class="ui-row list-row" data-action-id="${idx}">
-              ${issueStatusBadge(issue.status, issue.id)}<span class="title">${escapeHtml(issue.title)}</span>${severityBadge(issue.severity)}
-            </div>`,
-          });
-        });
-      }
-      if (Views._personJournalFilter === 'all' || Views._personJournalFilter === 'agreements') {
-        data.agreements.forEach((agreement) => {
-          const idx = registerAction(() => FeatureLoader.run('openAgreementModal', agreement.id));
-          rows.push({
-            date: agreement.createdAt || agreement.date || '',
-            html: `<div class="journal-entry clickable" data-action-id="${idx}">
-              <div class="je-head"><span class="ui-tag badge" style="--ui-tag-dot:${agreement.status === 'done' ? 'var(--green)' : 'var(--text-tertiary)'}">${agreement.status === 'done' ? 'Выполнено' : 'В работе'}</span>
-              <span class="tiny">${fmtDate(agreement.date)}</span></div>
-              <div class="je-text">${renderMentionText(agreement.text)}</div>
-            </div>`,
-          });
-        });
-      }
-      rows.sort((a, b) => String(b.date).localeCompare(String(a.date)));
-      return `<div class="ui-segmented person-journal-filters person-journal-switch" role="tablist" aria-label="Тип записей журнала">
-        ${filterDefs.map((filter) => `<button type="button" class="ui-segmented-item ${Views._personJournalFilter === filter.key ? 'active' : ''}" role="tab" aria-selected="${Views._personJournalFilter === filter.key}" data-view-state="_personJournalFilter" data-view-value="${filter.key}" data-view-render="personDetail" data-view-render-arg="${id}">${filter.label}</button>`).join('')}
-      </div>
-      <div class="person-journal-feed">${rows.length ? rows.map((row) => row.html).join('') : emptyState('Записей нет', '', 'journal')}</div>`;
+      return journalRegular.length ? journalRegular.map(journalEntryHtml).join('') : emptyState('Заметок нет', '', 'journal');
     }
     if (key === 'load' && p.type === 'team') {
       const summary = personProjectLoadSummary(p.id, store.projects);

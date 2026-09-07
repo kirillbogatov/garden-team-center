@@ -1,7 +1,7 @@
 'use strict';
 
 module.exports = function createAccessControl({ db, isAdmin, isManager, isTeamlead, hasPermission, accessLevel, accessCapabilities }) {
-  const OWNER_COLLECTIONS = ['projects', 'goals', 'tasks', 'issues', 'meetings', 'agreements', 'documents', 'tools', 'processes', 'vacations', 'kbFolders', 'kbDocs', 'docFolders', 'toolFolders', 'labs', 'checkins'];
+  const OWNER_COLLECTIONS = ['projects', 'goals', 'tasks', 'issues', 'meetings', 'agreements', 'documents', 'tools', 'processes', 'vacations', 'kbFolders', 'kbDocs', 'docFolders', 'toolFolders', 'labs', 'checkins', 'technologyEvents'];
   const MEMBER_PERSON_FIELDS = new Set([
     'email', 'telegram', 'birthday', 'city', 'timezone', 'workStart', 'workEnd', 'tags', 'grade',
     'strengthsLikes', 'weaknessesDislikes', 'developmentFocus', 'developmentNextStep', 'iprUrl', 'skillsetUrl', 'oneOnOneEveryMonths', 'prEveryMonths'
@@ -17,7 +17,7 @@ module.exports = function createAccessControl({ db, isAdmin, isManager, isTeamle
     return ({
       people:'people', projects:'projects', goals:'goals', tasks:'tasks', meetings:'meetings', issues:'issues', agreements:'agreements', journal:'journal', labs:'labs',
       documents:'knowledge', tools:'knowledge', kbDocs:'knowledge', kbFolders:'knowledge', docFolders:'knowledge', toolFolders:'knowledge',
-      processes:'processes', vacations:'vacations', checkins:'checkins',
+      processes:'processes', vacations:'vacations', checkins:'checkins', technologyEvents:'labs',
     })[name] || null;
   }
   function levelForCollection(name, user) {
@@ -51,6 +51,23 @@ module.exports = function createAccessControl({ db, isAdmin, isManager, isTeamle
     if (!item || !user) return false;
     const caps = capabilitiesForCollection(name, user);
     if (caps.view <= 0) return false;
+    // Журнал — личное пространство: запись видна только автору (и администратору),
+    // даже если роль пользователя в остальном имеет доступ "просмотр всех" к журналу.
+    // Структурированные записи (проблемы/договорённости/идеи) всё равно попадают
+    // в командные разделы через синхронизацию — там обычная видимость сохраняется.
+    if (name === 'journal') return isOwnItem(name, item, user) || isAdmin(user);
+    // Приватность в The Labs (флаг item.private) раньше была декоративной: любой
+    // с "просмотр всех" по The Labs всё равно видел чужой приватный элемент через API.
+    // Теперь приватный элемент виден только автору (+ администратору), а для обычных
+    // проектов The Labs (не идей) — ещё и тимлиду автора, как и заявлено в интерфейсе.
+    if (name === 'labs' && item.private) {
+      if (isOwnItem(name, item, user) || isAdmin(user)) return true;
+      if (item.entityType !== 'idea') {
+        const author = item.authorId ? db.people.get(item.authorId) : null;
+        if (teamleadOwnsPerson(author, user)) return true;
+      }
+      return false;
+    }
     return caps.view >= 2 || isOwnItem(name, item, user) || isAdmin(user);
   }
   function sanitizeItem(name, item, user) {
@@ -72,11 +89,20 @@ module.exports = function createAccessControl({ db, isAdmin, isManager, isTeamle
     for (const [key, value] of Object.entries(body || {})) if (MEMBER_PERSON_FIELDS.has(key)) out[key] = value;
     return out;
   }
-  function canCreate(name, user) {
+  function canCreate(name, user, payload) {
     const caps = capabilitiesForCollection(name, user);
     if (caps.manage < 1) return false;
-    if (name === 'people') return caps.manage >= 2;
-    return new Set(['projects', 'goals', 'tasks', 'issues', 'meetings', 'journal', 'agreements', 'documents', 'tools', 'processes', 'vacations', 'kbDocs', 'kbFolders', 'docFolders', 'toolFolders', 'labs', 'checkins']).has(name);
+    if (name === 'people') {
+      if (caps.manage >= 2) return true;
+      // A teamlead limited to "manage own" access on people still needs to be
+      // able to onboard a new team-member card under their own leadership
+      // (payload.teamLeadId is stamped to user.personId on create — see the
+      // 'people' POST handler in routes/crud.js). Nothing else is allowed
+      // through this carve-out: not other people's cards, not non-team people,
+      // and no other collection gets an equivalent exception.
+      return Boolean(isTeamlead(user) && payload && payload.type === 'team' && user.personId);
+    }
+    return new Set(['projects', 'goals', 'tasks', 'issues', 'meetings', 'journal', 'agreements', 'documents', 'tools', 'processes', 'vacations', 'kbDocs', 'kbFolders', 'docFolders', 'toolFolders', 'labs', 'checkins', 'technologyEvents']).has(name);
   }
   function canUpdate(name, item, user) {
     const caps = capabilitiesForCollection(name, user);

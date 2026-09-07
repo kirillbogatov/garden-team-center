@@ -19,28 +19,8 @@ Views.settings = async function () {
   const notificationsSettingsHtml = notificationRows.length
     ? notificationRows.map(([key, title, hint]) => `<label class="settings-toggle-row"><span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(hint)}</small></span><input type="checkbox" data-notification-event="${key}" ${(settings.notificationEvents?.[key] !== false) ? 'checked' : ''}/></label>`).join('')
     : '<div class="settings-info-row"><span><strong>Нет доступных событий</strong><small>Для вашей роли персональные уведомления пока не настроены.</small></span></div>';
-  // Список тем на экране «Оформление» держим самодостаточным: так он не
-  // зависит от порядка загрузки общего реестра и старого браузерного кэша.
-  // Значения должны совпадать с GARDEN_THEMES и серверным whitelist.
-  const appearanceThemes = [
-    { value: 'chernika', label: 'Черника', mode: 'light', note: 'прохладная' },
-    { value: 'myata', label: 'Мята', mode: 'light', note: 'свежая' },
-    { value: 'lavanda', label: 'Лаванда', mode: 'light', note: 'мягкая' },
-    { value: 'tuman', label: 'Туман', mode: 'light', note: 'нейтральная' },
-    { value: 'grafit', label: 'Графит', mode: 'dark', note: 'строгая' },
-    { value: 'khvoya', label: 'Хвоя', mode: 'dark', note: 'природная' },
-    { value: 'noch', label: 'Ночь', mode: 'dark', note: 'глубокая' },
-    // Семейство AnuPpuccin: палитры Catppuccin, перенесённые в стиле темы AnuPpuccin
-    // для Obsidian — https://github.com/AnubisNekhet/AnuPpuccin (сама AnuPpuccin
-    // построена поверх Catppuccin — https://github.com/catppuccin/catppuccin).
-    // Обе темы поддерживают настройку акцентного цвета — см. ACCENT_COLORS
-    // в interactions.js и accentPickerHtml() ниже.
-    { value: 'anuppuccin-latte', label: 'AnuPpuccin Latte', mode: 'light', note: 'настраиваемая' },
-    { value: 'anuppuccin-mocha', label: 'AnuPpuccin Mocha', mode: 'dark', note: 'настраиваемая' },
-  ];
-  // Темы выводятся от самых светлых к самым тёмным внутри каждой группы;
-  // «Туман» — тема по умолчанию. Группировка по mode отражена в самом списке —
-  // явные подписи «Светлые»/«Тёмные» рендерятся отдельно, см. lightThemes/darkThemes ниже.
+  // Используем единый клиентский реестр тем из interactions.js.
+  const appearanceThemes = GARDEN_THEMES;
   const lightThemes = appearanceThemes.filter((t) => t.mode === 'light');
   const darkThemes = appearanceThemes.filter((t) => t.mode === 'dark');
   const themeChoiceHtml = (t) => `<label class="settings-choice settings-theme-choice"><input type="radio" name="theme" value="${t.value}" ${settings.theme === t.value ? 'checked' : ''}/><span class="settings-theme-swatch" data-theme-swatch="${t.value}" aria-hidden="true"></span><span class="settings-theme-copy"><strong>${t.label}</strong>${t.note ? `<small>${t.note}</small>` : ''}</span></label>`;
@@ -71,12 +51,18 @@ Views.settings = async function () {
   );
   const sections = [
     { key: 'appearance', label: 'Оформление' },
+    { key: 'overview', label: 'Главный экран' },
     { key: 'menu', label: 'Меню' },
     { key: 'tasks', label: 'Задачи' },
     { key: 'notifications', label: 'Уведомления' },
     { key: 'storage', label: 'Данные' },
     { key: 'account', label: 'Учётная запись' },
   ];
+  const homeModeChoices = [
+    { value: 'assistant', label: 'Ассистент', hint: 'Командная строка для быстрого поиска и создания элементов.' },
+    { value: 'widgets', label: 'Обзор', hint: 'Настраиваемый экран с виджетами и кнопками быстрых действий.' },
+  ];
+  const overviewHomeMode = settings.overviewHomeMode === 'assistant' ? 'assistant' : 'widgets';
   if (!sections.some((x) => x.key === Views._settingsSection)) Views._settingsSection = 'appearance';
 
   const sectionHtml = {
@@ -90,6 +76,12 @@ Views.settings = async function () {
         <div class="ui-surface ui-surface--settings settings-card settings-theme-list">${darkThemes.map(themeChoiceHtml).join('')}</div>
         ${accentPickerHtml(settings.theme, 'dark')}
       </section>
+      ${isDarkTheme(settings.theme) ? `<section class="settings-section settings-section-spaced" id="settings-glow-section">
+        <div class="settings-section-head"><h2>Свечение</h2></div>
+        <div class="ui-surface ui-surface--settings settings-card">
+          <label class="settings-toggle-row"><span>Накладывать мягкий градиент в верхней части страницы</span><input type="checkbox" id="settings-glow-enabled" ${settings.glowEnabled ? 'checked' : ''}/></label>
+        </div>
+      </section>` : ''}
       <section class="settings-section settings-section-spaced">
         <div class="settings-section-head"><h2>Размер интерфейса</h2></div>
         <div class="ui-surface ui-surface--settings settings-card settings-scale-card"><div class="settings-zoom-control" role="group" aria-label="Размер интерфейса">
@@ -101,6 +93,7 @@ Views.settings = async function () {
     menu: `<section class="settings-section"><div class="settings-section-head"><h2>Избранное</h2><p>Добавьте часто используемые подразделы в «Избранное» под «Журналом».</p></div><div class="ui-surface ui-surface--settings settings-card">${menuItems.map((item) => `<label class="settings-toggle-row"><span><strong>${item.label}</strong><small>${item.group}</small></span><input type="checkbox" data-favorite-menu="${item.key}" ${favorites.has(item.key) ? 'checked' : ''}/></label>`).join('')}</div></section>`,
     tasks: `<section class="settings-section"><div class="settings-section-head"><h2>Приоритет задач</h2><p>Выберите, что сильнее влияет на порядок задач в виджетах.</p></div><div class="ui-surface ui-surface--settings settings-card">${Object.entries(TASK_PRIORITY_STRATEGIES).map(([value, strategy]) => `<label class="settings-choice"><input type="radio" name="task-priority-mode" value="${value}" ${settings.taskPriorityMode === value ? 'checked' : ''}/><span><strong>${strategy.label}</strong><small>${strategy.description}</small></span></label>`).join('')}</div></section>
     <section class="settings-section settings-section-spaced"><div class="settings-section-head"><h2>Архивация</h2><p>Правила жизненного цикла задач для всей команды.</p></div><div class="ui-surface ui-surface--settings settings-card"><label class="settings-number-row"><span><strong>Автоматически архивировать «Готово»</strong><small>Через сколько дней после завершения задача перемещается в архив.</small></span><div class="settings-number-control"><div class="settings-stepper" role="group" aria-label="Количество дней до архивации"><button type="button" class="settings-stepper-button" id="settings-auto-archive-minus" aria-label="Уменьшить число дней" ${workspace.canEdit ? '' : 'disabled'}>−</button><input class="settings-stepper-value" id="settings-auto-archive-days" type="number" min="1" max="365" step="1" value="${workspace.taskAutoArchiveDays}" ${workspace.canEdit ? '' : 'disabled'}/><button type="button" class="settings-stepper-button" id="settings-auto-archive-plus" aria-label="Увеличить число дней" ${workspace.canEdit ? '' : 'disabled'}>+</button></div><span>дн.</span></div></label></div>${workspace.canEdit ? '' : '<div class="ui-field-hint field-hint">Изменить этот срок может пользователь с правом управления всеми задачами.</div>'}</section>`,
+    overview: `<section class="settings-section"><div class="settings-section-head"><h2>Что показывать на главном экране</h2></div><div class="ui-surface ui-surface--settings settings-card">${homeModeChoices.map((c) => `<label class="settings-choice"><input type="radio" name="overview-home-mode" value="${c.value}" ${overviewHomeMode === c.value ? 'checked' : ''}/><span><strong>${c.label}</strong><small>${c.hint}</small></span></label>`).join('')}</div></section>`,
     notifications: `<section class="settings-section"><div class="settings-section-head"><h2>Уведомления</h2><p>Выберите события, о которых Garden будет сообщать вам.</p></div><div class="ui-surface ui-surface--settings settings-card">${notificationsSettingsHtml}</div></section>`,
     storage: `<section class="settings-section"><div class="settings-section-head"><h2>Данные</h2><p>Все версии Garden используют одну внешнюю папку данных.</p></div><div class="ui-surface ui-surface--settings settings-card settings-storage-card"><div class="settings-info-row"><span><strong>Рабочая папка</strong><small>Сотрудники, задачи, встречи, настройки и загруженные файлы сохраняются здесь.</small></span><code class="settings-storage-path">${escapeHtml(storage.dataDir || '')}</code></div><div class="settings-info-row"><span><strong>База данных</strong><small>Этот файл не заменяется при обновлении Garden.</small></span><code class="settings-storage-path">${escapeHtml(storage.database || '')}</code></div></div></section>`,
     account: `<section class="settings-section"><div class="settings-section-head"><h2>Учётная запись</h2></div><div class="ui-surface ui-surface--settings settings-card"><button type="button" class="settings-action-row" id="settings-change-password"><span><strong>Сменить пароль</strong><small>Изменить пароль для входа в Garden</small></span><span class="settings-action-chevron">›</span></button></div></section>`,
@@ -129,6 +122,7 @@ Views.settings = async function () {
         if (accentSection) accentSection.outerHTML = accentPickerHtml(input.value, slot);
       });
       bindAccentChoices();
+      Views.settings();
     });
   });
 
@@ -146,6 +140,13 @@ Views.settings = async function () {
     });
   }
   bindAccentChoices();
+
+  const glowEnabled = document.getElementById('settings-glow-enabled');
+  if (glowEnabled) glowEnabled.onchange = async () => {
+    const enabled = !!glowEnabled.checked;
+    applyGlow(enabled, { persistLocal: true });
+    await GardenSettings.update({ glowEnabled: enabled });
+  };
 
   const scaleSteps = [80, 90, 100, 110, 125];
   const changeScale = async (direction) => {
@@ -172,6 +173,15 @@ Views.settings = async function () {
     input.onchange = async () => {
       if (!input.checked) return;
       await GardenSettings.update({ taskPriorityMode: input.value });
+    };
+  });
+
+  document.querySelectorAll('input[name="overview-home-mode"]').forEach((input) => {
+    input.onchange = async () => {
+      if (!input.checked) return;
+      await GardenSettings.update({ overviewHomeMode: input.value });
+      renderSidebar(Router.current());
+      toast('Главный экран обновлён');
     };
   });
 

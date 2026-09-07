@@ -26,7 +26,7 @@ async function runSearch(q) {
   const data = await api.get('/api/search?q=' + encodeURIComponent(q));
   const g = data.groups;
   const vacations = g.vacations || [];
-  const totalCount = g.people.length + g.projects.length + g.tasks.length + g.issues.length + g.meetings.length + g.journal.length + g.goals.length + g.agreements.length + g.documents.length + (g.tools || []).length + (g.labs || []).length + g.processes.length + vacations.length + (g.checkins || []).length;
+  const totalCount = g.people.length + g.projects.length + g.tasks.length + g.issues.length + g.meetings.length + g.journal.length + g.goals.length + g.agreements.length + (g.links || []).length + g.documents.length + (g.tools || []).length + (g.labs || []).length + g.processes.length + vacations.length + (g.checkins || []).length;
 
   if (!totalCount) {
     const sectionRoute = typeof searchSectionRoute === 'function' ? searchSectionRoute(q) : null;
@@ -75,6 +75,7 @@ async function runSearch(q) {
   html += simpleSection('Журнал', g.journal, 'journal', (j) => { const idx = registerAction(() => FeatureLoader.run('openJournalEditModal', j)); return `<div class="ui-row list-row" data-action-id="${idx}"><span class="title">${previewText(j.text, 90)}</span><span class="meta">${escapeHtml(JOURNAL_KIND_LABEL[j.kind] || '')}</span></div>`; });
   html += simpleSection('Цели', g.goals, 'goals', (goal) => `<div class="ui-row list-row" data-route="${goalPath(goal)}"><span class="title">${escapeHtml(goal.title)}</span></div>`);
   html += simpleSection('Договорённости', g.agreements, 'agreements', (a) => { const idx = registerAction(() => FeatureLoader.run('openAgreementModal', a.id)); return `<div class="ui-row list-row" data-action-id="${idx}"><span class="title">${previewText(a.text, 90)}</span>${a.dueDate ? `<span class="meta">${dueLabel(a.dueDate)}</span>` : ''}</div>`; });
+  html += simpleSection('Ссылки и материалы', g.links || [], 'documents', (link) => { const idx = registerAction(() => window.open(link.url, '_blank', 'noopener')); const meta = [link.sourceTitle, link.sourceDate ? fmtDate(link.sourceDate) : ''].filter(Boolean).join(' — '); return `<div class="ui-row list-row" data-action-id="${idx}"><span class="title">${escapeHtml(link.title || link.url)}</span>${meta ? `<span class="meta">${escapeHtml(meta)}</span>` : ''}</div>`; });
   html += simpleSection('Документы', g.documents, 'documents', (d) => documentRowHtml(d));
   html += simpleSection('Инструменты', g.tools || [], 'tools', (d) => toolRowHtml(d));
   html += simpleSection('The Labs', g.labs || [], 'tasks', (d) => `<div class="ui-row list-row" data-action-id="${registerAction(() => d.entityType === 'idea' ? FeatureLoader.run('openLabIdeaModal', d) : Router.go(`/labs/${encodeURIComponent(d.id)}`))}"><span class="title">${escapeHtml(d.title)}</span><span class="meta">The Labs</span></div>`);

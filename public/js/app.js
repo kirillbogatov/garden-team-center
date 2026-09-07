@@ -47,6 +47,7 @@ const NAV_GROUPS = [
   { key: 'development', label: 'Развитие', icon: 'labs', children: [
     { key: 'ideas', path: '/labs', href: '/labs?tab=ideas', labTab: 'ideas', label: 'Идеи' },
     { key: 'theLabs', path: '/labs', href: '/labs?tab=projects', labTab: 'projects', label: 'The Labs' },
+    { key: 'technology', path: '/technology', label: 'План мероприятий' },
   ]},
   { key: 'knowledge', label: 'Знания', icon: 'documents', children: [
     { key: 'knowledgeBase', path: '/knowledge-base', label: 'База знаний' },
@@ -61,6 +62,14 @@ const PRIMARY_NAV_ITEMS = [
   { key: 'overview', path: '/overview', label: 'Обзор', icon: 'overview' },
   { key: 'journal', path: '/journal', label: 'Журнал', icon: 'journal' },
 ];
+
+function homeScreenNavLabel() {
+  return GardenSettings.value?.overviewHomeMode === 'assistant' ? 'Ассистент' : 'Обзор';
+}
+
+function navItemDisplayLabel(item) {
+  return item?.key === 'overview' ? homeScreenNavLabel() : item?.label;
+}
 
 const FAVORITE_NAV_ITEMS = Object.fromEntries(NAV_GROUPS.flatMap((group) => group.children).map((item) => [item.key, item]));
 const FAVORITE_NAV_ORDER = NAV_GROUPS.flatMap((group) => group.children.map((item) => item.key));
@@ -112,7 +121,7 @@ function buildNav() {
   })).filter((group) => group.items.length);
 
   return [
-    { key: 'primary', title: '', items: PRIMARY_NAV_ITEMS.filter(navItemAllowed).map((item) => cloneNavItem(item, 'primary')) },
+    { key: 'primary', title: '', items: PRIMARY_NAV_ITEMS.filter(navItemAllowed).map((item) => cloneNavItem({ ...item, label: navItemDisplayLabel(item) }, 'primary')) },
     ...(favoriteChildren.length ? [{ key: 'favorites', title: 'Избранное', items: favoriteChildren }] : []),
     ...groups,
   ];
@@ -122,7 +131,7 @@ function buildNav() {
 function navAccessArea(item) {
   return ({
     team:'people', stakeholders:'people', goals:'goals', projects:'projects', tasks:'tasks', issues:'issues', agreements:'agreements', checkins:'checkins', processes:'processes',
-    meetings:'meetings', calendar:'vacations', ideas:'labs', theLabs:'labs', knowledgeBase:'knowledge', tools:'knowledge', journal:'journal',
+    meetings:'meetings', calendar:'vacations', ideas:'labs', theLabs:'labs', technology:'labs', knowledgeBase:'knowledge', tools:'knowledge', journal:'journal',
   })[item?.key] || null;
 }
 function navItemAllowed(item) {
@@ -397,7 +406,7 @@ function renderAppHeader() {
 // и сайдбар — единый источник структуры навигации, никакого дублирования лейблов.
 function pageBreadcrumbParts(currentPath) {
   const primary = PRIMARY_NAV_ITEMS.find((item) => navEntryActive(item, currentPath));
-  if (primary) return [{ label: 'Garden', path: '/overview' }, { label: primary.label, path: primary.path }];
+  if (primary) return [{ label: 'Garden', path: '/overview' }, { label: navItemDisplayLabel(primary), path: primary.path }];
   for (const group of NAV_GROUPS) {
     const item = group.children.find((child) => navEntryActive(child, currentPath));
     // Группы сайдбара (Работа, События, Люди и т. п.) — только организационные
@@ -583,6 +592,7 @@ function navItemIcon(item) {
     calendar: 'calendar',
     ideas: 'ideas',
     theLabs: 'labs',
+    technology: 'events',
     knowledgeBase: 'documents',
     documents: 'documents',
     tools: 'tools',

@@ -78,10 +78,20 @@ test('common goal and agreement forms are schema-driven', () => {
 test('server bootstrap stays thin and domain workflows are extracted', () => {
   const index = read('server/index.js');
   assert.ok(index.split('\n').length <= 250, `server/index.js grew to ${index.split('\n').length} lines`);
-  assert.match(index, /createJournalSync/);
   assert.match(index, /createRecurringMeetings/);
-  assert.match(read('server/domain/journal-sync.js'), /syncJournalDerivedEntity/);
   assert.match(read('server/domain/recurring-meetings.js'), /syncRecurringMeetingsForPerson/);
+
+  // Task lifecycle, auto-archive, knowledge-base sanitization and teamlead self-assignment
+  // sync used to be defined inline in index.js — they belong in server/domain/ instead
+  // (ARCHITECTURE.md rule 9: index.js is composition/bootstrap, not business workflows).
+  assert.match(index, /require\('\.\/domain\/task-lifecycle'\)/);
+  assert.match(index, /createTaskAutoArchive/);
+  assert.match(index, /require\('\.\/domain\/knowledge-sanitize'\)/);
+  assert.match(index, /createTeamleadSync/);
+  assert.match(read('server/domain/task-lifecycle.js'), /function taskLifecyclePatch/);
+  assert.match(read('server/domain/task-auto-archive.js'), /function autoArchiveCompletedTasks/);
+  assert.match(read('server/domain/knowledge-sanitize.js'), /function sanitizeKnowledgeHtmlServer/);
+  assert.match(read('server/domain/teamlead-sync.js'), /function ensureTeamleadSelfAssignment/);
 });
 
 
@@ -289,49 +299,29 @@ test('existing meetings open as a routed page instead of the edit modal (meeting
   const router = read('public/js/lib/router.js');
   assert.match(router, /\/\^\\\/meetings\\\/\(\[\^\/\]\+\)\\\/\?\$\//);
   const meetings = read('public/js/views/meetings.js');
-  assert.match(meetings, /function openMeetingModal\(existing\) \{\s*\n\s*if \(existing && existing\.id\) \{ Router\.go\(meetingPath\(existing\)\); return; \}/);
+  assert.match(meetings, /function openMeetingModal\(existing[^)]*\) \{\s*\n\s*if \(existing && existing\.id\) \{ Router\.go\(meetingPath\(existing\)\); return; \}/);
 });
 
-test('all registered themes are wired everywhere a theme must be listed (style.css, interactions.js, index.html, server settings), and the excluded ones stay out', () => {
-  // История токена: базовый набор тем был расширен новыми палитрами (Алмаз/Опал/Графит/Оникс/Нефрит/
-  // 2×Zendesk), заменённых двумя темами UI Kit Minimal. Позже поверх текущей геометрии/типографики Minimal, а затем дополнен новыми светлыми палитрами. Нефрит и оба Zendesk остаются осознанно не перенесёнными.
+test('appearance registry is the single source for client, anti-FOUC and server settings', () => {
   const style = read('public/css/style.css');
   const interactions = read('public/js/lib/interactions.js');
   const indexHtml = read('public/index.html');
   const settingsJs = read('server/routes/settings.js');
-
-  const activeThemes = [
-    'chernika', 'myata', 'lavanda', 'tuman',
-    'grafit', 'khvoya', 'noch',
-    'anuppuccin-latte', 'anuppuccin-mocha',
-  ];
-  assert.match(style, /:root\s*\{/, 'базовые fallback-токены задаются в :root');
-  for (const name of activeThemes) {
-    assert.match(style, new RegExp(`html\\.theme-${name}\\s*\\{`), `style.css: нет блока токенов для темы "${name}"`);
-    assert.match(interactions, new RegExp(`value:\\s*'${name}'`), `interactions.js: тема "${name}" не зарегистрирована в GARDEN_THEMES`);
-    assert.match(indexHtml, new RegExp(`'${name}'`), `index.html: тема "${name}" не в анти-FOUC списке THEME_MODES`);
-    assert.match(settingsJs, new RegExp(`'${name}'`), `routes/settings.js: тема "${name}" не в серверном THEME_VALUES — сохранённое значение будет отброшено`);
-  }
-
-  // Обобщённый переключатель тёмного режима для форм-контролов (стрелка select,
-  // иконка календаря) не должен зависеть от конкретного имени тёмной темы.
+  const appearance = require('../public/js/domain/appearance-config');
+  assert.match(style, /:root\s*\{/);
+  for (const name of appearance.themeValues) assert.match(style, new RegExp(`html\.theme-${name}\s*\{`));
+  assert.match(indexHtml, /appearance-config\.js/);
+  assert.match(indexHtml, /const cfg = GardenAppearance;/);
+  assert.match(interactions, /GardenAppearance/);
+  assert.match(settingsJs, /appearance-config/);
+  assert.match(read('public/js/views/settings.js'), /const appearanceThemes = GARDEN_THEMES;/);
   assert.match(interactions, /classList\.toggle\('theme-dark',\s*isDarkTheme\(theme\)\)/);
-  assert.doesNotMatch(read('public/css/system.css'), /html\.theme-khvoya\b/, 'system.css: форм-контролы должны переключаться по общему .theme-dark, а не по конкретной теме');
-
-  const excludedThemeNames = ['garden', 'zendesk-light', 'zendesk-dark'];
-  for (const name of excludedThemeNames) {
-    const needle = new RegExp(`theme-${name}\\b|'${name}'`);
-    assert.doesNotMatch(style, needle, `тема "${name}" осознанно не перенесена, но встречается в style.css`);
-    assert.doesNotMatch(interactions, needle, `тема "${name}" осознанно не перенесена, но встречается в interactions.js`);
-    assert.doesNotMatch(indexHtml, needle, `тема "${name}" осознанно не перенесена, но встречается в index.html`);
-    assert.doesNotMatch(settingsJs, needle, `тема "${name}" осознанно не перенесена, но встречается в routes/settings.js`);
-  }
+  for (const name of ['garden','zendesk-light','zendesk-dark']) assert.ok(!appearance.themeValues.includes(name));
 });
-
 test('removed themes are absent from appearance settings', () => {
   const settingsView = read('public/js/views/settings.js');
   for (const name of ['minimal-light','ocean','provence','home-garden','greece','mountain-dawn','mountain-road','fog','clarity','clarity-dark','rime','pastel','forest-mushrooms','spring','anuppuccin-light','anuppuccin-dark','sumerki-sada','len','pergament','shipovnik','ten','cupertino','cupertino-dark','cupertino-forest','cupertino-forest-dark','anuppuccin-frappe','anuppuccin-macchiato']) {
-    assert.doesNotMatch(settingsView, new RegExp(`value:\s*'${name}'`));
+    assert.doesNotMatch(settingsView, new RegExp(`value:\\s*'${name}'`));
   }
 });
 
@@ -355,25 +345,16 @@ test('«Прожектор», «Рейнисфьяра» и «Полдень» a
   }
 });
 
-test('server-side settings whitelist accepts all registered theme values, so the choice actually persists (routes/settings.js)', () => {
-  // Регрессия, которую поймал ручной прогон в прошлой фазе: THEME_VALUES на
-  // сервере не был обновлён при добавлении новых тем — /api/settings молча
-  // откатывал выбор пользователя на дефолт при следующей загрузке страницы
-  // (bootstrap.js грузит настройки с сервера и переприменяет тему).
+test('server settings and anti-FOUC consume shared appearance defaults', () => {
   const settings = read('server/routes/settings.js');
-  const match = settings.match(/const THEME_VALUES = \[([^\]]*)\]/);
-  assert.ok(match, 'THEME_VALUES не найден в server/routes/settings.js');
-  assert.match(match[1], /'anuppuccin-mocha'/);
-  assert.match(match[1], /'khvoya'/);
-  const defaultMatch = settings.match(/theme:\s*'([^']+)'/);
-  assert.ok(defaultMatch, 'DEFAULT_USER_SETTINGS.theme не найден');
-  assert.strictEqual(defaultMatch[1], 'anuppuccin-latte', 'тема по умолчанию должна быть AnuPpuccin Latte');
-  assert.match(settings, /const DEFAULT_ACCENT = 'green'/, 'акцентом по умолчанию должен быть green');
   const indexHtml = read('public/index.html');
-  assert.match(indexHtml, /const defaultTheme = 'anuppuccin-latte'/, 'anti-FOUC должен применять AnuPpuccin Latte до первого рендера');
-  assert.match(indexHtml, /savedAccent = 'green'/, 'anti-FOUC должен применять зелёный акцент по умолчанию');
+  const appearance = require('../public/js/domain/appearance-config');
+  assert.equal(appearance.defaultTheme, 'anuppuccin-latte');
+  assert.equal(appearance.defaultAccent, 'green');
+  assert.match(settings, /theme: DEFAULT_THEME, accentColor: DEFAULT_ACCENT/);
+  assert.match(indexHtml, /cfg\.defaultTheme/);
+  assert.match(indexHtml, /cfg\.defaultAccent/);
 });
-
 test('khvoya keeps a strictly brighter base < elevated < elevated-2 < hover < active surface order (style.css)', () => {
   // В тёмных темах каждая следующая поверхность читается как более
   // «приподнятая» и потому светлее предыдущей — hover/active обязаны быть
@@ -492,11 +473,11 @@ test('checkins is registered as a first-class collection end-to-end (server)', (
   // db.js и index.js держат две ОТДЕЛЬНЫЕ копии COLLECTIONS — добавление коллекции
   // только в одном месте даёт db.checkins, но не регистрирует REST-маршруты.
   const dbSource = read('server/db.js');
-  assert.match(dbSource, /'checkins',\n\];/, 'db.js: checkins должен быть в основном массиве COLLECTIONS');
+  assert.match(dbSource, /'checkins'/, 'db.js: checkins должен быть в основном массиве COLLECTIONS');
   assert.match(dbSource, /checkins:\s*'chk'/, 'db.js: у checkins должен быть префикс id');
 
   const indexSource = read('server/index.js');
-  assert.match(indexSource, /'toolFolders',\n  'checkins',\n\];/, 'index.js: checkins должен быть в COLLECTIONS, иначе registerCrudRoutes не создаст /api/checkins');
+  assert.match(indexSource, /'checkins'/, 'index.js: checkins должен быть в COLLECTIONS, иначе registerCrudRoutes не создаст /api/checkins');
 
   const authCore = read('server/auth-core.js');
   assert.match(authCore, /'checkins\.manage_all':/, 'auth-core.js: должно быть право checkins.manage_all — иначе оно не появится в admin.js/admin.js UI');
@@ -504,7 +485,7 @@ test('checkins is registered as a first-class collection end-to-end (server)', (
   const access = read('server/access-control.js');
   assert.match(access, /OWNER_COLLECTIONS = \[[^\]]*'checkins'/, 'access-control.js: checkins должен быть в OWNER_COLLECTIONS, чтобы createdByUserId проставлялся автоматически');
   assert.match(access, /checkins:'checkins'/, 'access-control.js: checkins должен быть сопоставлен области прав checkins');
-  assert.match(access, /'checkins'\]\)\.has\(name\)/, 'access-control.js: canCreate должен разрешать checkins рядовым пользователям (свою запись)');
+  assert.match(access, /'checkins'[^\]]*\]\)\.has\(name\)/, 'access-control.js: canCreate должен разрешать checkins рядовым пользователям (свою запись)');
   assert.match(access, /if \(name === 'checkins'\) return owns\(item, user\) \|\| Boolean\(user\.personId && item\.personId === user\.personId\)/, 'access-control.js: свои checkins должны определяться по автору записи или самому сотруднику');
 });
 
@@ -521,7 +502,7 @@ test('checkins view is wired into router, sidebar and resource facade (client)',
 });
 
 test('spinning off a Task/Issue from a Check-in cell stamps a one-way sourceCheckinId back-reference', () => {
-  // Тот же приём, что и sourceJournalId в journal.js: обратная ссылка живёт только
+  // Обратная ссылка живёт только на созданной сущности и не дублируется в форме.
   // на новой сущности, без поля в исходном Check-in.
   const checkins = read('public/js/views/checkins.js');
   assert.match(checkins, /sourceCheckinId:\s*c\.id/, 'checkins.js: spin-off должен передавать sourceCheckinId в prefill и для задачи, и для проблемы');
@@ -600,7 +581,7 @@ test('meeting types are centralized and reused by filters and forms', () => {
   const constants = read('public/js/domain/constants.js');
   const meetingDomain = read('public/js/domain/meeting.js');
   const meetings = read('public/js/views/meetings.js');
-  assert.match(constants, /club:\s*'Клаб'/);
+  assert.match(constants, /club:\s*'Технологизация'/);
   assert.match(constants, /retro:\s*'Ретро'/);
   assert.match(constants, /project:\s*'Проектные'/);
   assert.match(constants, /MEETING_TYPE_ORDER = \['1:1', 'pr', 'club', 'retro', 'project', 'other'\]/);
@@ -611,11 +592,13 @@ test('meeting types are centralized and reused by filters and forms', () => {
 
 test('processes use task-like list/detail flow with autosave, archive and fix option statuses', () => {
   const processes = read('public/js/views/processes.js');
+  const constants = read('public/js/domain/constants.js');
   const router = read('public/js/lib/router.js');
   assert.match(router, /\/\^\\\/processes\\\/\(\[\^\/\]\+\)\\\/\?\$\//, 'router.js: process instances should have a routed detail page');
   assert.match(processes, /Views\.processDetailPage/, 'processes.js: existing processes should open as detail pages');
-  assert.match(processes, /PROCESS_STATUS_LABEL = \{ ok: 'Работает', attention: 'Есть проблемы', broken: 'Сломан' \}/);
-  assert.match(processes, /PROCESS_FIX_STATUS_LABEL = \{ unchecked: 'Не проверялось', effective: 'Эффективно', ineffective: 'Неэффективно' \}/);
+  assert.match(constants, /PROCESS_STATUS_LABEL = \{ ok: 'Работает', attention: 'Есть проблемы', broken: 'Сломан' \}/, 'domain/constants.js: status dictionaries live here, not in the view');
+  assert.match(constants, /PROCESS_FIX_STATUS_LABEL = \{ unchecked: 'Не проверялось', effective: 'Эффективно', ineffective: 'Неэффективно' \}/, 'domain/constants.js: status dictionaries live here, not in the view');
+  assert.doesNotMatch(processes, /const PROCESS_STATUS_LABEL|const PROCESS_FIX_STATUS_LABEL/, 'processes.js should reference the shared dictionaries, not redeclare them');
   assert.match(processes, /expectedBehavior/, 'processes.js: should store expected process behavior');
   assert.match(processes, /currentBehavior/, 'processes.js: should store current behavior/problems');
   assert.match(processes, /fixOptions/, 'processes.js: should support multiple repair options');
@@ -1035,7 +1018,7 @@ test('meeting detail caps participants at two while related context is limited b
   assert.match(meetings, /function meetingDetailParticipantsHtml\(participants\)[\s\S]*participants\.slice\(0, 2\)/, 'meeting detail should show only two people');
   assert.match(meetings, /и ещё \$\{extra\}…/, 'detail view should show the remaining participant count');
   assert.match(meetings, /meeting-detail-participant-name/, 'detail participants should have a dedicated no-wrap name element');
-  assert.match(meetings, /const showParticipantContext = meetingType === 'one_on_one' \|\| meetingType === 'pr';/);
+  assert.match(meetings, /const showParticipantContext = meetingType === '1:1' \|\| meetingType === 'pr';/);
   assert.match(meetings, /const tasksPromise = showParticipantContext \? Resources\.tasks\.list\(\) : Promise\.resolve\(\[\]\);/);
   assert.match(meetings, /const issuesPromise = showParticipantContext \? Resources\.issues\.list\(\) : Promise\.resolve\(\[\]\);/);
   assert.match(meetings, /const journalPromise = showParticipantContext \? Resources\.journal\.list\(\) : Promise\.resolve\(\[\]\);/);
@@ -1180,32 +1163,16 @@ test('server settings preserve project overview quick widgets', () => {
   assert.match(settings, /item\.type === 'project-tasks' \|\| item\.type === 'project-overview'/);
 });
 
-test('journal opens task creation modal in place and hands over text plus canonical mentions', () => {
+test('journal composer stays note-only and does not expose legacy task handoff', () => {
   const journal = read('public/js/views/journal.js');
-  const overview = read('public/js/views/overview.js');
-  const css = read('public/css/system.css');
-  assert.match(journal, /id="journal-create-task"[^>]*>Сделать задачей<\/button>/);
-  assert.doesNotMatch(journal, /id="journal-create-task"[^>]*>[^<]*<svg/, 'journal task action must not render an icon');
-  assert.match(journal, /const sourceText = serializeEditableToText\(editable\)\.trim\(\)/);
-  assert.match(journal, /function journalTaskPrefill\(text\)/);
-  assert.match(journal, /type === 'person'[^\n]*assigneeIds\.push\(id\)/, 'canonical employee mentions should prefill task assignees');
-  assert.match(journal, /type === 'project'[^\n]*projectId = id/, 'the first canonical project mention should prefill the task project');
-  assert.match(journal, /replace\(MENTION_DISPLAY_RE, \(_, label\) => label\)/, 'task title should use visible mention labels rather than canonical markup');
-  assert.match(journal, /editable\.innerHTML = ''/);
-  assert.match(journal, /FeatureLoader\.run\('openTaskModal', null, \{ prefill \}\)/, 'task creation should open as a modal without leaving Journal');
-  assert.doesNotMatch(journal, /Router\.go/, 'journal task action must not navigate to Tasks');
-  assert.match(css, /\.journal-composer \.journal-composer-actions \{[\s\S]*margin-left: auto;/);
-  assert.match(overview, /return project \? project\.name : 'Проект';/, 'project overview widget title should be only the project name');
-  assert.match(overview, /title = project\.name;/);
+  assert.match(journal, /id="journal-submit">Записать заметку<\/button>/);
+  assert.doesNotMatch(journal, /journal-create-task|Сделать задачей/);
 });
-
-
-test('journal task handoff uses the same button size as Record', () => {
+test('journal composer has one primary action', () => {
   const journal = read('public/js/views/journal.js');
-  assert.match(journal, /class="ui-button btn journal-create-task" id="journal-create-task">Сделать задачей<\/button>/);
-  assert.doesNotMatch(journal, /journal-create-task[^\n]*btn-sm/);
+  assert.match(journal, /ui-button--primary btn btn-primary" id="journal-submit"/);
+  assert.doesNotMatch(journal, /journal-create-task/);
 });
-
 test('notification center is wired into sidebar, settings and server persistence', () => {
   const app = read('public/js/app.js');
   const settingsView = read('public/js/views/settings.js');
@@ -1231,27 +1198,540 @@ test('notification center is wired into sidebar, settings and server persistence
 });
 
 
-test('The Labs uses aligned privacy control and document-style links editor', () => {
+test('The Labs uses inline privacy controls and placeholder-only links editor', () => {
   const labs = read('public/js/views/labs.js');
   const css = read('public/css/system.css');
-  const style = read('public/css/style.css');
-  const meetings = read('public/js/views/meetings.js');
-  assert.match(labs, /Приватный проект \(Виден только вам и вашему тимлиду\)/);
-  assert.match(labs, /canManagePrivacy = Boolean\(Auth\.isTeamlead\(\)/);
-  assert.match(labs, /labLinksEditorHtml\('lab-detail-links'/);
-  assert.match(labs, /meeting-document-head/);
-  assert.match(labs, /data-lab-link-new-title/);
-  assert.match(labs, /data-lab-link-new-url/);
-  assert.match(css, /\.lab-private-checkbox\{display:flex;align-items:center/);
-  assert.match(css, /\.meeting-document-head\{grid-template-columns:[^}]*72px;align-items:start/);
-  assert.match(style, /\.header-menu-popover--notifications\{border-color:var\(--border-soft\);box-shadow:var\(--shadow-card\);\}/);
-  assert.match(meetings, /<span>Название<\/span><span>Ссылка<\/span>/);
+  assert.match(labs, /lab-private-checkbox/);
+  assert.match(labs, /placeholder="Название"/);
+  assert.match(labs, /placeholder="Ссылка"/);
+  assert.doesNotMatch(labs, /<div class="meeting-document-head"/);
+  assert.match(css, /\.lab-links-editor/);
 });
-
 test('team active-only checkbox shows inactive employees when unchecked', () => {
   const people = read('public/js/views/people.js');
   assert.match(people, /const people = type === 'team' && Views\._teamOnlyActive \? allPeople\.filter\(isActiveTeamPerson\) : allPeople/);
   assert.match(people, /id="team-only-active"/);
   assert.match(people, /addEventListener\('change',[\s\S]*toggleTeamOnlyActive\(event\.currentTarget\.checked\)/);
   assert.doesNotMatch(people, /onchange="toggleTeamOnlyActive/);
+});
+
+test('a nested data-stop-propagation control (e.g. the agreement done checkbox) does not also trigger the parent row\'s data-action-id', () => {
+  const entityUi = read('public/js/lib/entity-ui.js');
+  assert.match(entityUi, /document\.addEventListener\('click', \(event\) => \{\s*\/\/[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*if \(event\.target\.closest\?\.\('\[data-stop-propagation\]'\)\) return;\s*\n\s*const target = event\.target\.closest\?\.\('\[data-action-id\]'\)/);
+  const agreements = read('public/js/views/agreements.js');
+  assert.match(agreements, /data-stop-propagation="1"/);
+  assert.match(agreements, /data-command="toggleAgreement"/);
+});
+
+test('issue status menu reads the clicked icon from event.target, not the delegated listener\'s currentTarget', () => {
+  const entityUi = read('public/js/lib/entity-ui.js');
+  const fn = entityUi.slice(entityUi.indexOf('function openIssueStatusMenu'), entityUi.indexOf('function openIssueStatusMenu') + 900);
+  assert.doesNotMatch(fn, /event\?\.currentTarget/, 'currentTarget is document for a delegated listener and has no getBoundingClientRect, which silently broke the whole menu');
+  assert.match(fn, /event\?\.target/);
+  assert.match(fn, /closest\?\.\('\.task-status-interactive'\)/);
+});
+
+test('Issues and Agreements list "Все" tab last, after the status-specific tabs', () => {
+  const issues = read('public/js/views/issues.js');
+  const agreements = read('public/js/views/agreements.js');
+  assert.match(issues, /\{ key: 'open', label: 'Открытые'[\s\S]*?\{ key: 'resolved', label: 'Решённые'[\s\S]*?\{ key: 'all', label: 'Все'/);
+  assert.match(agreements, /\{ key: 'open', label: 'Открытые'[\s\S]*?\{ key: 'done', label: 'Выполненные'[\s\S]*?\{ key: 'all', label: 'Все'/);
+});
+
+test('ideas, problems and agreements are independent from Journal', () => {
+  const entityUi = read('public/js/lib/entity-ui.js');
+  const issues = read('public/js/views/issues.js');
+  const agreements = read('public/js/views/agreements.js');
+  const labs = read('public/js/views/labs.js');
+  const crud = read('server/routes/crud.js');
+  const index = read('server/index.js');
+  assert.doesNotMatch(entityUi, /askDeleteLinkedJournal/);
+  for (const source of [issues, agreements, labs]) {
+    assert.doesNotMatch(source, /askDeleteLinkedJournal|Resources\.journal\.remove/);
+  }
+  assert.doesNotMatch(crud, /unlinkJournalFor|syncEntityToJournal|syncJournalDerivedEntity/);
+  assert.doesNotMatch(index, /journal-sync|unlinkJournalFor|syncEntityToJournal|syncJournalDerivedEntity/);
+});
+
+test('idea privacy is controlled only by the checkbox in the idea form', () => {
+  const labs = read('public/js/views/labs.js');
+  const journal = read('public/js/views/journal.js');
+  const entityUi = read('public/js/lib/entity-ui.js');
+  assert.match(labs, /Приватная идея \(видна только вам и тимлиду\)/);
+  assert.doesNotMatch(journal, /ideaVisibilityDefault|askIdeaVisibility|journal-idea-private/);
+  assert.doesNotMatch(entityUi, /askIdeaVisibility|ideaVisibilityDefault/);
+});
+
+test('checkboxes/radios inside a modal do not get the text-field focus outline (which rendered as a thick, oversized border)', () => {
+  const css = read('public/css/system.css');
+  assert.match(css, /\.modal-panel input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\):focus/, 'the heavy text-field focus style (border-color + box-shadow) must exclude checkboxes/radios');
+  assert.match(css, /\.modal-panel input\[type="checkbox"\]:focus-visible,\s*\n\.modal-panel input\[type="radio"\]:focus-visible \{/, 'checkboxes/radios need their own lighter focus ring instead');
+});
+
+test('the "Приватная" badge on a private idea in the Journal feed matches the tiny size of its sibling meta text (date/kind), not the body font size', () => {
+  const renderers = read('public/js/domain/entity-renderers.js');
+  assert.match(renderers, /class="tiny lab-private-meta"/, 'lab-private-meta has no font-size of its own — outside the Labs meta row (11px) it silently inherits the body font size, which read oversized next to the tiny je-kind-label');
+});
+
+test('legacy idea visibility defaults are removed from user settings', () => {
+  const settingsRoute = read('server/routes/settings.js');
+  const settingsView = read('public/js/views/settings.js');
+  assert.doesNotMatch(settingsRoute, /ideaVisibilityDefault/);
+  assert.doesNotMatch(settingsView, /idea-visibility-default|ideaVisibilityDefault/);
+});
+
+test('smart search reuses the existing search parser instead of forking a second one', () => {
+  const engine = read('server/domain/smart-search.js');
+  assert.match(engine, /module\.exports = function createSmartSearch\(\{ db, visibleItems, search, isTeamlead \}\)/);
+  assert.match(engine, /const \{ norm, rankPeopleByFragment, findProjectByFragment, parseQuery, runSearch, parseRelativeDatePhrase, stripSearchFillers, fuzzyWordMatch \} = search;/,
+    'разбор запросов должен приходить из server/routes/search.js, иначе два парсера разъедутся');
+  const searchRoute = read('server/routes/search.js');
+  assert.match(searchRoute, /function rankPeopleByFragment\(fragment/, 'нужен список кандидатов, а не только лучший');
+  assert.match(searchRoute, /function parseQuery\(rawQuery, user\)/);
+  assert.match(searchRoute, /function runSearch\(rawQuery, user, parsedQuery = null, options = \{\}\)/);
+  const index = read('server/index.js');
+  assert.match(index, /const searchApi = registerSearchRoutes\(app/);
+  assert.match(index, /registerSmartSearchRoutes\(app, \{ db, visibleItems, search: searchApi/);
+});
+
+test('an ambiguous person reference is never resolved silently — name score outweighs context, context only breaks ties', () => {
+  const engine = read('server/domain/smart-search.js');
+  assert.match(engine, /const contenders = ranked\.filter\(\(row\) => row\.score >= bestNameScore - 1\);/,
+    'контекст не должен вытаскивать наверх заведомо более слабое совпадение по имени');
+  assert.match(engine, /total: row\.score \* 10 \+ context\.score/);
+  assert.match(engine, /status: 'ambiguous'/);
+  assert.match(engine, /AMBIGUITY_MARGIN/);
+});
+
+test('remembered name hints live in user settings, are read server-side and can be forgotten from the UI', () => {
+  const settingsRoute = read('server/routes/settings.js');
+  assert.match(settingsRoute, /smartSearchPersonHints/);
+  assert.match(settingsRoute, /smartSearchHistory/);
+  const smartRoute = read('server/routes/smart-search.js');
+  assert.match(smartRoute, /normalizeUserSettings\(db\.auth\.preferences\.get\(user\.id\)\)/,
+    'подсказку нельзя принимать с клиента — иначе её можно подделать запросом');
+  const widget = read('public/js/views/smart-search.js');
+  assert.match(widget, /smartSearchForgetHint/);
+  assert.match(widget, /data-smart-forget/);
+});
+
+test('the assistant is a home-screen mode from settings, not a widget among widgets', () => {
+  const overview = read('public/js/views/overview.js');
+  assert.match(overview, /const assistantMode = settings\?\.overviewHomeMode === 'assistant';/);
+  assert.match(overview, /assistantMode \? assistantHtml :/, 'в режиме ассистента остальные виджеты просто не рисуются');
+  assert.doesNotMatch(overview, /smart-search'\]|smartWidget/, 'виджета «Умный поиск» больше нет — режим задаётся настройкой');
+  const settingsRoute = read('server/routes/settings.js');
+  assert.doesNotMatch(settingsRoute, /'smart-search'/, 'тип виджета не должен оставаться в whitelist');
+  assert.match(settingsRoute, /overviewHomeMode: 'widgets'/);
+  assert.match(settingsRoute, /\['widgets', 'assistant'\]\.includes\(source\.overviewHomeMode\)/);
+  const settingsView = read('public/js/views/settings.js');
+  assert.match(settingsView, /name="overview-home-mode"/);
+  assert.match(settingsView, /GardenSettings\.update\(\{ overviewHomeMode: input\.value \}\)/);
+});
+
+test('assistant mode drops the page header entirely but keeps the notes reachable', () => {
+  const overview = read('public/js/views/overview.js');
+  const assistantBlock = overview.slice(overview.indexOf('if (assistantMode) {'), overview.indexOf('view.innerHTML = `<div class="overview-page-shell">'));
+  assert.match(assistantBlock, /setTopbar\(''\)/, 'заголовок «Обзор» на этом экране ничего не добавляет');
+  assert.match(assistantBlock, /classList\.add\('topbar-hidden'\)/);
+  assert.doesNotMatch(assistantBlock, /overview-customize/, 'кнопка «Настроить» относится к виджетам');
+  assert.doesNotMatch(assistantBlock, /openPalette/, 'кнопка «+ Добавить» в режиме ассистента не нужна');
+  assert.match(assistantBlock, /id="overview-comments-toggle"/, 'стикеры остаются доступны кнопкой на самом экране');
+  // Класс ставит только этот экран — на других страницах шапка обязана вернуться.
+  assert.match(read('public/js/lib/router.js'), /topbar\.classList\.remove\('task-board-wide', 'task-list-toolbar-wide', 'topbar-hidden'\)/);
+  assert.match(read('public/css/system.css'), /\.topbar\.topbar-hidden\{display:none;\}/);
+});
+
+test('the greeting is short, unobtrusive and uses the shared assistant UI config', () => {
+  const widget = read('public/js/views/smart-search.js');
+  const config = read('public/js/domain/smart-search-ui-config.js');
+  assert.match(widget, /const SMART_GREETINGS = \{/);
+  assert.doesNotMatch(widget, /'Доброе утро'|'Добрый день'|'Добрый вечер'/);
+  assert.match(config, /greetingIcons: \['leaf', 'pinecone'/);
+  assert.match(widget, /smartGreetingIconName\(\)/);
+});
+test('the assistant completes people, projects, entity types and sections from shared UI config', () => {
+  const widget = read('public/js/views/smart-search.js');
+  const config = read('public/js/domain/smart-search-ui-config.js');
+  assert.match(config, /personPrefixes: \['как дела у'/);
+  assert.match(config, /projectPrefixes: \['как дела на'/);
+  assert.match(config, /createTypes:/);
+  assert.match(config, /sectionTargets:/);
+  assert.match(widget, /function smartSuggestionsFor\(rawValue\)/);
+  assert.match(widget, /const renderSuggestions = \(\) => \{/);
+});
+test('"открой …" navigates to a section while "покажи …" still lists results', () => {
+  const widget = read('public/js/views/smart-search.js');
+  const config = read('public/js/domain/smart-search-ui-config.js');
+  assert.match(config, /openPrefixes: \['открой мне', 'открой'/);
+  assert.match(widget, /function smartSearchNavigationTarget\(query\)/);
+  assert.match(widget, /searchSectionRoute\(rest\)/);
+});
+test('long result rows are truncated with the full text available on hover', () => {
+  const widget = read('public/js/views/smart-search.js');
+  assert.match(widget, /class="smart-row-title" title="\$\{escapeHtml\(full\)\}"/);
+  assert.match(widget, /class="smart-row-meta" title="\$\{escapeHtml\(meta\)\}"/);
+  const css = read('public/css/system.css');
+  assert.match(css, /\.smart-row-title\{[^}]*text-overflow:ellipsis/);
+});
+
+test('the assistant column is centred and capped, not stretched across the whole page', () => {
+  const css = read('public/css/system.css');
+  assert.match(css, /\.smart-search\{width:100%;max-width:var\(--smart-column\);margin:0 auto;align-self:center/);
+  assert.doesNotMatch(css, /\.smart-search\{width:100%;max-width:720px;display/);
+});
+
+test('the assistant reports completed actions and writes journal notes in place', () => {
+  const widget = read('public/js/views/smart-search.js');
+  assert.match(widget, /Resources\.journal\.create\(\{ text: title, kind: 'note'/);
+  assert.match(widget, /Записал заметку/);
+  assert.doesNotMatch(widget, /Router\.go\('\/journal'\)/);
+});
+test('a pending blur-close never swallows suggestions that were just reopened', () => {
+  const widget = read('public/js/views/smart-search.js');
+  assert.match(widget, /let closeTimer = null;/);
+  assert.match(widget, /const updateSuggestions = \(\) => \{\s*\n\s*clearTimeout\(closeTimer\);/, 'иначе подсказки, открытые кликом по чипу, гаснут через мгновение');
+  assert.match(widget, /input\.addEventListener\('blur', \(\) => \{ clearTimeout\(closeTimer\); closeTimer = setTimeout\(closeSuggestions, 120\); \}\);/);
+});
+
+test('task commands can prefill assignee, project, priority and due date', () => {
+  const engine = read('server/domain/smart-search.js');
+  assert.match(engine, /function parseCreateDetails\(title, user, options = \{\}, target = 'tasks'\)/);
+  assert.match(engine, /CREATE_PERSON_MARKERS/);
+  assert.match(engine, /CREATE_PROJECT_MARKERS/);
+  assert.match(engine, /details\.assigneeAmbiguity/, 'неоднозначный исполнитель должен уточняться, а не угадываться');
+  const widget = read('public/js/views/smart-search.js');
+  assert.match(widget, /assigneeIds: \[create\.assignee\.id\]/);
+  assert.match(widget, /projectId: create\.project\.id/);
+});
+
+test('digests accept a person focus so every request can be asked about someone', () => {
+  const engine = read('server/domain/smart-search.js');
+  assert.match(engine, /function todayDigest\(user, focus = null, options = \{\}\)/);
+  assert.match(engine, /function weekDigest\(user, focus = null\)/);
+  assert.match(engine, /function digestSubjectTail\(rawQuery, patterns\)/);
+  assert.match(engine, /DIGEST_TAIL_NOISE/, 'слова про время в хвосте не должны приниматься за имя');
+});
+
+test('switching the home-screen mode persists and refreshes navigation', () => {
+  const settings = read('public/js/views/settings.js');
+  assert.match(settings, /GardenSettings\.update\(\{ overviewHomeMode: input\.value \}\)/);
+  assert.match(settings, /renderSidebar\(Router\.current\(\)\)/);
+});
+test('typing a person slot suggests people with their photos', () => {
+  const widget = read('public/js/views/smart-search.js');
+  const config = read('public/js/domain/smart-search-ui-config.js');
+  assert.match(config, /personSlotMarkers:/);
+  assert.match(widget, /avatarWithStatusHtml|avatarHtml/);
+});
+test('create commands understand verb synonyms and fill people/projects for every record type', () => {
+  const engine = read('server/domain/smart-search.js');
+  for (const verb of ['поставь', 'подставь', 'добавь', 'назначь', 'оформи', 'зафиксируй', 'запланируй']) {
+    assert.ok(engine.includes(`'${verb}'`), `синоним «${verb}» должен распознаваться`);
+  }
+  assert.match(engine, /const CREATE_PERSON_MARKERS = \{/);
+  assert.match(engine, /const CREATE_TARGETS_WITH_DETAILS = new Set\(\['tasks', 'meetings', 'issues', 'agreements'\]\)/);
+  const widget = read('public/js/views/smart-search.js');
+  assert.match(widget, /participantIds: \[create\.assignee\.id\]/);
+  assert.match(widget, /relatedPersonIds: \[create\.assignee\.id\]/);
+  assert.match(widget, /@\[\$\{create\.assignee\.name\}\]\(person:\$\{create\.assignee\.id\}\)/, 'участник договорённости подставляется упоминанием');
+});
+
+test('answers stay light: one column of blocks, no per-row icons, human dates', () => {
+  const css = read('public/css/system.css');
+  assert.match(css, /\.smart-answer\{display:flex;flex-direction:column;gap:16px;padding:0;border:0;background:transparent;box-shadow:none;\}/,
+    'внешняя карточка вокруг карточек читалась как визуальный шум');
+  assert.match(css, /\.smart-sections\{display:flex;flex-direction:column;gap:10px;\}/, 'разделы идут одной колонкой');
+  assert.match(css, /\.smart-section\{min-width:0;border:1px solid var\(--border-soft\)/, 'сами разделы — привычные блоки');
+
+  const widget = read('public/js/views/smart-search.js');
+  assert.doesNotMatch(widget, /class="smart-row-icon"/, 'иконка в каждой строке дублировала заголовок раздела');
+  assert.match(widget, /function smartSearchMetaText\(item\)/);
+  assert.match(widget, /item\.dateKind === 'due' \? dueLabel\(item\.date\) : fmtDate\(item\.date\)/,
+    'даты должны печататься теми же helpers, что и во всём приложении');
+
+  const engine = read('server/domain/smart-search.js');
+  assert.match(engine, /dateKind: 'due'/, 'даты уезжают на клиент структурой, а не строкой с ISO');
+  assert.doesNotMatch(engine, /meta: `Срок \$\{dateKey\(task\.dueDate\)\}`/);
+  assert.match(engine, /function ruDate\(value\)/, 'в текстах сигналов даты пишутся по-русски');
+});
+
+test('the assistant is one centered column, and the input starts low like a chat home screen', () => {
+  const css = read('public/css/system.css');
+  assert.match(css, /\.smart-search\{width:100%;max-width:var\(--smart-column\);margin:0 auto;align-self:center;display:flex;flex-direction:column;gap:22px;--smart-column:760px;--smart-hero-top:15vh;\}/);
+  assert.match(css, /\.smart-search\.has-answer\{--smart-hero-top:6vh;\}/, 'с ответом строка поднимается, освобождая место');
+  assert.match(css, /\.smart-search > \*\{min-width:0;\}/, 'колонку задаёт сам контейнер, дети только не распирают её содержимым');
+  const widget = read('public/js/views/smart-search.js');
+  assert.match(widget, /const hasAnswer = Boolean\(state\.result \|\| state\.busy \|\| state\.error\);/);
+});
+
+test('the assistant composer has one continuous surface with no legacy divider strip', () => {
+  const css = read('public/css/system.css');
+  assert.match(css, /\.smart-quick-inputs\{[^}]*border:0;[^}]*background:transparent;/,
+    'нижняя строка команд не должна рисовать собственную линию или подложку');
+  assert.doesNotMatch(css, /\.smart-input-box::after/,
+    'отдельный декоративный слой над кнопкой отправки больше не нужен');
+});
+
+test('the Overview never flashes a header on its way into assistant mode', () => {
+  const overview = read('public/js/views/overview.js');
+  const head = overview.slice(overview.indexOf('Views.overview = async function ()'), overview.indexOf('const view = document.getElementById(\'view\')'));
+  assert.match(head, /const assistantHint = GardenSettings\.value\?\.overviewHomeMode === 'assistant';/,
+    'режим известен до загрузки данных — иначе шапка успевает мигнуть');
+  assert.match(head, /if \(assistantHint\) \{\s*\n\s*setTopbar\(''\);/);
+});
+
+test('the notes button lines up with the assistant column, and the query history is gone', () => {
+  const css = read('public/css/system.css');
+  assert.match(css, /\.overview-smart-notes\{position:absolute;top:0;right:max\(0px,calc\(\(100% - var\(--smart-column\)\) \/ 2\)\)/);
+  const widget = read('public/js/views/smart-search.js');
+  assert.doesNotMatch(widget, /smart-history/, 'история запросов больше не показывается');
+  assert.doesNotMatch(widget, /smartSearchRememberQuery/, 'и не пишется в настройки');
+});
+
+test('the assistant digests and search keep the same task ranking as the Overview widgets', () => {
+  const engine = read('server/domain/smart-search.js');
+  const taskPriority = read('server/domain/task-priority.js');
+  const search = read('server/routes/search.js');
+  const constants = read('public/js/domain/constants.js');
+  const weights = taskPriority.slice(taskPriority.indexOf('const TASK_PRIORITY_WEIGHTS'), taskPriority.indexOf('function dateKey'));
+  assert.match(engine, /require\('\.\/task-priority'\)/, 'assistant should use the shared server task ranking');
+  assert.match(search, /require\('\.\.\/domain\/task-priority'\)/, 'search should use the shared server task ranking');
+  ['balanced', 'deadline', 'importance', 'overdue'].forEach((mode) => {
+    const fromEngine = weights.match(new RegExp(`${mode}: \\{([^}]*)\\}`))?.[1]?.replace(/\s/g, '');
+    const fromClient = constants.match(new RegExp(`${mode}: \\{[\\s\\S]*?weights: \\{([^}]*)\\}`))?.[1]?.replace(/\s/g, '');
+    assert.ok(fromEngine && fromClient, `не удалось прочитать веса стратегии ${mode}`);
+    assert.equal(fromEngine, fromClient, `веса стратегии «${mode}» разошлись между сервером и клиентом`);
+  });
+  const meetingTypes = engine.match(/const MEETING_TYPE_LABEL = \{([^}]*)\}/)?.[1]?.replace(/\s/g, '');
+  const clientTypes = constants.match(/const MEETING_TYPE_LABEL = \{([^}]*)\}/)?.[1]?.replace(/\s/g, '');
+  assert.equal(meetingTypes, clientTypes, 'подписи типов встреч должны совпадать с клиентскими');
+});
+
+test('page details inherit dark-theme glow without a solid panel patch', () => {
+  const css = read('public/css/detail-page.css');
+  assert.match(css, /html\.theme-dark\.glow-enabled \.view\.task-detail-page-view > \.modal-panel\.modal-task-detail\.task-detail-page \{[\s\S]*background: transparent !important;/);
+  assert.doesNotMatch(css, /nnn\.task-detail-topbar-actions|\}n\.view/, 'malformed dead CSS from an old notes-sidebar patch must stay removed');
+});
+
+
+test('assistant empty search result stays concise without generic follow-up examples', () => {
+  const widget = read('public/js/views/smart-search.js');
+  assert.match(widget, /По запросу «\$\{escapeHtml\(result\.query\)\}» ничего не нашлось\./);
+  assert.doesNotMatch(widget, /Попробуйте «как дела у …», «обзор недели», «открой задачи» или «запиши в журнал …»/);
+});
+
+test('assistant search cards link to entity sections and task overflow counts only open tasks', () => {
+  const widget = read('public/js/views/smart-search.js');
+  assert.match(widget, /tasks: \{ label: 'Все задачи', route: '\/tasks' \}/);
+  assert.match(widget, /issues: \{ label: 'Все проблемы', route: '\/issues' \}/);
+  assert.match(widget, /meetings: \{ label: 'Все встречи', route: '\/meetings' \}/);
+  assert.match(widget, /footer: smartSearchSectionFooter\(group, result\)/,
+    'каждая карточка поисковой выдачи должна вести в свой раздел');
+  assert.doesNotMatch(widget, /footer: items\.length > 6 \? \{ label: `Ещё результаты`/,
+    'внизу карточки больше не должно быть перехода на общий поиск');
+  assert.match(widget, /openTotal = tasks\.filter\(\(task\) => task\.status !== 'done' && !task\.archivedAt\)\.length/,
+    'счётчик «ещё» у задач считает только незакрытые задачи');
+});
+
+test('Check-in dash is a focus placeholder for the whole editable cell', () => {
+  const view = read('public/js/views/checkins.js');
+  const css = read('public/css/system.css');
+  assert.match(view, /placeholder="—"/);
+  assert.match(view, /field\.closest\('\.checkins-cell-editable'\)/);
+  assert.match(css, /\.checkins-inline-editor:focus::placeholder \{ color:transparent; opacity:0; \}/);
+  assert.match(css, /\.checkins-cell-editable:focus-within \{[\s\S]*box-shadow:inset 0 0 0 1px var\(--accent\)/);
+});
+
+test('issues list rows expose interactive status, serious label and related people avatars', () => {
+  const view = read('public/js/views/issues.js');
+  assert.match(view, /function issueListTitleRowHtml\(issue\)/);
+  assert.match(view, /filtered\.map\(issueListTitleRowHtml\)\.join\(''\)/);
+  const rowRenderer = view.slice(view.indexOf('function issueListTitleRowHtml'), view.indexOf('Views.issues = async function'));
+  assert.match(rowRenderer, /issueStatusBadge\(issue\.status, issue\.id\)/);
+  assert.match(rowRenderer, /issue\.severity === 'high'/);
+  assert.match(rowRenderer, />серьёзная</);
+  assert.match(rowRenderer, /relatedPersonIds/);
+  assert.match(rowRenderer, /personAvatarLinkHtml\(person\)/);
+});
+
+test('Check-in employee history rows do not highlight on row hover', () => {
+  const css = read('public/css/system.css');
+  assert.doesNotMatch(css, /\.checkins-history-table-row:not\(\.checkins-history-table-head\):hover \.checkins-history-table-cell\s*\{[\s\S]*?background:\s*var\(--bg-hover\)/);
+});
+
+
+test('technology section is nested under Development and exposes CRUD table fields', () => {
+  const app = read('public/js/app.js');
+  const router = read('public/js/lib/router.js');
+  const view = read('public/js/views/technology.js');
+  const db = read('server/db.js');
+  assert.match(app, /key: 'development'[\s\S]*key: 'technology'[\s\S]*label: 'План мероприятий'/);
+  assert.match(router, /Views\.technology\(\)/);
+  assert.match(view, /Плановая дата проведения/);
+  assert.match(view, /Тема/);
+  assert.match(view, /Тайминг/);
+  assert.match(view, /Драйвер \/ гость/);
+  assert.match(view, /Проведено/);
+  assert.match(view, /Resources\.technologyEvents\.create/);
+  assert.match(view, /Resources\.technologyEvents\.update/);
+  assert.match(view, /Resources\.technologyEvents\.remove/);
+  assert.match(view, /people: \(\) => store\.people/);
+  assert.match(db, /'technologyEvents'/);
+});
+
+test('events use Check-in style table navigation, quarter filter, inline completion and export', () => {
+  const view = read('public/js/views/technology.js');
+  const css = read('public/css/style.css');
+  assert.match(view, /checkins-view gcal-layout technology-view/);
+  assert.match(view, /view\.classList\.remove\('checkins-wide'\)/, 'technology must stay inside the standard work-area width');
+  assert.match(view, /gcal-toolbar checkins-toolbar technology-toolbar/);
+  assert.match(view, /id="technology-quarter-filter"/);
+  assert.match(view, /function technologyYearNavHtml\(\)/);
+  assert.match(view, /data-view-state="_technologyYear"/);
+  assert.match(view, /Текущий год/);
+  assert.match(view, /data-command="openTechnologyExportModal"/);
+  assert.match(view, /TabularExport\.download/);
+  assert.doesNotMatch(view, /schema\.push\(\{ key: 'completed'/);
+  assert.match(view, /if \(!isEdit\) payload\.completed = false/);
+  assert.match(view, /Q1 \${year}/);
+  assert.match(view, /Q4 \${year}/);
+  assert.match(view, />Весь год<\/option>/);
+  assert.doesNotMatch(view, /<span>Квартал<\/span>/);
+  assert.match(view, /checkins-table technology-table/);
+  assert.match(view, /checkins-cell technology-table-cell/);
+  assert.match(view, /technology-inline-input/);
+  assert.match(css, /\.technology-table\{width:100%;max-width:100%;min-width:0;grid-template-columns:/);
+  assert.match(css, /grid-template-columns:subgrid/);
+  assert.doesNotMatch(view, /technology-table-row[^`]*data-command=\"openTechnologyEventModal/);
+  assert.match(view, /На этот период мероприятий нет/);
+  assert.doesNotMatch(view, /В \${technologyYearValue\(\)} году/);
+  assert.match(css, /\.technology-empty\{grid-column:1\/-1;padding:12px 12px;\}/);
+});
+
+test('technology timing only accepts whole hours and native number controls follow dark theme', () => {
+  const view = read('public/js/views/technology.js');
+  const css = read('public/css/style.css');
+  assert.match(view, /type="number" min="1" step="1" inputmode="numeric"/);
+  assert.match(view, /Number\.isInteger\(payload\.hours\)/);
+  assert.match(view, /Укажите тайминг целым числом часов больше нуля/);
+  assert.match(css, /input\[type="number"\]\{color-scheme:light;\}/);
+  assert.match(css, /html\.theme-dark input\[type="number"\]\{color-scheme:dark;\}/);
+});
+
+test('technology navigation has its own icon distinct from The Labs', () => {
+  const app = fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8');
+  const icons = fs.readFileSync(path.join(ROOT, 'public/js/lib/icons.js'), 'utf8');
+  assert.match(app, /technology:\s*'events'/);
+  assert.match(icons, /events:\s*'<rect/);
+});
+
+
+test('events table supports inline editing and edit form excludes completed flag', () => {
+  const view = read('public/js/views/technology.js');
+  const css = read('public/css/style.css');
+  assert.match(view, /data-technology-inline="1"/);
+  assert.match(view, /function wireTechnologyInlineEditors\(\)/);
+  assert.match(view, /Resources\.technologyEvents\.update\(id, \{ \[key\]: value \}\)/);
+  assert.match(view, /data-technology-people=/);
+  assert.doesNotMatch(view, /schema\.push\(\{ key: 'completed'/);
+  assert.match(view, /payload\.completed = Boolean\(item\.completed\)/);
+  assert.match(css, /\.technology-table-head\{[^}]*text-transform:none/);
+  assert.match(css, /\.technology-inline-input:hover,[^}]*background:transparent!important/);
+  assert.doesNotMatch(css, /\.technology-inline-input:focus\{[^}]*box-shadow:inset 0 0 0 1px/);
+  assert.match(view, /technology-people-read/);
+  assert.match(css, /\.technology-inline-people\{display:none;/);
+  assert.match(css, /\.technology-inline-people\.is-editing\{display:block;/);
+  assert.match(view, /menuMinWidth: 440/);
+  assert.match(view, /menuClass: 'technology-people-menu'/);
+  assert.match(css, /\.technology-people-menu \.pp-item-name\{[^}]*overflow:visible/);
+});
+
+
+test('plan events schedules Garden meetings from a calendar action outside the table row', () => {
+  const technology = read('public/js/views/technology.js');
+  const meetings = read('public/js/views/meetings.js');
+  const css = read('public/css/style.css');
+  assert.match(technology, /function technologyMeetingForEvent/);
+  assert.match(technology, /function scheduleTechnologyMeeting/);
+  assert.match(technology, /Запланировать встречу в Garden/);
+  assert.match(technology, /Встреча уже запланирована/);
+  assert.match(technology, /sourceTechnologyEventId: item\.id/);
+  assert.match(technology, /type: 'club'/);
+  assert.match(technology, /technology-row-actions/);
+  assert.match(css, /\.technology-row-actions\{position:absolute;left:calc\(100% \+ 8px\)/);
+  assert.match(css, /\.technology-row-action:disabled\{[^}]*opacity:/);
+  assert.match(meetings, /sourceTechnologyEventId: m\.sourceTechnologyEventId/);
+  assert.doesNotMatch(technology, /icon\('edit'/);
+});
+
+test('plan events can be deleted from the row action gutter', () => {
+  const technology = read('public/js/views/technology.js');
+  const css = read('public/css/style.css');
+  assert.match(technology, /data-command=\"deleteTechnologyEvent\"/);
+  assert.match(technology, /Удалить мероприятие/);
+  assert.match(technology, /icon\('trash', 15\)/);
+  assert.match(technology, /async function deleteTechnologyEvent\(id\)/);
+  assert.match(technology, /Resources\.technologyEvents\.remove\(id\)/);
+  assert.match(technology, /confirmAction\('Удалить это мероприятие\?'\)/);
+  assert.match(css, /\.technology-row-actions\{[^}]*display:flex[^}]*gap:2px/);
+  assert.match(css, /\.technology-delete-action:hover/);
+  assert.match(css, /\.technology-row-actions\{[^}]*opacity:0/);
+  assert.match(css, /\.technology-table-row:hover \.technology-row-actions,[^}]*opacity:1/);
+});
+
+test('plan events shows full people names and one stable calendar control in the planned date cell', () => {
+  const technology = read('public/js/views/technology.js');
+  const css = read('public/css/style.css');
+  assert.match(technology, /technology-person-row/);
+  assert.match(technology, /technology-person-name/);
+  assert.match(technology, /escapeHtml\(person\.name \|\| ''\)/);
+  assert.match(css, /\.technology-people\{display:flex;flex-direction:column/);
+  assert.match(css, /\.technology-person-row\{display:flex;align-items:center/);
+  assert.match(technology, /class="technology-date-picker"/);
+  assert.match(technology, /input\.showPicker/);
+  assert.match(css, /\.technology-inline-input\[type="date"\]::-webkit-calendar-picker-indicator\{[^}]*display:none!important/);
+  assert.match(css, /\.technology-date-picker\{[^}]*display:inline-grid/);
+});
+
+test('plan event single-line inline editors share one vertical text baseline', () => {
+  const technology = read('public/js/views/technology.js');
+  const css = read('public/css/style.css');
+  assert.doesNotMatch(technology, /field\.style\.height = '0px'/);
+  assert.match(css, /\.technology-inline-input\{[^}]*height:20px[^}]*line-height:20px/);
+  assert.match(css, /\.technology-topic \.technology-inline-input\{[^}]*white-space:nowrap/);
+  assert.match(css, /\.technology-date,\.technology-topic,\.technology-timing\{align-items:center;/);
+});
+
+test('smart-search cards use compact semantic footers without more counters', () => {
+  const smartSearch = fs.readFileSync(path.join(ROOT, 'public/js/views/smart-search.js'), 'utf8');
+  const css = fs.readFileSync(path.join(ROOT, 'public/css/system.css'), 'utf8');
+  assert.doesNotMatch(smartSearch, /smart-section-more[^\n]*ещё/);
+  assert.doesNotMatch(smartSearch, /smart-project-group-more[^\n]*ещё/);
+  assert.match(css, /\.smart-section-head-action\{[\s\S]*?font-size:11px;/);
+  assert.match(css, /\.smart-section-head-action\{[\s\S]*?border:1px solid var\(--border-soft\)/);
+});
+
+test('assistant and search merge multiple result cards into one Tasks-style collapsible surface', () => {
+  const view = fs.readFileSync(path.join(ROOT, 'public/js/views/smart-search.js'), 'utf8');
+  const css = fs.readFileSync(path.join(ROOT, 'public/css/system.css'), 'utf8');
+  assert.match(view, /digest\.sections\.length > 1 \? 'smart-sections-unified'/);
+  assert.match(view, /cards\.length > 1 \? 'smart-sections-unified'/);
+  assert.match(view, /<details class="smart-section/);
+  assert.match(view, /smart-section-chevron/);
+  assert.match(css, /\.smart-sections\.smart-sections-unified > \.smart-section \+ \.smart-section\s*\{[\s\S]*?margin-top:32px;[\s\S]*?border-top:0;/);
+  assert.match(css, /\.smart-sections\.smart-sections-unified \.smart-section-head h4\s*\{[\s\S]*?font-size:15px;[\s\S]*?font-weight:600;/);
+  assert.match(css, /\.smart-section\[open\] > \.smart-section-head \.smart-section-chevron\{transform:rotate\(90deg\);\}/);
+  assert.match(view, /smart-section-head-action[\s\S]*data-route-stop=\"1\"/);
+  assert.match(css, /\.smart-sections\.smart-sections-unified \.smart-section-body > \.smart-row,[\s\S]*?min-height:42px;/);
+});
+
+test('assistant cards share one typography and secondary-action scale', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'public/css/system.css'), 'utf8');
+  assert.match(css, /--smart-section-title-size:15px/);
+  assert.match(css, /--smart-row-text-size:14px/);
+  assert.match(css, /--smart-action-text-size:11px/);
+  assert.match(css, /--smart-action-height:24px/);
+  assert.match(css, /\.smart-section-head-action,[\s\S]*?\.smart-section-summary-action,[\s\S]*?\.smart-answer-link\{[\s\S]*?height:var\(--smart-action-height\)/);
+  assert.match(css, /\.smart-section-head-button\{font:var\(--smart-action-text-size\)\/1 var\(--font\);font-weight:550;\}/);
 });

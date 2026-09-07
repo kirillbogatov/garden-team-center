@@ -3,10 +3,10 @@
 Views._taskGroupBy = 'status';
 Views._taskStatusFilter = 'all';
 Views._taskPersonFilter = 'all';
+Views._taskWorkMode = localStorage.getItem('garden:taskWorkMode') === 'development' ? 'development' : 'projects';
 Views._taskProjectFilter = 'all';
 Views._taskViewMode = 'list';
 Views._taskFiltersCollapsed = localStorage.getItem('garden:taskFiltersCollapsed') === '1';
-const TASK_STATUS_ORDER = ['todo', 'in_progress', 'in_review', 'paused', 'blocked', 'done'];
 
 Views.tasks = async function () {
   const createRequested = Router.queryParam('create') === '1';
@@ -18,7 +18,12 @@ Views.tasks = async function () {
   const requestedPersonId = Router.queryParam('person');
   const requestedPerson = requestedPersonId ? store.person(requestedPersonId) : null;
   const requestedProjectFilter = Router.queryParam('project');
+  const requestedWorkMode = Router.queryParam('workMode');
+  const requestedStatus = Router.queryParam('status');
+  if (requestedWorkMode === 'development' || requestedWorkMode === 'projects') Views._taskWorkMode = requestedWorkMode;
+  if (requestedStatus && ['all','todo','in_progress','in_review','blocked','paused','done','archived'].includes(requestedStatus)) Views._taskStatusFilter = requestedStatus;
   if (requestedProjectFilter === 'all') Views._taskProjectFilter = 'all';
+  else if (requestedProjectFilter && store.projects.some((project) => project.id === requestedProjectFilter)) Views._taskProjectFilter = `project:${requestedProjectFilter}`;
   // Переходы из виджетов могут сразу открыть задачи конкретного сотрудника.
   // Query-параметр задаёт только фильтр сотрудника и не сбрасывает остальные
   // настройки представления/фильтры страницы.
@@ -27,8 +32,15 @@ Views.tasks = async function () {
     : (requestedPerson ? requestedPerson.id : Views._taskPersonFilter);
   const isKanban = Views._taskViewMode === 'kanban';
   const filtersCollapsed = !!Views._taskFiltersCollapsed;
+  const taskWorkModeControlHtml = `<div class="task-header-work-mode" aria-label="Тип задач">
+    <div class="ui-segmented seg-toggle task-work-mode-toggle">
+      <button type="button" class="ui-segmented-item seg-btn ${Views._taskWorkMode === 'projects' ? 'active' : ''}" data-task-work-mode="projects" aria-pressed="${Views._taskWorkMode === 'projects'}">Проекты</button>
+      <button type="button" class="ui-segmented-item seg-btn ${Views._taskWorkMode === 'development' ? 'active' : ''}" data-task-work-mode="development" aria-pressed="${Views._taskWorkMode === 'development'}">Развитие</button>
+    </div>
+  </div>`;
   setTopbar(`<h1>${mineOnly ? 'Мои задачи' : 'Задачи'}</h1>
     <div class="actions task-header-actions">
+      ${taskWorkModeControlHtml}
       <div class="ui-segmented seg-toggle task-view-toggle" aria-label="Представление задач">
         <button class="ui-segmented-item seg-btn ${Views._taskViewMode === 'list' ? 'active' : ''}" id="task-view-list" title="Список">${icon('list', 14)}</button>
         <button class="ui-segmented-item seg-btn ${Views._taskViewMode === 'kanban' ? 'active' : ''}" id="task-view-kanban" title="Канбан">${icon('columns', 14)}</button>
@@ -44,7 +56,8 @@ Views.tasks = async function () {
     taskCreateButton.onclick = () => {
       const prefill = {};
       if (taskPersonFilter !== 'all') prefill.assigneeIds = [taskPersonFilter];
-      if (Views._taskProjectFilter?.startsWith('project:')) {
+      prefill.taskType = Views._taskWorkMode === 'development' ? 'development' : 'standard';
+      if (Views._taskWorkMode === 'projects' && Views._taskProjectFilter?.startsWith('project:')) {
         prefill.projectId = Views._taskProjectFilter.slice('project:'.length);
       }
       FeatureLoader.run('openTaskModal', null, { prefill });
@@ -62,14 +75,12 @@ Views.tasks = async function () {
   // к нему применится сам статус (иначе вкладки показывали бы количество
   // задач ПОСЛЕ фильтра, а не общее число в каждой категории, как в референсе).
   const allRecords = await Resources.tasks.list({ includeArchived: 1 });
-  let scoped = allRecords;
-  if (Views._taskProjectFilter !== 'all') {
-    if (Views._taskProjectFilter === 'project_tasks') scoped = scoped.filter((t) => !!t.projectId && (!t.taskType || t.taskType === 'standard'));
-    else if (Views._taskProjectFilter === 'development') scoped = scoped.filter((t) => t.taskType === 'development');
-    else if (Views._taskProjectFilter.startsWith('project:')) {
-      const projectId = Views._taskProjectFilter.slice('project:'.length);
-      scoped = scoped.filter((t) => t.projectId === projectId);
-    }
+  let scoped = allRecords.filter((t) => Views._taskWorkMode === 'development'
+    ? t.taskType === 'development'
+    : t.taskType !== 'development');
+  if (Views._taskWorkMode === 'projects' && Views._taskProjectFilter !== 'all' && Views._taskProjectFilter.startsWith('project:')) {
+    const projectId = Views._taskProjectFilter.slice('project:'.length);
+    scoped = scoped.filter((t) => t.projectId === projectId);
   }
   if (mineOnly) {
     scoped = currentPersonId ? scoped.filter((t) => (t.assigneeIds || []).includes(currentPersonId)) : [];
@@ -94,13 +105,10 @@ Views.tasks = async function () {
         <option value="person" ${Views._taskGroupBy === 'person' ? 'selected' : ''}>По сотрудникам</option>
         <option value="project" ${Views._taskGroupBy === 'project' ? 'selected' : ''}>По проектам</option>
       </select>` : ''}
-      <select id="task-project-filter" class="task-filter-select task-filter-project" aria-label="Фильтр по проекту">
-        <option value="all" ${Views._taskProjectFilter === 'all' ? 'selected' : ''}>Проекты и развитие</option>
-        <option disabled class="filter-divider">⎯⎯⎯⎯⎯⎯</option>
-        <option value="project_tasks" ${Views._taskProjectFilter === 'project_tasks' ? 'selected' : ''}>Только проекты</option>
-        <option value="development" ${Views._taskProjectFilter === 'development' ? 'selected' : ''}>Только развитие</option>
-        ${store.projects.length ? `<option disabled class="filter-divider">⎯⎯⎯⎯⎯⎯</option>${store.projects.map((p) => `<option value="project:${p.id}" ${Views._taskProjectFilter === 'project:' + p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}` : ''}
-      </select>
+      ${Views._taskWorkMode === 'projects' ? `<select id="task-project-filter" class="task-filter-select task-filter-project" aria-label="Фильтр по проекту">
+        <option value="all" ${Views._taskProjectFilter === 'all' ? 'selected' : ''}>Все проекты</option>
+        ${store.projects.map((p) => `<option value="project:${p.id}" ${Views._taskProjectFilter === 'project:' + p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}
+      </select>` : ''}
       <select id="task-person-filter" class="task-filter-select task-filter-person" aria-label="Фильтр по сотруднику">
         <option value="all" ${taskPersonFilter === 'all' ? 'selected' : ''}>Все сотрудники</option>
         ${store.team().map((p) => `<option value="${p.id}" ${taskPersonFilter === p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}
@@ -134,9 +142,7 @@ Views.tasks = async function () {
       label: project.name,
       tasks: listTasks.filter((t) => t.projectId === project.id),
     }));
-    const development = listTasks.filter((t) => t.taskType === 'development' && !t.projectId);
-    if (development.length) groups.push({ key: 'project:development', label: 'Развитие', tasks: development });
-    const withoutProject = listTasks.filter((t) => !t.projectId && t.taskType !== 'development');
+    const withoutProject = listTasks.filter((t) => !t.projectId);
     if (withoutProject.length) groups.push({ key: 'project:none', label: 'Без проекта', tasks: withoutProject });
   } else {
     groups = TASK_STATUS_ORDER.map((status) => ({
@@ -156,8 +162,7 @@ Views.tasks = async function () {
         ? emptyState('Ничего не найдено', 'Попробуйте изменить фильтры', 'tasks')
         : emptyState('Задач пока нет', 'Создайте первую задачу', 'tasks');
   } else if (Views._taskViewMode === 'kanban') {
-    const order = ['todo', 'in_progress', 'in_review', 'paused', 'blocked', 'done'];
-    content.innerHTML = `<div class="task-kanban-wrap"><div class="kanban task-kanban">${order.map((status) => {
+    content.innerHTML = `<div class="task-kanban-wrap"><div class="kanban task-kanban">${TASK_STATUS_ORDER.map((status) => {
       const columnTasks = tasks.filter((t) => t.status === status);
       return `<section class="kanban-col task-kanban-col" data-status="${status}">
         <div class="kanban-col-title"><span>${TASK_STATUS_LABEL[status]}</span></div>
@@ -204,6 +209,16 @@ Views.tasks = async function () {
     Views._taskGroupBy = e.target.value;
     Views.tasks();
   };
+  document.querySelectorAll('[data-task-work-mode]').forEach((button) => {
+    button.onclick = () => {
+      const nextMode = button.dataset.taskWorkMode === 'development' ? 'development' : 'projects';
+      if (Views._taskWorkMode === nextMode) return;
+      Views._taskWorkMode = nextMode;
+      Views._taskProjectFilter = 'all';
+      localStorage.setItem('garden:taskWorkMode', nextMode);
+      Views.tasks();
+    };
+  });
   const projectFilter = document.getElementById('task-project-filter');
   if (projectFilter) projectFilter.onchange = (e) => { Views._taskProjectFilter = e.target.value; Views.tasks(); };
   const personFilter = document.getElementById('task-person-filter');
@@ -226,7 +241,11 @@ Views.tasks = async function () {
     const prefill = {};
     if (createTitle) prefill.title = createTitle;
     if (createAssigneeIds.length) prefill.assigneeIds = [...new Set(createAssigneeIds)];
-    if (createProjectId && store.project(createProjectId)) prefill.projectId = createProjectId;
+    prefill.taskType = Views._taskWorkMode === 'development' ? 'development' : 'standard';
+    if (createProjectId && store.project(createProjectId)) {
+      prefill.projectId = createProjectId;
+      prefill.taskType = 'standard';
+    }
     await openTaskModal(null, { prefill });
   }
 };
@@ -508,12 +527,11 @@ ${detailPageHeaderHtml({ title: t.title, eyebrow: '', inputId: 'tf-title', displ
     const actionsWrap = actionsToggle.closest('.task-actions-menu-wrap');
     actionsToggle.onclick = (event) => {
       event.stopPropagation();
-      setActionsOpen(actionsMenu.hidden);
+      const open = actionsMenu.hidden;
+      setActionsOpen(open);
+      if (open) bindOutsideClickClose(actionsWrap, () => setActionsOpen(false));
     };
     actionsMenu.onclick = (event) => event.stopPropagation();
-    document.addEventListener('click', (event) => {
-      if (!actionsWrap?.contains(event.target)) setActionsOpen(false);
-    });
   }
 
   const versionHistoryButton = document.getElementById('task-version-history');
@@ -779,7 +797,7 @@ async function openTaskCreateModal(opts) {
     { key: 'taskType', label: 'Тип', type: 'select', default: 'standard', options: Object.entries(TASK_TYPE_LABEL).map(([value, label]) => ({ value, label })) },
     { key: 'projectId', label: 'Проект', type: 'select', emptyLabel: '—', options: () => (store.projects || []).map((p) => ({ value: p.id, label: p.name })), parse: (v) => v || null },
     { key: 'assigneeIds', label: 'Исполнители', type: 'people', multi: true, people: () => store.team(), emptyLabel: 'Не назначено', placeholder: 'Добавить исполнителя…', hint: 'Каждый новый исполнитель получает отдельную копию задачи со своим статусом.' },
-    { key: 'status', label: 'Статус', type: 'select', default: 'todo', options: ['todo','in_progress','in_review','paused','blocked','done'].map((value) => ({ value, label: TASK_STATUS_LABEL[value] })) },
+    { key: 'status', label: 'Статус', type: 'select', default: 'todo', options: TASK_STATUS_ORDER.map((value) => ({ value, label: TASK_STATUS_LABEL[value] })) },
     { key: 'priority', label: 'Приоритет', type: 'select', default: 'normal', options: ['normal','high'].map((value) => ({ value, label: PRIORITY_LABEL[value] })) },
     {
       key: 'dueDate', label: 'Срок', type: 'date', parse: (v) => v || null,
@@ -840,7 +858,7 @@ async function openTaskCreateModal(opts) {
     validate: (payload) => !payload.title ? 'Укажите название задачи' : '',
     onSave: async (payload) => {
       // Обратная ссылка на Check-in, из которого создана задача (см. journal.js
-      // и его sourceJournalId — та же однонаправленная схема, без поля в схеме
+      // обратная ссылка хранится только у созданной из Check-in сущности, без поля в форме
       // формы, чтобы не показывать служебный id пользователю).
       if (opts.prefill?.sourceCheckinId) payload.sourceCheckinId = opts.prefill.sourceCheckinId;
       const saved = await Resources.tasks.create(payload);
@@ -868,17 +886,21 @@ async function archiveTask(id, currentStatus) {
   });
   if (!ok) return;
   if (typeof DetailAutosave !== 'undefined') await DetailAutosave.flush();
-  await Resources.tasks.update(id, { archivedAt: new Date().toISOString() });
+  const saved = await Resources.tasks.update(id, { archivedAt: new Date().toISOString() });
+  const localIndex = (store.tasks || []).findIndex((item) => item.id === id);
+  if (localIndex >= 0) store.tasks[localIndex] = { ...store.tasks[localIndex], ...(saved || {}), archivedAt: saved?.archivedAt || new Date().toISOString() };
+  await Router.render();
   toast('Задача перемещена в архив');
-  Router.render();
 }
 
 async function restoreTask(id) {
   if (typeof DetailAutosave !== 'undefined') await DetailAutosave.flush();
-  await Resources.tasks.update(id, { archivedAt: null });
+  const saved = await Resources.tasks.update(id, { archivedAt: null });
+  const localIndex = (store.tasks || []).findIndex((item) => item.id === id);
+  if (localIndex >= 0) store.tasks[localIndex] = { ...store.tasks[localIndex], ...(saved || {}), archivedAt: null };
   Modal.close();
+  await Router.render();
   toast('Задача возвращена из архива');
-  Router.render();
 }
 
 async function deleteTask(id) {

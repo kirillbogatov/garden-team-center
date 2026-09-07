@@ -70,6 +70,28 @@ module.exports = function createEntityIdentifiers({ db, nextNumericKey }) {
     }
     return 'PRJT';
   }
+  // Normalizes, length-checks and dedupe-checks a project's taskCode. Used by both the
+  // projects POST and PUT handlers in routes/crud.js, which previously duplicated this
+  // logic independently.
+  //
+  // - autoGenerate:false (PUT/update): taskCode must already be a full valid code —
+  //   returns { error, status } on an invalid or duplicate code, else { code }.
+  // - autoGenerate:true (POST/create): an empty/missing taskCode is filled in with a
+  //   freshly derived unique one instead of erroring.
+  function validateProjectTaskCode(db, payload, excludeId, { autoGenerate = false } = {}) {
+    const requested = normalizeProjectTaskCode(payload?.taskCode);
+    if (autoGenerate) {
+      if (payload?.taskCode && requested.length !== 4) return { error: 'invalid_project_task_code', status: 400 };
+      const code = requested || uniqueProjectTaskCode(payload, excludeId);
+      const duplicate = db.projects.all().some((project) => project.id !== excludeId && normalizeProjectTaskCode(project.taskCode) === code);
+      if (duplicate) return { error: 'project_task_code_exists', status: 409 };
+      return { code };
+    }
+    if (requested.length !== 4) return { error: 'invalid_project_task_code', status: 400 };
+    const duplicate = db.projects.all().some((project) => project.id !== excludeId && normalizeProjectTaskCode(project.taskCode) === requested);
+    if (duplicate) return { error: 'project_task_code_exists', status: 409 };
+    return { code: requested };
+  }
   function ensureProjectTaskCodes() {
     for (const project of db.projects.all()) {
       const current = normalizeProjectTaskCode(project.taskCode);
@@ -150,7 +172,7 @@ module.exports = function createEntityIdentifiers({ db, nextNumericKey }) {
   }
 
   return {
-    SLUG_COLLECTIONS, slugify, uniqueSlug, resolveEntity, normalizeProjectTaskCode, uniqueProjectTaskCode,
+    SLUG_COLLECTIONS, slugify, uniqueSlug, resolveEntity, normalizeProjectTaskCode, uniqueProjectTaskCode, validateProjectTaskCode,
     ensureSlugs, ensureProjectTaskCodes, taskKeyPrefix, nextTaskKey, assignTaskKey, nextLabKey, ensureLabKeys, ensureTaskKeys,
     nextMeetingKey, assignMeetingKey, ensureMeetingKeys, nextProcessKey, assignProcessKey, ensureProcessKeys,
   };

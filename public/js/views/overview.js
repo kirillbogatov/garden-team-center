@@ -261,7 +261,13 @@ function overviewShelfRowsHtml(widgets, shelf, renderWidget, addSlot) {
 Views.overview = async function () {
   Views._overviewEditing = !!Views._overviewEditing;
   const customizeLabel = Views._overviewEditing ? 'Готово' : 'Настроить';
-  setTopbar(`<h1>Обзор</h1><div class="actions overview-topbar-actions"><button type="button" class="sidebar-collapse-btn overview-comments-sidebar-toggle" id="overview-comments-toggle" aria-label="Показать панель стикеров" title="Показать панель стикеров" aria-expanded="false">${icon('sticky', 16)}</button><button type="button" class="ui-button btn overview-customize-btn ${Views._overviewEditing ? 'active' : ''}" id="overview-customize">${icon(Views._overviewEditing ? 'tasks' : 'settings', 14)} ${customizeLabel}</button><button class="ui-button ui-button--primary btn btn-primary" data-command="openPalette">+ Добавить</button></div>`);
+  // Режим главного экрана известен ещё до загрузки данных — настройки читаются при
+  // старте приложения. Иначе шапка успевала мигнуть на пути к режиму ассистента.
+  const assistantHint = GardenSettings.value?.overviewHomeMode === 'assistant';
+  if (assistantHint) {
+    setTopbar('');
+    document.getElementById('topbar')?.classList.add('topbar-hidden');
+  } else setTopbar(`<h1>Обзор</h1><div class="actions overview-topbar-actions"><button type="button" class="sidebar-collapse-btn overview-comments-sidebar-toggle" id="overview-comments-toggle" aria-label="Показать панель стикеров" title="Показать панель стикеров" aria-expanded="false">${icon('sticky', 16)}</button><button type="button" class="ui-button btn overview-customize-btn ${Views._overviewEditing ? 'active' : ''}" id="overview-customize">${icon(Views._overviewEditing ? 'tasks' : 'settings', 14)} ${customizeLabel}</button><button class="ui-button ui-button--primary btn btn-primary" data-command="openPalette">+ Добавить</button></div>`);
   const view = document.getElementById('view');
   view.classList.remove('overview-wide');
   view.innerHTML = `<div class="tiny">Загрузка…</div>`;
@@ -373,7 +379,7 @@ Views.overview = async function () {
       return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Журнал пока пуст'), `<a data-route="/journal">Открыть журнал</a>`);
     }
     if (widget.type === 'my-ideas') {
-      const rows = myIdeas.slice().sort((a,b) => new Date(b.updatedAt || b.createdAt)-new Date(a.updatedAt || a.createdAt)).slice(0, 5).map((idea) => overviewMiniRow({ title: idea.title || 'Идея', meta: LAB_STATUS_LABEL?.[idea.status] || '', iconName: 'ideas', route: '/labs?tab=ideas' }));
+      const rows = myIdeas.slice().sort((a,b) => new Date(b.updatedAt || b.createdAt)-new Date(a.updatedAt || a.createdAt)).slice(0, 5).map((idea) => overviewMiniRow({ title: idea.title || 'Идея', meta: IDEA_STATUS_LABEL?.[idea.status] || '', iconName: 'ideas', route: '/labs?tab=ideas' }));
       return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Идей пока нет'), `<a data-route="/labs?tab=ideas">Все идеи</a>`);
     }
     if (widget.type === 'my-meetings') {
@@ -558,11 +564,28 @@ Views.overview = async function () {
     </section>`;
   };
 
+  // Что показывать на главном экране, решает настройка (Настройки → Главный экран), а не состав
+  // виджетов: ассистент — это режим страницы, а не карточка среди других карточек.
+  // Конфигурация виджетов при этом не трогается и возвращается при обратном переключении.
+  const assistantMode = settings?.overviewHomeMode === 'assistant';
+  if (assistantMode) {
+    // Шапка в режиме ассистента только отнимает воздух: заголовок «Обзор» ничего не
+    // добавляет к экрану, а управлять виджетами здесь нечем. Убираем её целиком,
+    // а стикеры остаются доступны тихой кнопкой в углу самого экрана.
+    setTopbar('');
+    document.getElementById('topbar')?.classList.add('topbar-hidden');
+  }
+
+  const assistantHtml = `<div class="overview-smart-mode">
+    <button type="button" class="overview-smart-notes overview-comments-sidebar-toggle" id="overview-comments-toggle" aria-label="Показать панель стикеров" title="Показать панель стикеров" aria-expanded="false">${icon('sticky', 16)}</button>
+    <div class="smart-search-mount" id="smart-search-mount"><div class="tiny">Загрузка…</div></div>
+  </div>`;
+
   view.innerHTML = `<div class="overview-page-shell">
-    <div class="overview-dashboard ${Views._overviewEditing ? 'is-customizing' : ''}">
+    ${assistantMode ? assistantHtml : `<div class="overview-dashboard ${Views._overviewEditing ? 'is-customizing' : ''}">
       ${shelfHtml('quick','Быстрые действия')}
       ${shelfHtml('signals','Сигналы')}
-    </div>
+    </div>`}
     <aside class="overview-comments-drawer" id="overview-comments-drawer" aria-hidden="true">
       <div class="overview-comments-head">
         <div><strong>Стикеры</strong></div>
@@ -617,6 +640,10 @@ Views.overview = async function () {
     if (!Views._overviewEditing) return;
     await overviewRemoveWidget(button.dataset.overviewShelfName, button.dataset.overviewRemove, button.closest('[data-overview-widget]'));
   }));
+  if (assistantMode) {
+    await FeatureLoader.load('smart-search');
+    await FeatureLoader.run('mountSmartSearch', document.getElementById('smart-search-mount'));
+  }
   wireOverviewDragAndDrop();
   overviewApplyEditingState(Views._overviewEditing, { updateTopbar: false });
 };

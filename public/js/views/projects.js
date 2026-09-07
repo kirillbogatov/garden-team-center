@@ -61,7 +61,7 @@ Views.projectDetail = async function (id) {
   const addTaskIdx = registerAction(() => FeatureLoader.run('openTaskModal', null, { prefill: { projectId: p.id } }));
 
   const [projectNotes, settings] = await Promise.all([
-    api.get(`/api/comments/project/${encodeURIComponent(p.id)}`).catch(() => []),
+    Comments.list('project', p.id).catch(() => []),
     GardenSettings.load(),
   ]);
 
@@ -106,7 +106,7 @@ Views.projectDetail = async function (id) {
       const idx = registerAction(() => FeatureLoader.run('openAgreementModal', a.id));
       return `<div class="ui-row list-row" data-action-id="${idx}"><span class="title">${renderMentionText(a.text)}</span><span class="meta">${fmtDate(a.date)}</span></div>`;
     }).join('') : emptyState('Договорённостей нет', '', 'agreements');
-    if (key === 'journal') return data.journal.length ? data.journal.map(journalEntryHtml).join('') : emptyState('Упоминаний нет', '', 'journal');
+    if (key === 'journal') { const notes = data.journal.filter((entry) => !entry.kind || entry.kind === 'note'); return notes.length ? notes.map(journalEntryHtml).join('') : emptyState('Заметок нет', '', 'journal'); }
     return '';
   }
 

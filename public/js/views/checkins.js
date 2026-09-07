@@ -276,6 +276,11 @@ function wireCheckinInlineEditors() {
       } catch (_) { field.classList.add('is-error'); }
     };
     resize();
+    const cell = field.closest('.checkins-cell-editable');
+    if (cell) cell.addEventListener('click', (event) => {
+      if (event.target.closest('.checkins-spinoff-btn')) return;
+      if (document.activeElement !== field) field.focus();
+    });
     field.addEventListener('input', () => { resize(); field.classList.remove('is-error'); clearTimeout(timer); timer = setTimeout(save, 650); });
     field.addEventListener('blur', save);
     field.addEventListener('keydown', (event) => {
@@ -332,7 +337,7 @@ async function deleteCheckin(id) {
 }
 
 // «Что буду делать» → Задача, «Что мешает» → Проблема. Однонаправленная
-// обратная ссылка sourceCheckinId — та же схема, что sourceJournalId в journal.js.
+// обратная ссылка sourceCheckinId связывает созданную сущность с исходным Check-in.
 async function spinOffTaskFromCheckin(checkinId) {
   const c = _lastCheckins.find((x) => x.id === checkinId);
   if (!c || !c.willDo) return;

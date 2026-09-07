@@ -1,6 +1,6 @@
 'use strict';
 
-module.exports = function registerCommentRoutes(app, { db, canReadItem, denied }) {
+module.exports = function registerCommentRoutes(app, { db, canReadItem, denied, isAdmin }) {
   const entityConfig = {
     task: { collection: 'tasks' },
     meeting: { collection: 'meetings' },
@@ -64,7 +64,10 @@ module.exports = function registerCommentRoutes(app, { db, canReadItem, denied }
     if (!comment) return res.status(404).json({ error: 'not_found' });
     const resolved = resolveEntity(comment.entityType, comment.entityId);
     if (!resolved || !canRead(resolved, req.auth.user)) return denied(res);
-    if (comment.createdByUserId !== req.auth.user.id) return denied(res);
+    // Every other collection's canDelete/canUpdate give all_manage roles (which
+    // include admins) an override to modify other users' data; comments mirror
+    // that here via isAdmin, on top of the author's own unconditional access.
+    if (comment.createdByUserId !== req.auth.user.id && !isAdmin(req.auth.user)) return denied(res);
     const rawText = String(req.body?.text ?? comment.text ?? '').slice(0, 10000);
     const noteEntity = ['overview', 'task', 'meeting', 'project', 'person'].includes(comment.entityType);
     const text = noteEntity ? rawText : rawText.trim();
@@ -82,7 +85,7 @@ module.exports = function registerCommentRoutes(app, { db, canReadItem, denied }
     if (!comment) return res.status(404).json({ error: 'not_found' });
     const resolved = resolveEntity(comment.entityType, comment.entityId);
     if (!resolved || !canRead(resolved, req.auth.user)) return denied(res);
-    if (comment.createdByUserId !== req.auth.user.id) return denied(res);
+    if (comment.createdByUserId !== req.auth.user.id && !isAdmin(req.auth.user)) return denied(res);
     db.comments.remove(comment.id);
     res.status(204).end();
   }

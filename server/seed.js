@@ -4,6 +4,7 @@ const seed = require('./seed-data');
 const COLLECTIONS = [
   'people','projects','labs','tasks','issues','meetings','journal','goals','agreements',
   'documents','tools','processes','vacations','kbFolders','kbDocs','docFolders','toolFolders',
+  'checkins',
 ];
 
 function seedIfEmpty(db) {

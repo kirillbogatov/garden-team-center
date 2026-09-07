@@ -48,7 +48,7 @@
   grid-template-columns: 62px minmax(0,1fr);
   gap: 5px;
   min-height: 29px;
-  font-size: 10.5px;
+  font-size: var(--fs-2xs);
 }
 .task-detail-property input,
 .task-detail-property select {
@@ -56,14 +56,14 @@
   min-height: 27px;
   padding: 3px 24px 3px 6px;
   border-radius: 4px;
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
 }
 .task-detail-property input[type="date"] { padding-right: 26px !important; }
 .task-detail-section { margin: 0 0 11px; }
 .task-detail-section-label,
 .task-comments-head {
   margin-bottom: 5px;
-  font-size: 10.5px;
+  font-size: var(--fs-2xs);
 }
 .task-detail-assignees .people-picker-trigger {
   min-height: 29px;
@@ -72,14 +72,14 @@
   border-radius: 4px;
 }
 .task-detail-assignee-read { gap: 6px; }
-.task-detail-assignee-read > span { gap: 5px; font-size: 11.5px; }
+.task-detail-assignee-read > span { gap: 5px; font-size: var(--fs-xs); }
 .task-detail-assignee-read .avatar { width: 20px; height: 20px; }
 .task-detail-description {
   min-height: 68px;
   max-height: 150px;
   padding: 7px 8px;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   line-height: 1.45;
 }
 .task-comments-section {
@@ -87,13 +87,13 @@
   padding-top: 11px;
 }
 .task-comments-list { gap: 9px; }
-.task-comments-empty { padding: 3px 0 7px; font-size: 11.5px; }
+.task-comments-empty { padding: 3px 0 7px; font-size: var(--fs-xs); }
 .task-comment { gap: 7px; }
 .task-comment-avatar .avatar,
 .task-comment-avatar-fallback { width: 24px; height: 24px; }
-.task-comment-head { min-height: 17px; gap: 6px; font-size: 10px; }
-.task-comment-head strong { font-size: 11px; }
-.task-comment-text { font-size: 11.75px; line-height: 1.42; }
+.task-comment-head { min-height: 17px; gap: 6px; font-size: var(--fs-2xs); }
+.task-comment-head strong { font-size: var(--fs-2xs); }
+.task-comment-text { font-size: var(--fs-xs); line-height: 1.42; }
 .task-comment-compose {
   gap: 6px;
   margin-top: 10px;
@@ -102,7 +102,7 @@
 .task-comment-edit {
   min-height: 42px;
   padding: 6px 8px;
-  font-size: 11.75px;
+  font-size: var(--fs-xs);
   line-height: 1.4;
 }
 .task-comment-compose .btn { min-height: 30px; }
@@ -110,14 +110,14 @@
   gap: 6px;
   margin-bottom: 6px;
 }
-.task-detail-note-head strong { font-size: 11.75px; }
+.task-detail-note-head strong { font-size: var(--fs-xs); }
 .task-detail-note-head span { font-size: 9.75px; }
 .task-detail-note {
   min-height: 170px;
   max-height: 310px;
   padding: 8px 9px;
   border-radius: 5px;
-  font-size: 11.75px;
+  font-size: var(--fs-xs);
   line-height: 1.45;
 }
 .task-detail-context {
@@ -130,7 +130,7 @@
   gap: 6px;
 }
 .task-detail-context span { font-size: 9.75px; }
-.task-detail-context strong { font-size: 10.75px; }
+.task-detail-context strong { font-size: var(--fs-2xs); }
 @media (max-width: 880px) {
   .modal-panel.modal-task-detail { width: calc(100vw - 14px); height: calc(100vh - 14px); }
   .task-detail-layout { grid-template-columns: 1fr; }
@@ -214,7 +214,12 @@
 .task-inline-edit-title .task-inline-edit-icon { right: 8px; }
 
 .task-inline-edit-description {
-  min-height: 68px;
+  /* Раньше запас под иконку редактирования был жёстко 68px — для однострочных
+     описаний (частый случай в The Labs и не только) это оставляло заметную
+     пустую полосу под текстом. Обёртка растёт вместе с textarea (см. её
+     собственный min-height ниже + авто-высоту через JS), 52px достаточно и
+     для иконки, и для одной строки текста. */
+  min-height: 52px;
 }
 .task-inline-edit-description .task-detail-description {
   min-height: 68px;
@@ -268,7 +273,7 @@
   gap: 4px;
   min-height: 26px;
   padding: 0;
-  font-size: 10px;
+  font-size: var(--fs-2xs);
 }
 .modal-panel.modal-task-detail .task-detail-property > span:first-child {
   color: var(--text-tertiary);
@@ -278,7 +283,7 @@
   height: 25px;
   min-height: 25px;
   padding: 2px 22px 2px 5px !important;
-  font-size: 11.25px;
+  font-size: var(--fs-2xs);
   line-height: 1.2;
   color: var(--text-primary) !important;
   -webkit-text-fill-color: var(--text-primary);
@@ -450,7 +455,7 @@ html.theme-dark .modal-panel.modal-task-detail select {
   align-items: center;
   gap: 7px;
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 .task-page-breadcrumb {
   appearance: none;
@@ -582,7 +587,7 @@ html.theme-dark .modal-panel.modal-task-detail select {
 }
 
 .view.task-detail-page-view .task-detail-note-head strong {
-  font-size: 12px;
+  font-size: var(--fs-xs);
 }
 
 .view.task-detail-page-view .task-detail-note {
@@ -666,7 +671,7 @@ html.theme-dark .modal-panel.modal-task-detail select {
 
 .view.task-detail-page-view .task-detail-note-head strong {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-xs);
   font-weight: 600;
 }
 
@@ -789,7 +794,7 @@ html.theme-dark .modal-panel.modal-task-detail select {
 
 .view.task-detail-page-view .task-detail-note-head strong {
   color: var(--text-secondary);
-  font-size: 11.75px;
+  font-size: var(--fs-xs);
   font-weight: 600;
 }
 
@@ -916,7 +921,7 @@ html.theme-dark .modal-panel.modal-task-detail select {
 .view.task-detail-page-view .task-comments-head {
   margin: 0 0 10px;
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--fs-xs);
   font-weight: 650;
   line-height: 1.3;
 }
@@ -991,7 +996,7 @@ html.theme-dark .modal-panel.modal-task-detail select {
 .view.task-detail-page-view .task-relation-label {
   margin-bottom: 5px;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--fs-2xs);
   font-weight: 600;
 }
 
@@ -1017,7 +1022,7 @@ html.theme-dark .modal-panel.modal-task-detail select {
   background: transparent;
   color: var(--text-primary);
   font: inherit;
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   line-height: 1.35;
   text-align: left;
   text-overflow: ellipsis;
@@ -1049,7 +1054,7 @@ html.theme-dark .modal-panel.modal-task-detail select {
 .view.task-detail-page-view .task-relation-empty {
   padding: 2px 0;
   color: var(--text-disabled);
-  font-size: 11px;
+  font-size: var(--fs-2xs);
 }
 
 .view.task-detail-page-view .task-relation-add {
@@ -1063,7 +1068,7 @@ html.theme-dark .modal-panel.modal-task-detail select {
   min-width: 0;
   width: 100%;
   height: 28px;
-  font-size: 11px;
+  font-size: var(--fs-2xs);
 }
 
 .view.task-detail-page-view .task-relation-add .ui-button {
@@ -1146,7 +1151,7 @@ html.theme-dark .modal-panel.modal-task-detail select {
 .view.task-detail-page-view .task-relation-add-popover select {
   width: min(100%, 390px);
   height: 29px;
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
 }
 .view.task-detail-page-view .task-relation-list-unified {
   gap: 1px;
@@ -1159,7 +1164,7 @@ html.theme-dark .modal-panel.modal-task-detail select {
   width: 66px;
   flex: 0 0 66px;
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--fs-2xs);
 }
 .view.task-detail-page-view .task-comment-compose {
   position: relative;
@@ -1177,7 +1182,7 @@ html.theme-dark .modal-panel.modal-task-detail select {
   border-color: var(--border-soft);
   background: var(--bg-surface);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--fs-2xs);
 }
 .view.task-detail-page-view .task-comment-send-inline:hover {
   background: var(--bg-hover);
@@ -1258,7 +1263,7 @@ html.theme-dark .modal-panel.modal-task-detail select {
 .view.task-detail-page-view .task-assignee-copy-hint {
   margin-top: 4px;
   color: var(--text-tertiary);
-  font-size: 10.5px;
+  font-size: var(--fs-2xs);
   line-height: 1.35;
 }
 
@@ -1408,18 +1413,25 @@ html.theme-dark .modal-panel.modal-task-detail select {
 .view.task-detail-page-view .task-detail-property,
 .view.task-detail-page-view .task-detail-assignee-property {
   min-height: 30px;
-  font-size: 12.25px;
+  font-size: var(--fs-xs);
   line-height: 1.35;
 }
 .view.task-detail-page-view .task-detail-property > span:first-child,
 .view.task-detail-page-view .task-detail-assignee-property > span:first-child {
-  font-size: 11.75px;
+  font-size: var(--fs-xs);
 }
 .view.task-detail-page-view .task-detail-property .task-inline-edit input,
 .view.task-detail-page-view .task-detail-property .task-inline-edit select,
 .view.task-detail-page-view .task-detail-status-control,
 .view.task-detail-page-view .task-detail-assignee-read {
-  font-size: 12.25px;
+  font-size: var(--fs-xs);
+}
+/* Значения полей на детальной странице должны быть одного размера независимо от того,
+   чем поле реализовано (select, обычный input, дата, или просто div со статусом/аватаром) —
+   без #view общий сброс input{font-size:var(--fs-sm)} в system.css выигрывает у select ровно
+   у input-based полей (Дедлайн, Исполнитель), и они визуально не совпадают с остальными. */
+#view.task-detail-page-view .task-detail-property .task-inline-edit input {
+  font-size: var(--fs-xs);
 }
 
 .view.task-detail-page-view .task-detail-side {
@@ -1666,7 +1678,7 @@ html.theme-dark .modal-panel.modal-task-detail select {
   background: transparent;
   color: var(--text-secondary);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   text-align: left;
   cursor: pointer;
 }
@@ -1780,7 +1792,6 @@ html.theme-dark .modal-panel.modal-task-detail select {
     padding-right: var(--content-gutter);
   }
 }
-nnn.task-detail-topbar-actions {n  margin-left: auto;n}n.task-detail-topbar-actions .task-notes-sidebar-toggle {n  order: 99;n  width: 28px;n  height: 28px;n  display: inline-grid;n  place-items: center;n  flex: 0 0 28px;n  padding: 0;n  margin-left: 6px;n  color: var(--text-secondary);n}n.task-detail-topbar-actions .task-notes-sidebar-toggle:hover,n.task-detail-topbar-actions .task-notes-sidebar-toggle.is-active {n  background: var(--bg-hover);n  color: var(--text-primary);n}nnn.view.task-detail-page-view .task-detail-side {n  box-sizing: border-box;n  padding: 10px 8px 12px;n  background: var(--bg-sidebar);n  border: 0 !important;n  border-left: 1px solid var(--border-soft) !important;n}n.view.task-detail-page-view .task-detail-note-head {n  min-height: 34px;n  padding: 5px 8px 10px;n}nnn.view.task-detail-page-view .task-personal-notes-list {n  display: grid;n  gap: 8px;n  padding: 0 4px 16px;n}n.view.task-detail-page-view .task-personal-note-item {n  position: relative;n  min-height: 112px;n  border: 1px solid var(--border-soft);n  border-radius: 4px;n  background: var(--bg-elevated);n  transition: transform .12s ease, border-color .12s ease, opacity .12s ease;n}n.view.task-detail-page-view .task-personal-note-item.is-dragging { opacity: .45; }n.view.task-detail-page-view .task-personal-note-item.drag-over-before::before,n.view.task-detail-page-view .task-personal-note-item.drag-over-after::after {n  content: "";n  position: absolute;n  z-index: 3;n  left: 0;n  right: 0;n  height: 2px;n  background: var(--text-tertiary);n}n.view.task-detail-page-view .task-personal-note-item.drag-over-before::before { top: -5px; }n.view.task-detail-page-view .task-personal-note-item.drag-over-after::after { bottom: -5px; }n.view.task-detail-page-view .task-personal-note-item .task-detail-note {n  width: 100%;n  min-height: 110px;n  padding: 28px 30px 12px 12px;n  border: 0 !important;n  border-radius: 3px;n  background: transparent !important;n  box-shadow: none !important;n  resize: vertical;n}n.view.task-detail-page-view .task-personal-note-item .task-detail-note:hover,n.view.task-detail-page-view .task-personal-note-item .task-detail-note:focus {n  border: 0 !important;n  background: transparent !important;n  box-shadow: none !important;n  outline: none;n}n.view.task-detail-page-view .task-personal-note-drag {n  position: absolute;n  z-index: 2;n  top: 6px;n  left: 7px;n  width: 24px;n  height: 20px;n  display: inline-grid;n  place-items: center;n  padding: 0;n  border: 0;n  border-radius: 4px;n  background: transparent;n  color: var(--text-disabled);n  cursor: grab;n}n.view.task-detail-page-view .task-personal-note-drag:hover {n  background: var(--bg-hover);n  color: var(--text-secondary);n}n.view.task-detail-page-view .task-personal-note-drag:active { cursor: grabbing; }n.view.task-detail-page-view .task-personal-note-remove { top: 5px; right: 5px; }n
 
 .topbar:has(~ .view.task-detail-page-view) {
   position: relative;
@@ -1993,11 +2004,11 @@ nnn.task-detail-topbar-actions {n  margin-left: auto;n}n.task-detail-topbar-acti
 .version-history-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 11px 2px; border-bottom: 1px solid var(--border); }
 .version-history-row.is-current { background: color-mix(in srgb, var(--accent) 4%, transparent); }
 .version-history-copy { min-width: 0; display: grid; gap: 3px; }
-.version-history-title { display: flex; align-items: center; gap: 7px; font-size: 12px; }
-.version-history-preview { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12px; }
+.version-history-title { display: flex; align-items: center; gap: 7px; font-size: var(--fs-xs); }
+.version-history-preview { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: var(--fs-xs); }
 .version-history-preview > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.version-history-meta-value { color: var(--text-tertiary); font-size: 10.5px; }
-.version-history-meta { color: var(--text-tertiary); font-size: 10.5px; }
+.version-history-meta-value { color: var(--text-tertiary); font-size: var(--fs-2xs); }
+.version-history-meta { color: var(--text-tertiary); font-size: var(--fs-2xs); }
 
 .version-history-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
 .version-history-actions .btn-danger-subtle { color: var(--danger, #b42318); }
@@ -2035,13 +2046,13 @@ nnn.task-detail-topbar-actions {n  margin-left: auto;n}n.task-detail-topbar-acti
 
 /* Process detail/list ------------------------------------------------------ */
 .process-list-row { cursor: pointer; }
-.process-list-status { display:inline-flex; align-items:center; gap:6px; min-width:118px; font-size:11.5px; color:var(--muted); }
+.process-list-status { display:inline-flex; align-items:center; gap:6px; min-width:118px; font-size:var(--fs-xs); color:var(--muted); }
 .process-status-dot { width:8px; height:8px; border-radius:50%; flex:0 0 auto; background:var(--green); }
 .process-status-attention { background:var(--orange); }
 .process-status-broken { background:var(--red); }
 .process-status-ok { background:var(--green); }
 .process-list-right { min-width:0; }
-.process-list-summary { min-width:0; max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); font-size:11px; }
+.process-list-summary { min-width:0; max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); font-size:var(--fs-2xs); }
 .process-code-tag { flex:0 0 auto; width:max-content; }
 .process-detail-page .task-detail-layout { grid-template-columns:minmax(0,1fr); }
 .process-detail-page .process-detail-main { max-width:960px; width:100%; }
@@ -2121,7 +2132,7 @@ nnn.task-detail-topbar-actions {n  margin-left: auto;n}n.task-detail-topbar-acti
 .view.task-detail-page-view .meeting-detail-participants-more {
   display: block;
   color: var(--text-tertiary);
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   line-height: 1.35;
   white-space: nowrap;
 }
@@ -2133,4 +2144,15 @@ nnn.task-detail-topbar-actions {n  margin-left: auto;n}n.task-detail-topbar-acti
 .view.meeting-detail-page-view .task-detail-assignee-property > span:first-child {
   padding-top: 5px;
 }
-.version-history-summary { color: var(--text-secondary); font-size: 11.5px; line-height: 1.35; }
+.version-history-summary { color: var(--text-secondary); font-size: var(--fs-xs); line-height: 1.35; }
+
+/* Page-mode details inherit the shared dark-theme glow instead of painting a solid
+   rectangle over it. Modal details keep their elevated surface. */
+html.theme-dark.glow-enabled .view.task-detail-page-view > .modal-panel.modal-task-detail.task-detail-page {
+  background: transparent !important;
+}
+html.theme-dark.glow-enabled .view.task-detail-page-view .task-detail-content-column,
+html.theme-dark.glow-enabled .view.task-detail-page-view .task-detail-main,
+html.theme-dark.glow-enabled .view.task-detail-page-view .task-detail-header {
+  background: transparent !important;
+}

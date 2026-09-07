@@ -22,6 +22,7 @@ const Router = {
     [/^\/projects\/([^/]+)\/?$/, async (m) => { await loadViewScripts(['tasks','issues','meetings','agreements','projects']); return Views.projectDetail(m[1]); }],
     [/^\/labs\/?$/, async () => { await loadViewScript('labs'); return Views.labs(); }],
     [/^\/labs\/([^/]+)\/?$/, async (m) => { await loadViewScript('labs'); return Views.labDetail(m[1]); }],
+    [/^\/technology\/?$/, async () => { await loadViewScript('technology'); return Views.technology(); }],
     [/^\/tasks\/([^/]+)\/?$/, async (m) => { await loadViewScript('tasks'); return Views.taskDetailPage(m[1]); }],
     [/^\/tasks\/?$/, async () => { await loadViewScript('tasks'); return Views.tasks(); }],
     [/^\/issues\/?$/, async () => { await loadViewScript('issues'); return Views.issues(); }],
@@ -117,6 +118,12 @@ const Router = {
   async render() {
     resetActionRegistry();
     const path = Router.current();
+    const previousPath = Router._previousPath;
+    // Ассистент — одноразовый рабочий контекст. После ухода на другую страницу
+    // при возвращении начинаем с чистого поля, а не показываем старый ответ.
+    if (path === '/overview' && previousPath && previousPath !== '/overview' && Views._smartSearch) {
+      Views._smartSearch = { query: '', result: null, busy: false, error: '', note: null };
+    }
     if (path === '/tasks' && Router._previousPath !== '/tasks' && !Auth.isAdmin() && !Auth.isTeamlead() && !Auth.isManager() && Auth.user?.personId) {
       Views._taskPersonFilter = Auth.user.personId;
     }
@@ -132,7 +139,9 @@ const Router = {
     const view = document.getElementById('view');
     const topbar = document.getElementById('topbar');
     view.classList.remove('task-board-wide', 'task-page', 'gcal-wide', 'gcal-fit-height', 'labs-page-view', 'task-detail-page-view', 'process-detail-page-view', 'checkins-wide', 'overview-wide', 'overview-comments-open');
-    topbar.classList.remove('task-board-wide', 'task-list-toolbar-wide');
+    // topbar-hidden ставит только Обзор в режиме ассистента — на других страницах
+    // шапка обязана вернуться.
+    topbar.classList.remove('task-board-wide', 'task-list-toolbar-wide', 'topbar-hidden');
     for (const [pattern, handler] of Router.routes) {
       const m = path.match(pattern);
       if (m) {
