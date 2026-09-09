@@ -942,7 +942,8 @@ test('overview task links clear stale project filters and entity task rows use c
   assert.match(projects, /personAvatarLinkHtml/);
   assert.doesNotMatch(projects.match(/if \(key === 'tasks'\)[\s\S]*?emptyState\('Задач нет'/)?.[0] || '', /personChip/);
   assert.match(people, /ui-row ui-row--task list-row task-list-row/);
-  assert.match(css, /\.project-detail-page-shell \.task-list-row \.tl-title,[\s\S]*\.person-detail \.task-list-row \.tl-title[\s\S]*font-size: 13px;[\s\S]*font-weight: 400/);
+  // font-size accepts the literal or the design-token form: --fs-sm resolves to 13px in every theme (verified in public/css/style.css :root).
+  assert.match(css, /\.project-detail-page-shell \.task-list-row \.tl-title,[\s\S]*\.person-detail \.task-list-row \.tl-title[\s\S]*font-size: (?:13px|var\(--fs-sm\));[\s\S]*font-weight: 400/);
   assert.doesNotMatch(people, /task-assignee-cell\" aria-hidden=\"true/);
   assert.match(css, /\.person-detail \.task-list-row \.tl-right,[\s\S]*grid-template-columns: minmax\(170px, 220px\) 118px/);
 });
@@ -1508,6 +1509,113 @@ test('the assistant digests and search keep the same task ranking as the Overvie
   assert.equal(meetingTypes, clientTypes, 'подписи типов встреч должны совпадать с клиентскими');
 });
 
+test('the "Мои задачи" list sorts by the same priority scoring as the Overview widget, not creation order', () => {
+  // Реальная проверка поведения, а не только текста: исполняем constants.js в
+  // песочнице (чистый клиентский JS без DOM) и прогоняем через него набор
+  // задач — просроченная должна оказаться выше сегодняшней, важная задача без
+  // срока — выше обычной задачи «через пару дней», и т.д.
+  const vm = require('node:vm');
+  const sandbox = { todayStr: () => '2026-09-09' };
+  vm.createContext(sandbox);
+  vm.runInContext(read('public/js/domain/constants.js'), sandbox);
+
+  const overdue = { title: 'Просрочена 5 дней', dueDate: '2026-09-04', priority: 'normal' };
+  const today = { title: 'Сегодня', dueDate: '2026-09-09', priority: 'normal' };
+  const importantNoDate = { title: 'Важная, без срока', dueDate: null, priority: 'high' };
+  const soon = { title: 'Через 2 дня', dueDate: '2026-09-11', priority: 'normal' };
+  const noSignal = { title: 'Без срока и не важная', dueDate: null, priority: 'normal' };
+  // Реальный баг, замеченный на живом списке: у завершённой задачи с давно
+  // прошедшим дедлайном «просрочка» не должна ничего значить — иначе готовая
+  // задача обгоняет активные todo/in_review только потому, что её когда-то
+  // забыли закрыть до срока.
+  const doneOverdue = { title: 'Готова, дедлайн давно прошёл', dueDate: '2026-08-01', priority: 'high', status: 'done' };
+  const archivedSoon = { title: 'В архиве, дедлайн скоро', dueDate: '2026-09-10', priority: 'high', archivedAt: '2026-08-15T00:00:00.000Z' };
+  // Второй реальный баг с того же списка: без учёта статуса задача «На паузе»
+  // без дедлайна и задача «К выполнению» без дедлайна получали одинаковый
+  // счёт 0 и расходились только по алфавиту названия — пауза оказывалась
+  // выше активных дел чисто случайно. Статус должен решать раньше срока.
+  const pausedOverdue = { title: 'На паузе, дедлайн давно прошёл', dueDate: '2026-08-01', priority: 'high', status: 'paused' };
+  const blockedNoDate = { title: 'Заблокирована, без срока', dueDate: null, priority: 'normal', status: 'blocked' };
+
+  const sorted = [noSignal, soon, overdue, today, importantNoDate, doneOverdue, archivedSoon, pausedOverdue, blockedNoDate]
+    .sort((a, b) => sandbox.compareTasksByPriority(a, b, 'balanced', '2026-09-09'));
+  assert.deepEqual(sorted.map((t) => t.title), [
+    'Просрочена 5 дней', 'Сегодня', 'Важная, без срока', 'Через 2 дня', 'Без срока и не важная',
+    'На паузе, дедлайн давно прошёл', 'Заблокирована, без срока',
+    'В архиве, дедлайн скоро', 'Готова, дедлайн давно прошёл',
+  ], 'приоритет: активные (по сроку/важности) → приостановленные/заблокированные (тоже по сроку/важности между собой) → завершённые/архивные, независимо от их дедлайна');
+
+  const tasks = read('public/js/views/tasks.js');
+  assert.match(tasks, /function sortTasksForDisplay\(/, 'должна быть отдельная функция сортировки, переиспользуемая списком и канбаном');
+  assert.match(tasks, /compareTasksByPriority\(/, 'сортировка должна использовать общую функцию из domain/constants.js, а не свою копию');
+  assert.match(tasks, /taskGroupsFor\(rawListTasks\)[\s\S]*sortTasksForDisplay\(rawListTasks\)/, 'группировка по статусу/сотруднику/проекту должна сортировать список перед разбивкой на группы');
+  assert.match(tasks, /Views\._taskViewMode === 'kanban'\)[\s\S]{0,200}sortTasksForDisplay\(tasks\)/, 'канбан должен сортировать карточки тем же способом, что и список');
+  // Ручного переключателя сортировки на странице больше нет — сортировка
+  // всегда тихо следует стратегии из Настроек, а место на панели фильтров,
+  // где раньше был переключатель, теперь занимает поиск по задачам.
+  assert.doesNotMatch(tasks, /task-sort-filter/, 'переключатель сортировки убран со страницы');
+  assert.doesNotMatch(tasks, /openTaskSortMenu/, 'меню выбора стратегии сортировки убрано со страницы');
+  assert.match(tasks, /GardenSettings\.value\?\.taskPriorityMode/, 'сортировка должна молча брать стратегию из Настроек, без переопределения на странице');
+});
+
+test('the "Мои задачи" list has a compact icon search instead of the sort dropdown', () => {
+  const tasks = read('public/js/views/tasks.js');
+  // Иконка-кнопка вместо всегда открытого текстового поля — не занимает
+  // место на панели фильтров, пока поиск не нужен.
+  assert.match(tasks, /id="task-search-toggle"[^>]*>\$\{icon\('search', 16\)\}/, 'должна быть иконка поиска, открывающая текстовое поле по клику');
+  assert.match(tasks, /id="task-search-input"/, 'по клику на иконку должно появляться поле ввода');
+  assert.match(tasks, /id="task-search-close"/, 'у развёрнутого поиска должна быть кнопка закрытия');
+  assert.match(tasks, /function filterTasksByQuery\(/, 'должна быть отдельная функция текстового поиска по названию задачи');
+  assert.match(tasks, /searchInput\.oninput = \(\) => \{[\s\S]{0,300}filterTasksByQuery\(preSearchTasks, Views\._taskQuery\)/, 'поиск должен фильтровать список на лету, без похода на сервер на каждую букву');
+
+  const css = read('public/css/style.css');
+  assert.match(css, /\.task-sticky-toolbar \.task-search-slot\{margin-left: auto;/, 'блок поиска должен быть прижат к правому краю панели фильтров');
+  // Реальный баг: класс-обёртка назывался .task-filter-search — то же имя,
+  // что у не связанного с этой страницей компонента (.task-filter-search-wrap
+  // .task-filter-search в style.css/system.css, поиск в другом списке с
+  // вкладками). Его правило `flex: 1 1 0%` совпадало по имени класса и
+  // забирало всё свободное место у flex-контейнера себе, из-за чего margin-
+  // left: auto переставал что-либо сдвигать (auto-отступы получают свободное
+  // место только после того, как flex-grow его не разобрал). Обёртку
+  // переименовали в task-search-slot, чтобы не совпадать с чужим классом.
+  assert.doesNotMatch(tasks, /class="task-filter-search"/, 'обёртка поиска не должна называться так же, как чужой компонент .task-filter-search-wrap .task-filter-search — совпадение имени класса ломает margin-left: auto через чужой flex: 1 1 0%');
+});
+
+test('the due-date column in the "Мои задачи" list is one fixed width for the whole page, not per row', () => {
+  // Реальный баг с живого списка: ячейка под срок рендерилась только когда у
+  // конкретной задачи есть dueDate, поэтому у задач без срока лейбл проекта
+  // стоял ближе к аватарке, чем у соседних задач со сроком — колонки внутри
+  // списка не были выровнены. Правило: если срока нет ни у одной видимой
+  // задачи на странице — колонка схлопывается совсем; если есть хотя бы у
+  // одной — у всех строк резервируется одна и та же ширина, по самому
+  // длинному из реально показанных текстов (без запаса «на вырост»).
+  const tasks = read('public/js/views/tasks.js');
+  assert.match(tasks, /function syncTaskDueColumnWidth\(container\)/, 'должна быть отдельная функция, синхронизирующая ширину колонки срока по всей странице');
+  assert.match(tasks, /container\.querySelectorAll\('\.task-due-cell span'\)/, 'ширина должна считаться по реально отрисованным текстам, а не по эвристике/константе');
+  // Реальный баг: у самого текста — inline <span> (class="tiny"), а
+  // offsetWidth/scrollWidth у строчных элементов в браузере всегда 0 (это
+  // общее свойство inline-элементов, не связанное с display:none) — из-за
+  // этого колонка каждый раз открывалась на 0px и обрезала весь текст срока,
+  // хотя данные были на месте. getBoundingClientRect() у inline работает как
+  // положено и должен использоваться вместо scrollWidth/offsetWidth.
+  assert.match(tasks, /maxWidth = Math\.max\(maxWidth, span\.getBoundingClientRect\(\)\.width\)/, 'ширина inline-текста должна мериться через getBoundingClientRect, а не scrollWidth/offsetWidth (у inline-элементов они всегда 0)');
+  assert.doesNotMatch(tasks, /span\.scrollWidth|span\.offsetWidth/, 'нельзя мерить ширину inline-текста через scrollWidth/offsetWidth — это всегда 0');
+  assert.match(tasks, /classList\.add\('has-task-due-dates'\);\s*\n\s*const dueSpans/, 'класс нужно включить до измерения — иначе .task-due-cell ещё скрыт (display:none) и измерение тоже даст 0');
+  assert.match(tasks, /classList\.toggle\('has-task-due-dates', dueSpans\.length > 0\)/, 'колонка должна полностью схлопываться, если у видимых задач нет срока, а не просто становиться нулевой ширины');
+  assert.match(tasks, /setProperty\('--task-due-col-width', `\$\{Math\.ceil\(maxWidth\)\}px`\)/, 'ширина должна браться по самому длинному реально показанному тексту, а не с фиксированным запасом');
+  // Функция должна перезапускаться на каждом рендере списка задач — и при
+  // обычной загрузке страницы, и при живой фильтрации по тексту поиска
+  // (иначе колонка не пересчитается, когда поиск сузил видимый набор задач).
+  assert.match(tasks, /content\.innerHTML = taskListContentHtml\(tasks, archiveMode, allTasksCount, groups\);\s*\n\s*syncTaskDueColumnWidth\(content\);/, 'колонку нужно пересчитывать после обычного рендера списка');
+  assert.match(tasks, /taskGroupsFor\(shown\)\);\s*\n\s*syncTaskDueColumnWidth\(content\);/, 'колонку нужно пересчитывать и после живой фильтрации по поиску');
+
+  const css = read('public/css/style.css');
+  assert.match(css, /#task-content \.task-due-cell\{display: none;\}/, 'по умолчанию колонка срока должна быть схлопнута');
+  assert.match(css, /#task-content\.has-task-due-dates \.task-due-cell\{display: block;width: var\(--task-due-col-width, 118px\);/, 'колонка должна раскрываться на общую для всей страницы ширину только когда на странице есть хоть один срок');
+  assert.match(css, /#task-content \.tl-right\{grid-template-columns: minmax\(170px, 220px\) 64px;\}/, 'без сроков на странице сетка строки должна состоять только из двух колонок — теги и аватар вплотную');
+  assert.match(css, /#task-content\.has-task-due-dates \.tl-right\{grid-template-columns: minmax\(170px, 220px\) var\(--task-due-col-width, 118px\) 64px;\}/, 'с хотя бы одним сроком на странице сетка строки должна резервировать общую колонку между тегами и аватаром');
+});
+
 test('page details inherit dark-theme glow without a solid panel patch', () => {
   const css = read('public/css/detail-page.css');
   assert.match(css, /html\.theme-dark\.glow-enabled \.view\.task-detail-page-view > \.modal-panel\.modal-task-detail\.task-detail-page \{[\s\S]*background: transparent !important;/);
@@ -1708,7 +1816,8 @@ test('smart-search cards use compact semantic footers without more counters', ()
   const css = fs.readFileSync(path.join(ROOT, 'public/css/system.css'), 'utf8');
   assert.doesNotMatch(smartSearch, /smart-section-more[^\n]*ещё/);
   assert.doesNotMatch(smartSearch, /smart-project-group-more[^\n]*ещё/);
-  assert.match(css, /\.smart-section-head-action\{[\s\S]*?font-size:11px;/);
+  // font-size accepts the literal or the design-token form: --fs-2xs resolves to 11px in every theme (verified in public/css/style.css :root).
+  assert.match(css, /\.smart-section-head-action\{[\s\S]*?font-size:(?:11px|var\(--fs-2xs\));/);
   assert.match(css, /\.smart-section-head-action\{[\s\S]*?border:1px solid var\(--border-soft\)/);
 });
 
@@ -1720,7 +1829,8 @@ test('assistant and search merge multiple result cards into one Tasks-style coll
   assert.match(view, /<details class="smart-section/);
   assert.match(view, /smart-section-chevron/);
   assert.match(css, /\.smart-sections\.smart-sections-unified > \.smart-section \+ \.smart-section\s*\{[\s\S]*?margin-top:32px;[\s\S]*?border-top:0;/);
-  assert.match(css, /\.smart-sections\.smart-sections-unified \.smart-section-head h4\s*\{[\s\S]*?font-size:15px;[\s\S]*?font-weight:600;/);
+  // font-size accepts the literal or the design-token form: --smart-section-title-size resolves to 15px (defined once, on .smart-answer, which always wraps .smart-sections-unified).
+  assert.match(css, /\.smart-sections\.smart-sections-unified \.smart-section-head h4\s*\{[\s\S]*?font-size:(?:15px|var\(--smart-section-title-size\));[\s\S]*?font-weight:600;/);
   assert.match(css, /\.smart-section\[open\] > \.smart-section-head \.smart-section-chevron\{transform:rotate\(90deg\);\}/);
   assert.match(view, /smart-section-head-action[\s\S]*data-route-stop=\"1\"/);
   assert.match(css, /\.smart-sections\.smart-sections-unified \.smart-section-body > \.smart-row,[\s\S]*?min-height:42px;/);
@@ -1734,4 +1844,19 @@ test('assistant cards share one typography and secondary-action scale', () => {
   assert.match(css, /--smart-action-height:24px/);
   assert.match(css, /\.smart-section-head-action,[\s\S]*?\.smart-section-summary-action,[\s\S]*?\.smart-answer-link\{[\s\S]*?height:var\(--smart-action-height\)/);
   assert.match(css, /\.smart-section-head-button\{font:var\(--smart-action-text-size\)\/1 var\(--font\);font-weight:550;\}/);
+});
+
+test('the deadline field on the full task detail page shows its edit pencil by default, not only on hover', () => {
+  // Реальная жалоба пользователя: карандаш редактирования дедлайна был
+  // виден только при наведении (opacity: 0 в базовом правиле выше в файле),
+  // а нативная стрелка выбора даты у браузера скрыта нарочно
+  // (input[type=date]::-webkit-calendar-picker-indicator, opacity:0 в
+  // system.css) — в сумме кнопка выглядела полностью невидимой: при
+  // наведении курсор показывал только нативную подсказку браузера «Показать
+  // окно выбора даты», а не наш собственный значок. У полей-select рядом
+  // (Проект/Тип/Приоритет) стрелка уже видна по умолчанию — сделали
+  // карандаш дедлайна таким же, для единообразия на странице.
+  const css = fs.readFileSync(path.join(ROOT, 'public/css/detail-page.css'), 'utf8');
+  assert.match(css, /\.view\.task-detail-page-view \.task-inline-edit-due \.task-inline-edit-icon \{\s*\n\s*opacity: \.72;/, 'значок карандаша у дедлайна должен быть виден по умолчанию (как стрелка у select-полей), а не только при наведении');
+  assert.match(css, /\.view\.task-detail-page-view \.task-inline-edit-due\.is-editable:hover \.task-inline-edit-icon,\s*\n\s*\.view\.task-detail-page-view \.task-inline-edit-due\.is-editable:focus-within \.task-inline-edit-icon \{\s*\n\s*opacity: \.9;/, 'при наведении/фокусе значок должен становиться чуть заметнее, как у select-полей');
 });

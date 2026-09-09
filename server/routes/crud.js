@@ -6,6 +6,79 @@ const { notifyTaskAssigned, notifyProjectLoadChanges, notifyIssueCreated, notify
 module.exports = function registerCrudRoutes(app, deps) {
   const { COLLECTIONS, db, autoArchiveCompletedTasks, canReadItem, sanitizeItem, visibleItems, resolveEntity, denied, canCreate, withOwnership, taskLifecyclePatch, sanitizeKnowledgeHtmlServer, isTeamlead, canManageCollection, validateProjectTaskCode, assignTaskKey, SLUG_COLLECTIONS, uniqueSlug, nextLabKey, syncRecurringMeetingsForPerson, syncRecurringMeetingsForMeeting, canUpdate, nextTaskKey, taskKeyPrefix, teamleadOwnsPerson, memberPersonPatch, OWNER_COLLECTIONS, canDelete, assignMeetingKey, nextMeetingKey, assignProcessKey, nextProcessKey } = deps;
 
+  // ---------- Journal <-> Issues/Labs/Agreements one-way sync ----------
+  // A Journal entry can be a plain 'note', or a structured 'problem' / 'idea' /
+  // 'agreement' that also gets its own row in the matching team-facing
+  // collection (see access-control.js: the Journal itself stays private to its
+  // author, but a structured entry's team-facing counterpart follows the usual
+  // visibility rules for that collection).
+  const JOURNAL_KINDS = new Set(['note', 'problem', 'idea', 'agreement']);
+
+  function titleFromJournalText(text) {
+    return String(text || '').trim().slice(0, 140) || 'Без названия';
+  }
+
+  function createLinkedIssue(text, user) {
+    const issue = db.issues.create({
+      title: titleFromJournalText(text),
+      description: text,
+      status: 'open',
+      severity: 'normal',
+      relatedPersonIds: user.personId ? [user.personId] : [],
+      createdByUserId: user.id,
+    });
+    notifyIssueCreated(db, user, issue);
+    return issue;
+  }
+
+  function createLinkedAgreement(text, user) {
+    return db.agreements.create({
+      text,
+      date: new Date().toISOString().slice(0, 10),
+      dueDate: null,
+      status: 'open',
+      withPersonIds: user.personId ? [user.personId] : [],
+      createdByUserId: user.id,
+    });
+  }
+
+  function createLinkedIdea(text, user, isPrivate) {
+    const idea = db.labs.create({
+      entityType: 'idea',
+      title: titleFromJournalText(text),
+      description: text,
+      authorId: user.personId || null,
+      private: Boolean(isPrivate),
+      status: 'idea',
+      createdByUserId: user.id,
+    });
+    notifyLabCreated(db, user, idea);
+    return idea;
+  }
+
+  // The reverse direction: an idea created straight in The Labs (skipping the
+  // Journal) still gets a matching Journal entry, so the author's Journal
+  // stays a complete personal record either way.
+  function mirrorDirectIdeaToJournal(idea, user) {
+    db.journal.create({
+      text: idea.title || idea.description || '',
+      kind: 'idea',
+      labId: idea.id,
+      issueId: null,
+      agreementId: null,
+      authorUserId: user.id,
+    });
+  }
+
+  // Deleting the team-facing counterpart (an issue, an agreement, or an idea)
+  // must not delete the personal Journal note that spawned it — only the now
+  // dangling link is cleared, so "Открыть" stops pointing at a removed entity.
+  function detachJournalLink(field, entityId) {
+    db.journal.all()
+      .filter((entry) => entry[field] === entityId)
+      .forEach((entry) => db.journal.update(entry.id, { [field]: null }));
+  }
+
   const resourceConfig = {
     projects: {
       afterSave: (item, user) => item?.type === 'team' && syncRecurringMeetingsForPerson(item.id, user),
@@ -20,12 +93,20 @@ module.exports = function registerCrudRoutes(app, deps) {
       },
     },
     labs: {
-      prepareCreate: (payload) => payload.entityType === 'idea' ? payload : { ...payload, labKey: nextLabKey() },
-      prepareUpdate: (current, payload) => current.entityType === 'idea' ? payload : { ...payload, labKey: current.labKey || nextLabKey() },
+      // Ideas don't get a LAB-XXXX key — only actual Labs projects do.
+      prepareCreate: (payload) => (payload.entityType === 'idea' ? payload : { ...payload, labKey: nextLabKey() }),
+      prepareUpdate: (current, payload) => (current.entityType === 'idea' ? payload : { ...payload, labKey: current.labKey || nextLabKey() }),
       cleanup: (item) => {
         db.comments.related(`lab:${item.id}`).forEach((comment) => db.comments.remove(comment.id));
         if (item.entityType !== 'idea') db.labs.related(item.id).forEach((idea) => db.labs.update(idea.id, { labProjectId: null }));
+        else detachJournalLink('labId', item.id);
       },
+    },
+    issues: {
+      cleanup: (item) => detachJournalLink('issueId', item.id),
+    },
+    agreements: {
+      cleanup: (item) => detachJournalLink('agreementId', item.id),
     },
     meetings: {
       prepareCreate: (payload) => assignMeetingKey(payload),
@@ -39,6 +120,9 @@ module.exports = function registerCrudRoutes(app, deps) {
     },
   };
   const configFor = (name) => resourceConfig[name] || {};
+  // Shared by task creation and update: a fresh id for the group of copies
+  // that a multi-assignee task expands into (see both usages below).
+  const makeTaskGroupId = () => `tgrp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
   const isVersioned = (name, item) => name === 'tasks' || name === 'meetings' || (name === 'labs' && item?.entityType !== 'idea');
   const recordVersionedCreate = (name, item, user) => {
     if (!isVersioned(name, item) || !item) return;
@@ -60,20 +144,17 @@ module.exports = function registerCrudRoutes(app, deps) {
       if (name === 'tasks' && (req.query.includeArchived === '1' || req.query.includeArchived === 'true')) {
         return res.json(visibleItems(name, req.auth.user, { includeArchived: true }));
       }
-      if (name === 'journal') {
-        return res.json(visibleItems(name, req.auth.user).filter((item) => !item.kind || item.kind === 'note'));
-      }
       res.json(visibleItems(name, req.auth.user));
     });
-  
+
     app.get(`/api/${name}/:id`, (req, res) => {
       configFor(name).beforeGet?.();
       const item = resolveEntity(name, req.params.id);
-      if (!item || (name === 'journal' && item.kind && item.kind !== 'note')) return res.status(404).json({ error: 'not_found' });
+      if (!item) return res.status(404).json({ error: 'not_found' });
       if (!canReadItem(name, item, req.auth.user)) return denied(res);
       res.json(sanitizeItem(name, item, req.auth.user));
     });
-  
+
     app.post(`/api/${name}`, (req, res) => {
       const user = req.auth.user;
       if (!canCreate(name, user, req.body)) return denied(res);
@@ -94,26 +175,31 @@ module.exports = function registerCrudRoutes(app, deps) {
           payload.prEveryMonths = Math.max(0, Number(payload.prEveryMonths ?? 3));
         }
       }
-  
+
       if (name === 'projects') {
         const result = validateProjectTaskCode(db, payload, null, { autoGenerate: true });
         if (result.error) return res.status(result.status).json({ error: result.error });
         payload.taskCode = result.code;
       }
-  
+
       if (name === 'journal') {
-        payload = { ...payload, kind: 'note', issueId: null, agreementId: null, labId: null };
+        const kind = JOURNAL_KINDS.has(payload.kind) ? payload.kind : 'note';
+        const links = { issueId: null, agreementId: null, labId: null };
+        if (kind === 'problem') links.issueId = createLinkedIssue(payload.text, user).id;
+        if (kind === 'agreement') links.agreementId = createLinkedAgreement(payload.text, user).id;
+        if (kind === 'idea') links.labId = createLinkedIdea(payload.text, user, payload.private).id;
+        payload = { ...payload, kind, ...links };
         delete payload.private;
         return res.status(201).json(db.journal.create(payload));
       }
-  
+
       if (name === 'vacations' && !canManageCollection('vacations', user) && !user.personId) return denied(res);
-  
+
       // Для нескольких исполнителей создаём независимый экземпляр задачи на каждого.
       if (name === 'tasks') {
         const assigneeIds = Array.isArray(payload.assigneeIds) ? [...new Set(payload.assigneeIds.filter(Boolean))] : [];
         if (assigneeIds.length > 1) {
-          const taskGroupId = `tgrp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+          const taskGroupId = makeTaskGroupId();
           const copies = assigneeIds.map((assigneeId, index) => db.tasks.create(assignTaskKey({
             ...payload,
             assigneeIds: [assigneeId],
@@ -131,24 +217,25 @@ module.exports = function registerCrudRoutes(app, deps) {
       if (name === 'tasks') notifyTaskAssigned(db, user, item);
       if (name === 'issues') notifyIssueCreated(db, user, item);
       if (name === 'labs') notifyLabCreated(db, user, item);
+      if (name === 'labs' && item.entityType === 'idea') mirrorDirectIdeaToJournal(item, user);
       if (name === 'people' && item.type === 'team') syncRecurringMeetingsForPerson(item.id, user);
       if (!(name === 'meetings' && item.autoRecurring)) configFor(name).afterSave?.(item, user);
       res.status(201).json(sanitizeItem(name, item, user));
     });
-  
+
     app.put(`/api/${name}/:id`, (req, res) => {
       const user = req.auth.user;
       const current = db[name].get(req.params.id);
       if (!current) return res.status(404).json({ error: 'not_found' });
       if (!canUpdate(name, current, user)) return denied(res);
-  
+
       if (name === 'journal') {
         if (current.kind && current.kind !== 'note') return res.status(404).json({ error: 'not_found' });
         const patch = { ...req.body, kind: 'note', authorUserId: current.authorUserId, issueId: null, agreementId: null, labId: null };
         delete patch.private;
         return res.json(db.journal.update(req.params.id, patch));
       }
-  
+
       let requestBody = { ...req.body };
       if (name === 'projects') delete requestBody.startDate;
       if (name === 'kbDocs' && requestBody.contentHtml !== undefined) requestBody.contentHtml = sanitizeKnowledgeHtmlServer(requestBody.contentHtml);
@@ -178,7 +265,7 @@ module.exports = function registerCrudRoutes(app, deps) {
       if (OWNER_COLLECTIONS.includes(name)) requestBody.createdByUserId = current.createdByUserId || user.id;
       if (name === 'vacations' && !canManageCollection('vacations', user)) requestBody.personId = user.personId;
       if (name === 'tasks') requestBody = taskLifecyclePatch(current, requestBody);
-  
+
       // Одна задача = один ответственный. При добавлении исполнителей создаются независимые копии.
       if (name === 'tasks') {
         const requested = Array.isArray(requestBody.assigneeIds)
@@ -213,7 +300,7 @@ module.exports = function registerCrudRoutes(app, deps) {
 
           const extraPeople = requested.filter((id) => id !== primaryPersonId && !alreadyAssigned.has(id));
           let taskGroupId = current.taskGroupId || null;
-          if (extraPeople.length && !taskGroupId) taskGroupId = `tgrp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+          if (extraPeople.length && !taskGroupId) taskGroupId = makeTaskGroupId();
 
           const updatePayload = { ...requestBody, assigneeIds: primaryPersonId ? [primaryPersonId] : [] };
           if (taskGroupId) updatePayload.taskGroupId = taskGroupId;
@@ -223,7 +310,11 @@ module.exports = function registerCrudRoutes(app, deps) {
           const copies = [];
           for (const personId of extraPeople) {
             const copyPayload = { ...item, assigneeIds: [personId], status: item.status || 'todo', taskGroupId, createdByUserId: user.id };
-            delete copyPayload.id; delete copyPayload.createdAt; delete copyPayload.updatedAt; delete copyPayload.taskGroupIndex; delete copyPayload.taskKey;
+            delete copyPayload.id;
+            delete copyPayload.createdAt;
+            delete copyPayload.updatedAt;
+            delete copyPayload.taskGroupIndex;
+            delete copyPayload.taskKey;
             const copy = db.tasks.create(assignTaskKey(copyPayload));
             recordVersionedCreate('tasks', copy, user);
             notifyTaskAssigned(db, user, copy);
@@ -232,7 +323,7 @@ module.exports = function registerCrudRoutes(app, deps) {
           return res.json({ ...item, copies, createdCopies: copies.length });
         }
       }
-  
+
       const item = db[name].update(req.params.id, requestBody);
       recordVersionedUpdate(name, current, item, user);
       if (name === 'projects') notifyProjectLoadChanges(db, user, current, item);
@@ -240,7 +331,7 @@ module.exports = function registerCrudRoutes(app, deps) {
       configFor(name).afterSave?.(item, user);
       res.json(sanitizeItem(name, item, user));
     });
-  
+
     app.delete(`/api/${name}/:id`, (req, res) => {
       const item = db[name].get(req.params.id);
       if (!item) return res.status(404).json({ error: 'not_found' });
@@ -251,5 +342,5 @@ module.exports = function registerCrudRoutes(app, deps) {
       res.status(204).end();
     });
   }
-  
+
 };

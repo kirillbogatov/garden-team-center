@@ -1,3 +1,5 @@
+'use strict';
+
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
@@ -26,6 +28,7 @@ const createEntityIdentifiers = require('./entity-identifiers');
 const createRecurringMeetings = require('./domain/recurring-meetings');
 const { taskLifecyclePatch } = require('./domain/task-lifecycle');
 const createTaskAutoArchive = require('./domain/task-auto-archive');
+const createWorkspaceSettings = require('./domain/workspace-settings');
 const { sanitizeKnowledgeHtmlServer } = require('./domain/knowledge-sanitize');
 const createTeamleadSync = require('./domain/teamlead-sync');
 
@@ -39,7 +42,6 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 
 seedIfEmpty(db);
 
-
 // ---------- Аутентификация и учетные записи ----------
 const authCore = createAuthCore({ db, crypto });
 const {
@@ -47,7 +49,8 @@ const {
   cleanUsername, validUsername, hashPassword, passwordMatches, generatePassword,
   isDemoUser, safeUser, clearSessionCookie, createSession, authenticate,
   normalizedRoles, normalizedPermissions, hasPermission, requireAdmin,
-  isAdmin, isManager, isTeamlead, roleLabel, rolesLabel, validatePassword, normalizeRoleAccessPolicies, roleAccessPolicies, effectiveAccess, accessLevel, accessCapabilities,
+  isAdmin, isManager, isTeamlead, roleLabel, rolesLabel, validatePassword,
+  normalizeRoleAccessPolicies, roleAccessPolicies, effectiveAccess, accessLevel, accessCapabilities,
   ensureInitialAdmin,
 } = authCore;
 
@@ -61,20 +64,26 @@ app.use('/uploads', authenticate, express.static(UPLOADS_DIR, {
 }));
 
 // ---------- Роли, владение и права доступа ----------
-const access = createAccessControl({ db, isAdmin, isManager, isTeamlead, hasPermission, accessLevel, accessCapabilities });
+const access = createAccessControl({
+  db, isAdmin, isManager, isTeamlead, hasPermission, accessLevel, accessCapabilities,
+});
 const {
   OWNER_COLLECTIONS, canManageCollection, canReadItem, sanitizeItem, visibleItems,
   memberPersonPatch, teamleadOwnsPerson, canCreate, canUpdate, canDelete, denied, withOwnership,
 } = access;
 
-// registerSettingsRoutes needs a stable autoArchiveCompletedTasks reference to call after
-// settings change, but the real implementation needs workspaceSettings back from it — broken
-// via a thin forwarding proxy, resolved to the real function right below.
-let autoArchiveCompletedTasks = () => {};
-const { workspaceSettings, normalizeUserSettings } = registerSettingsRoutes(app, { db, authenticate, DATA_DIR, UPLOADS_DIR, path, isAdmin, isManager, hasPermission, denied, isDemoUser, autoArchiveCompletedTasks: (...args) => autoArchiveCompletedTasks(...args) });
-
+// Workspace settings and task auto-archive are created up front so both can be
+// handed to registerSettingsRoutes as ready-made dependencies — no forward
+// reference to a function that doesn't exist yet.
+const { workspaceSettings, setWorkspaceSettings } = createWorkspaceSettings({ db });
 const taskAutoArchive = createTaskAutoArchive({ db, workspaceSettings });
-autoArchiveCompletedTasks = taskAutoArchive.autoArchiveCompletedTasks;
+const { autoArchiveCompletedTasks } = taskAutoArchive;
+
+const { normalizeUserSettings } = registerSettingsRoutes(app, {
+  db, authenticate, DATA_DIR, UPLOADS_DIR, path, isAdmin, isManager, hasPermission,
+  denied, isDemoUser, workspaceSettings, setWorkspaceSettings, autoArchiveCompletedTasks,
+});
+
 autoArchiveCompletedTasks();
 taskAutoArchive.startAutoArchiveTimer();
 
@@ -96,7 +105,6 @@ const COLLECTIONS = [
   'journal',
   'goals',
   'agreements',
-  'documents',
   'tools',
   'processes',
   'vacations',
@@ -108,39 +116,62 @@ const COLLECTIONS = [
   'technologyEvents',
 ];
 
-const normalizeWorkspaceIdentifiers = () => { ensureSlugs(); ensureProjectTaskCodes(); ensureTaskKeys(); ensureLabKeys(); ensureMeetingKeys(); ensureProcessKeys(); };
-registerAuthRoutes(app, { db, COLLECTIONS, demoSeed, cleanUsername, failedLogins, passwordMatches, createSession, safeUser, authenticate, clearSessionCookie, validatePassword, PASSWORD_MIN_LENGTH, hashPassword, generatePassword, normalizeWorkspaceIdentifiers });
+// Re-derives every generated identifier (slugs, project task codes, task/lab/
+// meeting/process keys) from scratch — used after a bulk import/seed where
+// records may arrive without them.
+function normalizeWorkspaceIdentifiers() {
+  ensureSlugs();
+  ensureProjectTaskCodes();
+  ensureTaskKeys();
+  ensureLabKeys();
+  ensureMeetingKeys();
+  ensureProcessKeys();
+}
 
+registerAuthRoutes(app, {
+  db, COLLECTIONS, demoSeed, cleanUsername, failedLogins, passwordMatches, createSession,
+  safeUser, authenticate, clearSessionCookie, validatePassword, PASSWORD_MIN_LENGTH,
+  hashPassword, generatePassword, normalizeWorkspaceIdentifiers,
+});
 
 function isActiveTeamMember(person) {
   return Boolean(person && person.type === 'team' && !['dismissed', 'transferred', 'inactive'].includes(person.status));
 }
 
-
-
-
 // ---------- Плановые 1:1 и PR ----------
-const { syncRecurringMeetingsForPerson, syncRecurringMeetingsForMeeting, ensureRecurringMeetingSchedules } = createRecurringMeetings({ db, isAdmin, isActiveTeamMember, nextMeetingKey });
+const {
+  syncRecurringMeetingsForPerson, syncRecurringMeetingsForMeeting, ensureRecurringMeetingSchedules,
+} = createRecurringMeetings({ db, isAdmin, isActiveTeamMember, nextMeetingKey });
 ensureRecurringMeetingSchedules();
 
 // ---------- Multi-assignee task copies ----------
 // Copies may share taskGroupId internally, but there is no parent/group entity in the UI.
-
 
 // Все рабочие API ниже требуют авторизованную сессию.
 // Публичными остаются только health/login и явно защищённые auth/settings endpoints выше.
 app.use('/api', authenticate);
 app.use('/api', (req, res, next) => db.withWorkspace(isDemoUser(req.auth?.user) ? 'demo' : 'main', next));
 
-const { ensureTeamleadSelfAssignment, syncExistingTeamleadSelfAssignments } = createTeamleadSync({ db, normalizedRoles, isTeamlead, syncRecurringMeetingsForPerson });
+const {
+  ensureTeamleadSelfAssignment, syncExistingTeamleadSelfAssignments,
+} = createTeamleadSync({ db, normalizedRoles, isTeamlead, syncRecurringMeetingsForPerson });
 syncExistingTeamleadSelfAssignments();
 
 // ---------- Администрирование учётных записей ----------
-registerAdminRoutes(app, { db, requireAdmin, isDemoUser, safeUser, ACCESS_ROLES, ACCESS_PERMISSIONS, ACCESS_LEVELS, ACCESS_AREAS, roleLabel, cleanUsername, normalizedRoles, normalizedPermissions, validUsername, validatePassword, generatePassword, hashPassword, ensureTeamleadSelfAssignment, isAdmin, normalizeRoleAccessPolicies, roleAccessPolicies });
+registerAdminRoutes(app, {
+  db, requireAdmin, isDemoUser, safeUser, ACCESS_ROLES, ACCESS_PERMISSIONS, ACCESS_LEVELS, ACCESS_AREAS,
+  roleLabel, cleanUsername, normalizedRoles, normalizedPermissions, validUsername, validatePassword,
+  generatePassword, hashPassword, ensureTeamleadSelfAssignment, isAdmin, normalizeRoleAccessPolicies, roleAccessPolicies,
+});
 
 // ---------- Resource CRUD routes ----------
 registerCrudRoutes(app, {
-  COLLECTIONS, db, autoArchiveCompletedTasks, canReadItem, sanitizeItem, visibleItems, resolveEntity, denied, canCreate, withOwnership, taskLifecyclePatch, sanitizeKnowledgeHtmlServer, isTeamlead, canManageCollection, validateProjectTaskCode, assignTaskKey, SLUG_COLLECTIONS, uniqueSlug, nextLabKey, syncRecurringMeetingsForPerson, syncRecurringMeetingsForMeeting, canUpdate, nextTaskKey, taskKeyPrefix, teamleadOwnsPerson, memberPersonPatch, OWNER_COLLECTIONS, canDelete, assignMeetingKey, nextMeetingKey, assignProcessKey, nextProcessKey,
+  COLLECTIONS, db, autoArchiveCompletedTasks, canReadItem, sanitizeItem, visibleItems, resolveEntity,
+  denied, canCreate, withOwnership, taskLifecyclePatch, sanitizeKnowledgeHtmlServer, isTeamlead,
+  canManageCollection, validateProjectTaskCode, assignTaskKey, SLUG_COLLECTIONS, uniqueSlug, nextLabKey,
+  syncRecurringMeetingsForPerson, syncRecurringMeetingsForMeeting, canUpdate, nextTaskKey, taskKeyPrefix,
+  teamleadOwnsPerson, memberPersonPatch, OWNER_COLLECTIONS, canDelete, assignMeetingKey, nextMeetingKey,
+  assignProcessKey, nextProcessKey,
 });
 
 // ---------- Collaboration routes ----------

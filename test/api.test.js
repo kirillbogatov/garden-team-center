@@ -159,6 +159,27 @@ test('task updates are versioned and task history can restore the prior state', 
   assert.equal(restored.body.taskKey, created.body.taskKey);
 });
 
+test('task discussion comments are a separate thread from the sticky task notes', async () => {
+  const created = await request('/api/tasks', {
+    method: 'POST', body: { title: 'Task with comments', status: 'todo', taskType: 'standard', assigneeIds: [] },
+  });
+  assert.equal(created.response.status, 201);
+  const id = created.body.id;
+
+  const note = await request(`/api/comments/task/${id}`, { method: 'POST', body: { text: 'Sticky note', color: 'pink' } });
+  assert.equal(note.response.status, 201);
+  const discussionComment = await request(`/api/comments/task-discussion/${id}`, { method: 'POST', body: { text: 'A real comment' } });
+  assert.equal(discussionComment.response.status, 201);
+
+  const notes = await request(`/api/comments/task/${id}`);
+  assert.equal(notes.body.length, 1);
+  assert.equal(notes.body[0].text, 'Sticky note');
+
+  const discussion = await request(`/api/comments/task-discussion/${id}`);
+  assert.equal(discussion.body.length, 1);
+  assert.equal(discussion.body[0].text, 'A real comment');
+});
+
 test('person development profile returns Labs projects but not Labs ideas', async () => {
   const person = await request('/api/people', { method: 'POST', body: { name: 'Labs Author', type: 'team', status: 'active' } });
   assert.equal(person.response.status, 201);
@@ -521,9 +542,9 @@ test('deleting a problem directly keeps its Journal note but clears the now-dang
 });
 
 test('legacy idea visibility default is ignored by user settings', async () => {
-  const response = await request('/api/settings', { method: 'PUT', body: { ideaVisibilityDefault: 'private' } });
-  assert.equal(response.status, 200);
-  assert.equal(Object.prototype.hasOwnProperty.call(response.body, 'ideaVisibilityDefault'), false);
+  const result = await request('/api/settings', { method: 'PUT', body: { ideaVisibilityDefault: 'private' } });
+  assert.equal(result.response.status, 200);
+  assert.equal(Object.prototype.hasOwnProperty.call(result.body, 'ideaVisibilityDefault'), false);
 });
 
 test('smart search endpoint answers create, digest and search intents for the logged-in user', async () => {
@@ -540,6 +561,37 @@ test('smart search endpoint answers create, digest and search intents for the lo
 
   const fallback = await request('/api/smart-search?q=' + encodeURIComponent('совершенно несуществующая фраза'));
   assert.equal(fallback.body.kind, 'search');
+});
+
+test('unrecognized search queries are logged for the admin to review, recognized ones are not', async () => {
+  await request('/api/admin/search-misses', { method: 'DELETE' }); // чистый лист от fallback-запросов других тестов
+
+  const gibberish = 'совершенно несуществующая фраза для поиска подсказок';
+  await request('/api/search?q=' + encodeURIComponent(gibberish));
+  await request('/api/search?q=' + encodeURIComponent(gibberish)); // повтор — считаем счётчиком, не дублируем строку
+  await request('/api/smart-search?q=' + encodeURIComponent(gibberish));
+  await request('/api/search?q=' + encodeURIComponent('задачи')); // распознанная команда — в лог не попадает
+
+  const misses = await request('/api/admin/search-misses');
+  assert.equal(misses.response.status, 200);
+  const entry = misses.body.misses.find((m) => m.sampleQuery === gibberish);
+  assert.ok(entry, 'непонятый запрос должен попасть в лог');
+  assert.equal(entry.hitCount, 3, 'обращения к /api/search и /api/smart-search должны схлопнуться в один общий счётчик');
+  assert.ok(!misses.body.misses.some((m) => m.sampleQuery === 'задачи'), 'распознанная команда не должна попадать в лог непонятых запросов');
+
+  const personC = (await request('/api/people', { method: 'POST', body: { name: 'Search Log Onlooker', type: 'team', status: 'active' } })).body;
+  const memberUser = await request('/api/admin/users', { method: 'POST', body: { username: 'search-log-onlooker', displayName: 'Search Log Onlooker', roles: ['member'], personId: personC.id } });
+  assert.equal(memberUser.response.status, 201);
+  const loginMember = await requestAs('', '/api/auth/login', { method: 'POST', body: { username: 'search-log-onlooker', password: memberUser.body.temporaryPassword } });
+  assert.equal(loginMember.response.status, 200);
+  const memberDenied = await requestAs(loginMember.cookie, '/api/admin/search-misses');
+  assert.equal(memberDenied.response.status, 403);
+
+  const cleared = await request('/api/admin/search-misses', { method: 'DELETE' });
+  assert.equal(cleared.response.status, 200);
+  assert.ok(cleared.body.removed >= 1);
+  const afterClear = await request('/api/admin/search-misses');
+  assert.equal(afterClear.body.misses.length, 0);
 });
 
 test('smart search asks which person is meant when a short name fits several, and remembers the answer', async () => {

@@ -97,7 +97,12 @@ async function openAgreementModal(id, opts) {
     onDelete: isEdit && Auth.canDeleteItem('agreements', a) ? async () => {
       const ok = await confirmAction('Удалить эту договорённость?');
       if (!ok) return;
+      const deleteJournalToo = a.sourceJournalId ? await askDeleteLinkedJournal() : false;
       await Resources.agreements.remove(a.id);
+      if (deleteJournalToo && a.sourceJournalId) {
+        try { await Resources.journal.remove(a.sourceJournalId); }
+        catch (err) { console.warn('Не удалось удалить связанную запись журнала', err); }
+      }
       Modal.close();
       toast('Договорённость удалена');
       Router.render();

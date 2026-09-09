@@ -5,19 +5,28 @@ Views._issueFilter = 'open';
 function issueListTitleRowHtml(issue) {
   const openIdx = registerAction(() => FeatureLoader.run('openIssueModal', issue.id));
   const people = (issue.relatedPersonIds || []).map((id) => store.person(id)).filter(Boolean);
+  const seriousBadgeHtml = issue.severity === 'high' ? '<span class="ui-tag badge issue-serious-badge">серьёзная</span>' : '';
+  const overflowCount = people.length - 3;
+  const avatarsHtml = people.length
+    ? `<div class="work-row-avatars issue-list-avatars">${people.slice(0, 3).map((person) => personAvatarLinkHtml(person)).join('')}${overflowCount > 0 ? `<span class="issue-list-avatar-more" aria-label="Ещё ${overflowCount} причастных">+${overflowCount}</span>` : ''}</div>`
+    : '';
   return `<div class="ui-row ui-row--issue list-row issue-list-row" data-action-id="${openIdx}">
     ${issueStatusBadge(issue.status, issue.id)}
     <span class="issue-list-title">${escapeHtml(issue.title)}</span>
     <div class="issue-list-right">
-      ${issue.severity === 'high' ? '<span class="ui-tag badge issue-serious-badge">серьёзная</span>' : ''}
-      ${people.length ? `<div class="work-row-avatars issue-list-avatars">${people.slice(0, 3).map((person) => personAvatarLinkHtml(person)).join('')}${people.length > 3 ? `<span class="issue-list-avatar-more" aria-label="Ещё ${people.length - 3} причастных">+${people.length - 3}</span>` : ''}</div>` : ''}
+      ${seriousBadgeHtml}
+      ${avatarsHtml}
     </div>
   </div>`;
 }
 
 Views.issues = async function () {
   const mineOnly = Router.queryParam('mine') === '1';
-  setTopbar(`<h1>${mineOnly ? 'Мои проблемы' : 'Проблемы'}</h1>${Auth.canCreate('issues') ? `<div class="actions"><button class="ui-button ui-button--primary btn btn-primary" data-command="openIssueModal">+ Добавить проблему</button></div>` : ''}`);
+  const title = mineOnly ? 'Мои проблемы' : 'Проблемы';
+  const addButton = Auth.canCreate('issues')
+    ? `<div class="actions"><button class="ui-button ui-button--primary btn btn-primary" data-command="openIssueModal">+ Добавить проблему</button></div>`
+    : '';
+  setTopbar(`<h1>${title}</h1>${addButton}`);
   const view = document.getElementById('view');
   let issues = (await Resources.issues.list()).sort((a, b) => {
     const sevOrder = { high: 0, normal: 1 };
@@ -39,17 +48,37 @@ Views.issues = async function () {
 
   // Тот же приём, что и в «Задачах» — главный фильтр списка вынесен как ряд
   // вкладок со счётчиками (референс: /dashboard/user/list) вместо сегмент-переключателя.
-  const tabsHtml = `<div class="list-tabs" role="tablist" aria-label="Статус проблем">
-    ${filters.map((f) => `<button type="button" class="list-tab ${Views._issueFilter === f.key ? 'active' : ''}" role="tab" aria-selected="${Views._issueFilter === f.key}" data-view-state="_issueFilter" data-view-value="${f.key}" data-view-render="issues">${f.label}</button>`).join('')}
-  </div>`;
+  const tabButtons = filters.map((f) => {
+    const active = Views._issueFilter === f.key;
+    return `<button type="button" class="list-tab ${active ? 'active' : ''}" role="tab" aria-selected="${active}" data-view-state="_issueFilter" data-view-value="${f.key}" data-view-render="issues">${f.label}</button>`;
+  }).join('');
+  const tabsHtml = `<div class="list-tabs" role="tablist" aria-label="Статус проблем">${tabButtons}</div>`;
+  const bodyHtml = filtered.length
+    ? filtered.map(issueListTitleRowHtml).join('')
+    : emptyState('Проблем не найдено', '', 'issues');
 
   view.innerHTML = `
     <div class="view-narrow work-list-page issues-view">
       <div class="work-list-toolbar">${tabsHtml}</div>
-      <div class="work-list-body">${filtered.length ? filtered.map(issueListTitleRowHtml).join('') : emptyState('Проблем не найдено', '', 'issues')}</div>
+      <div class="work-list-body">${bodyHtml}</div>
     </div>
   `;
 };
+
+// Опции статуса/серьёзности рендерятся отдельными помощниками, а не инлайн
+// в шаблоне модалки, чтобы список значений и порядок selected-логики были видны сразу.
+function issueSeverityOptionsHtml(selected) {
+  return ['normal', 'high'].map((s) => {
+    const isSelected = (selected || 'normal') === s;
+    return `<option value="${s}" ${isSelected ? 'selected' : ''}>${ISSUE_SEVERITY_LABEL[s]}</option>`;
+  }).join('');
+}
+
+function issueStatusOptionsHtml(selected) {
+  return ['open', 'in_progress', 'paused', 'resolved'].map((s) => {
+    return `<option value="${s}" ${selected === s ? 'selected' : ''}>${ISSUE_STATUS_LABEL[s]}</option>`;
+  }).join('');
+}
 
 async function openIssueModal(id, opts) {
   opts = opts || {};
@@ -69,10 +98,10 @@ async function openIssueModal(id, opts) {
       <div class="ui-field field"><label class="ui-field-label field-label" for="if-goal">Цель (необязательно)</label><select id="if-goal"><option value="">—</option>${optionsHtml(store.goals || [], 'id', (g) => g.title, i.goalId)}</select></div>
     </div>
     <div class="ui-field-row field-row">
-      <div class="ui-field field"><label class="ui-field-label field-label" for="if-severity">Серьёзность</label><select id="if-severity">${['normal','high'].map((s) => `<option value="${s}" ${(i.severity || 'normal') === s ? 'selected' : ''}>${ISSUE_SEVERITY_LABEL[s]}</option>`).join('')}</select></div>
+      <div class="ui-field field"><label class="ui-field-label field-label" for="if-severity">Серьёзность</label><select id="if-severity">${issueSeverityOptionsHtml(i.severity)}</select></div>
     </div>
     <div class="ui-field field"><label class="ui-field-label field-label" for="if-status">Статус</label>
-      <select id="if-status">${['open','in_progress','paused','resolved'].map((s) => `<option value="${s}" ${i.status === s ? 'selected' : ''}>${ISSUE_STATUS_LABEL[s]}</option>`).join('')}</select>
+      <select id="if-status">${issueStatusOptionsHtml(i.status)}</select>
     </div>
     <div class="ui-field field"><span class="ui-field-label field-label">Причастные люди</span>
       <div id="if-people-wrap">${peoplePickerHtml('Добавить человека…')}</div>
@@ -95,9 +124,7 @@ async function openIssueModal(id, opts) {
     panel?.querySelectorAll('#if-add-solution, [data-solution-up], [data-solution-down], [data-solution-remove]').forEach((el) => { el.disabled = true; });
   }
 
-  const renderSolutions = () => {
-    const wrap = document.getElementById('if-solutions');
-    wrap.innerHTML = solutionOptions.length ? solutionOptions.map((o, idx) => `
+  const solutionRowHtml = (o, idx) => `
       <div class="solution-editor-row">
         <input type="checkbox" aria-label="Выбрать решение" ${o.chosen ? 'checked' : ''} data-solution-choice="${idx}" />
         <textarea rows="2" placeholder="Вариант решения" data-solution-text="${idx}">${escapeHtml(o.text)}</textarea>
@@ -106,7 +133,13 @@ async function openIssueModal(id, opts) {
           <button class="ui-button ui-button--ghost btn btn-ghost solution-move" type="button" aria-label="Переместить ниже" title="Ниже" data-solution-down="${idx}" ${idx === solutionOptions.length - 1 ? 'disabled' : ''}>↓</button>
         </div>
         <button class="ui-button ui-button--ghost btn btn-ghost solution-remove" type="button" aria-label="Удалить вариант" data-solution-remove="${idx}">×</button>
-      </div>`).join('') : `<div class="tiny solution-empty">Вариантов пока нет</div>`;
+      </div>`;
+
+  const renderSolutions = () => {
+    const wrap = document.getElementById('if-solutions');
+    wrap.innerHTML = solutionOptions.length
+      ? solutionOptions.map(solutionRowHtml).join('')
+      : `<div class="tiny solution-empty">Вариантов пока нет</div>`;
 
     const fitSolutionTextarea = (el) => { el.style.height = 'auto'; el.style.height = Math.min(Math.max(el.scrollHeight, 54), 180) + 'px'; };
     wrap.querySelectorAll('[data-solution-text]').forEach((el) => {

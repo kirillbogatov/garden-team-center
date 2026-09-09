@@ -1,38 +1,67 @@
 'use strict';
 
 module.exports = function createAccessControl({ db, isAdmin, isManager, isTeamlead, hasPermission, accessLevel, accessCapabilities }) {
-  const OWNER_COLLECTIONS = ['projects', 'goals', 'tasks', 'issues', 'meetings', 'agreements', 'documents', 'tools', 'processes', 'vacations', 'kbFolders', 'kbDocs', 'docFolders', 'toolFolders', 'labs', 'checkins', 'technologyEvents'];
+  const OWNER_COLLECTIONS = [
+    'projects', 'goals', 'tasks', 'issues', 'meetings', 'agreements', 'tools', 'processes',
+    'vacations', 'kbFolders', 'kbDocs', 'docFolders', 'toolFolders', 'labs', 'checkins', 'technologyEvents',
+  ];
   const MEMBER_PERSON_FIELDS = new Set([
     'email', 'telegram', 'birthday', 'city', 'timezone', 'workStart', 'workEnd', 'tags', 'grade',
-    'strengthsLikes', 'weaknessesDislikes', 'developmentFocus', 'developmentNextStep', 'iprUrl', 'skillsetUrl', 'oneOnOneEveryMonths', 'prEveryMonths'
+    'strengthsLikes', 'weaknessesDislikes', 'developmentFocus', 'developmentNextStep',
+    'iprUrl', 'skillsetUrl', 'oneOnOneEveryMonths', 'prEveryMonths',
   ]);
 
-  function owns(item, user) { return Boolean(item && user && item.createdByUserId === user.id); }
-  function journalOwned(item, user) { return Boolean(item && user && item.authorUserId === user.id); }
+  function owns(item, user) {
+    return Boolean(item && user && item.createdByUserId === user.id);
+  }
+
+  function journalOwned(item, user) {
+    return Boolean(item && user && item.authorUserId === user.id);
+  }
+
   function linkedToPerson(item, personId, fields) {
     if (!item || !personId) return false;
     return fields.some((field) => Array.isArray(item[field]) && item[field].includes(personId));
   }
+
+  // NOTE: the 'checkins':'checkins' entry's exact spacing (no space after the
+  // colon) is pinned by test/architecture.test.js — keep this object compact
+  // rather than reformatting it to one-key-per-line.
   function accessAreaForCollection(name) {
     return ({
       people:'people', projects:'projects', goals:'goals', tasks:'tasks', meetings:'meetings', issues:'issues', agreements:'agreements', journal:'journal', labs:'labs',
-      documents:'knowledge', tools:'knowledge', kbDocs:'knowledge', kbFolders:'knowledge', docFolders:'knowledge', toolFolders:'knowledge',
+      tools:'knowledge', kbDocs:'knowledge', kbFolders:'knowledge', docFolders:'knowledge', toolFolders:'knowledge',
       processes:'processes', vacations:'vacations', checkins:'checkins', technologyEvents:'labs',
     })[name] || null;
   }
+
   function levelForCollection(name, user) {
     const area = accessAreaForCollection(name);
     return area ? accessLevel(user, area) : 'all_read';
   }
+
   function capabilitiesForCollection(name, user) {
     return accessCapabilities(levelForCollection(name, user));
   }
-  function canManageCollection(name, user) { return capabilitiesForCollection(name, user).manage >= 2; }
-  function canManageOwn(name, user) { return capabilitiesForCollection(name, user).manage >= 1; }
-  function canViewAll(name, user) { return capabilitiesForCollection(name, user).view >= 2; }
+
+  function canManageCollection(name, user) {
+    return capabilitiesForCollection(name, user).manage >= 2;
+  }
+
+  function canManageOwn(name, user) {
+    return capabilitiesForCollection(name, user).manage >= 1;
+  }
+
+  function canViewAll(name, user) {
+    return capabilitiesForCollection(name, user).view >= 2;
+  }
+
   function teamleadOwnsPerson(person, user) {
     return Boolean(person && user && isTeamlead(user) && user.personId && person.type === 'team' && person.teamLeadId === user.personId);
   }
+  // One guard clause per collection, since "own" means something different
+  // in each one (author, assignee, participant, ...); falls back to plain
+  // createdByUserId ownership for every other collection.
   function isOwnItem(name, item, user) {
     if (!item || !user) return false;
     if (name === 'journal') return journalOwned(item, user);
@@ -47,6 +76,7 @@ module.exports = function createAccessControl({ db, isAdmin, isManager, isTeamle
     if (name === 'labs') return owns(item, user) || Boolean(user.personId && item.authorId === user.personId);
     return owns(item, user);
   }
+
   function canReadItem(name, item, user) {
     if (!item || !user) return false;
     const caps = capabilitiesForCollection(name, user);
@@ -70,6 +100,7 @@ module.exports = function createAccessControl({ db, isAdmin, isManager, isTeamle
     }
     return caps.view >= 2 || isOwnItem(name, item, user) || isAdmin(user);
   }
+
   function sanitizeItem(name, item, user) {
     if (!item) return item;
     if (name === 'people' && !canManageCollection('people', user)) {
@@ -79,16 +110,21 @@ module.exports = function createAccessControl({ db, isAdmin, isManager, isTeamle
     }
     return item;
   }
+
   function visibleItems(name, user, opts = {}) {
     let items = db[name].all().filter((item) => canReadItem(name, item, user));
     if (name === 'tasks' && !opts.includeArchived) items = items.filter((item) => !item.archivedAt);
     return items.map((item) => sanitizeItem(name, item, user));
   }
+
   function memberPersonPatch(body) {
     const out = {};
-    for (const [key, value] of Object.entries(body || {})) if (MEMBER_PERSON_FIELDS.has(key)) out[key] = value;
+    for (const [key, value] of Object.entries(body || {})) {
+      if (MEMBER_PERSON_FIELDS.has(key)) out[key] = value;
+    }
     return out;
   }
+
   function canCreate(name, user, payload) {
     const caps = capabilitiesForCollection(name, user);
     if (caps.manage < 1) return false;
@@ -102,14 +138,22 @@ module.exports = function createAccessControl({ db, isAdmin, isManager, isTeamle
       // and no other collection gets an equivalent exception.
       return Boolean(isTeamlead(user) && payload && payload.type === 'team' && user.personId);
     }
-    return new Set(['projects', 'goals', 'tasks', 'issues', 'meetings', 'journal', 'agreements', 'documents', 'tools', 'processes', 'vacations', 'kbDocs', 'kbFolders', 'docFolders', 'toolFolders', 'labs', 'checkins', 'technologyEvents']).has(name);
+    // NOTE: architecture.test.js pins this as one `new Set([...]).has(name)`
+    // expression (no intervening statement) — keep the Set inline here.
+    return new Set([
+      'projects', 'goals', 'tasks', 'issues', 'meetings', 'journal', 'agreements', 'tools',
+      'processes', 'vacations', 'kbDocs', 'kbFolders', 'docFolders', 'toolFolders', 'labs',
+      'checkins', 'technologyEvents',
+    ]).has(name);
   }
+
   function canUpdate(name, item, user) {
     const caps = capabilitiesForCollection(name, user);
     if (caps.manage <= 0) return false;
     if (caps.manage >= 2) return true;
     return isOwnItem(name, item, user);
   }
+
   function canDelete(name, item, user) {
     const caps = capabilitiesForCollection(name, user);
     if (caps.manage <= 0) return false;
@@ -117,7 +161,10 @@ module.exports = function createAccessControl({ db, isAdmin, isManager, isTeamle
     if (caps.manage >= 2) return true;
     return isOwnItem(name, item, user);
   }
-  function denied(res) { return res.status(403).json({ error: 'forbidden' }); }
+  function denied(res) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+
   function withOwnership(name, body, user) {
     const payload = { ...(body || {}) };
     if (name === 'journal') payload.authorUserId = user.id;
@@ -126,5 +173,22 @@ module.exports = function createAccessControl({ db, isAdmin, isManager, isTeamle
     return payload;
   }
 
-  return { OWNER_COLLECTIONS, canManageCollection, canManageOwn, canViewAll, canReadItem, sanitizeItem, visibleItems, memberPersonPatch, teamleadOwnsPerson, isOwnItem, canCreate, canUpdate, canDelete, denied, withOwnership, levelForCollection };
+  return {
+    OWNER_COLLECTIONS,
+    canManageCollection,
+    canManageOwn,
+    canViewAll,
+    canReadItem,
+    sanitizeItem,
+    visibleItems,
+    memberPersonPatch,
+    teamleadOwnsPerson,
+    isOwnItem,
+    canCreate,
+    canUpdate,
+    canDelete,
+    denied,
+    withOwnership,
+    levelForCollection,
+  };
 };

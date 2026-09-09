@@ -168,26 +168,16 @@ function agreementStatusBadge(status, agreementId, { withLabel = false, withTitl
   return `<span class="smart-status-control task-status-interactive" role="button" tabindex="0" aria-label="Изменить статус: ${escapeHtml(label)}"${withTitle ? ` title="${escapeHtml(label)}"` : ''} data-action-id="${actionIdx}" data-action-stop="1">${inner}</span>`;
 }
 
-function openAgreementStatusMenu(event, agreementId, currentStatus, onChanged = null) {
-  closeTaskStatusMenu();
-  const eventTarget = event?.target;
-  const anchor = eventTarget?.closest?.('.smart-status-control') || null;
-  if (!anchor || !agreementId) return;
-
-  const order = ['open', 'done'];
+// Общий каркас всплывающего меню смены статуса (задачи/проблемы/договорённости):
+// создаёт <div>, вставляет готовую разметку пунктов, ставит его у якоря так,
+// чтобы не вылезти за край экрана, и вешает обработчики закрытия по клику
+// вовне и по Escape. Собственно перечень пунктов и что сохранять по клику —
+// у каждой сущности своё и остаётся в её open*StatusMenu.
+function openStatusMenuAt(anchor, itemsHtml, extraClass) {
   const menu = document.createElement('div');
-  menu.className = 'task-status-menu agreement-status-menu';
+  menu.className = `task-status-menu ${extraClass || ''}`.trim();
   menu.setAttribute('role', 'menu');
-  menu.innerHTML = order.map((status) => {
-    const label = AGREEMENT_STATUS_LABEL[status] || status;
-    const symbol = status === 'done' ? '✓' : '';
-    const iconClass = status === 'done' ? 'done' : 'todo';
-    return `<button type="button" class="task-status-menu-item ${status === currentStatus ? 'active' : ''}" role="menuitemradio" aria-checked="${status === currentStatus ? 'true' : 'false'}" data-status="${status}">
-      <span class="task-status-icon task-status-${iconClass}" aria-hidden="true">${symbol}</span>
-      <span class="task-status-menu-label">${escapeHtml(label)}</span>
-      ${status === currentStatus ? `<span class="task-status-menu-check">✓</span>` : ''}
-    </button>`;
-  }).join('');
+  menu.innerHTML = itemsHtml;
   document.body.appendChild(menu);
   _taskStatusMenu = menu;
 
@@ -201,11 +191,48 @@ function openAgreementStatusMenu(event, agreementId, currentStatus, onChanged = 
   menu.style.left = `${Math.max(10, left)}px`;
   menu.style.top = `${Math.max(10, top)}px`;
 
+  _taskStatusMenuOutsideHandler = (e) => {
+    if (!_taskStatusMenu?.contains(e.target) && e.target !== anchor) closeTaskStatusMenu();
+  };
+  _taskStatusMenuKeyHandler = (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeTaskStatusMenu();
+      anchor.focus?.();
+    }
+  };
+  setTimeout(() => document.addEventListener('mousedown', _taskStatusMenuOutsideHandler, true), 0);
+  document.addEventListener('keydown', _taskStatusMenuKeyHandler, true);
+  return menu;
+}
+
+function openAgreementStatusMenu(event, agreementId, currentStatus, onChanged = null) {
+  closeTaskStatusMenu();
+  const eventTarget = event?.target;
+  const anchor = eventTarget?.closest?.('.smart-status-control') || null;
+  if (!anchor || !agreementId) return;
+
+  const order = ['open', 'done'];
+  const itemsHtml = order.map((status) => {
+    const label = AGREEMENT_STATUS_LABEL[status] || status;
+    const symbol = status === 'done' ? '✓' : '';
+    const iconClass = status === 'done' ? 'done' : 'todo';
+    return `<button type="button" class="task-status-menu-item ${status === currentStatus ? 'active' : ''}" role="menuitemradio" aria-checked="${status === currentStatus ? 'true' : 'false'}" data-status="${status}">
+      <span class="task-status-icon task-status-${iconClass}" aria-hidden="true">${symbol}</span>
+      <span class="task-status-menu-label">${escapeHtml(label)}</span>
+      ${status === currentStatus ? `<span class="task-status-menu-check">✓</span>` : ''}
+    </button>`;
+  }).join('');
+  const menu = openStatusMenuAt(anchor, itemsHtml, 'agreement-status-menu');
+
   menu.querySelectorAll('.task-status-menu-item').forEach((item) => {
     item.addEventListener('click', async (e) => {
       e.stopPropagation();
       const newStatus = item.dataset.status;
-      if (!newStatus || newStatus === currentStatus) { closeTaskStatusMenu(); return; }
+      if (!newStatus || newStatus === currentStatus) {
+        closeTaskStatusMenu();
+        return;
+      }
       menu.classList.add('is-saving');
       try {
         await Resources.agreements.update(agreementId, { status: newStatus });
@@ -222,14 +249,6 @@ function openAgreementStatusMenu(event, agreementId, currentStatus, onChanged = 
     });
   });
 
-  _taskStatusMenuOutsideHandler = (e) => {
-    if (!_taskStatusMenu?.contains(e.target) && e.target !== anchor) closeTaskStatusMenu();
-  };
-  _taskStatusMenuKeyHandler = (e) => {
-    if (e.key === 'Escape') { e.preventDefault(); closeTaskStatusMenu(); anchor.focus?.(); }
-  };
-  setTimeout(() => document.addEventListener('mousedown', _taskStatusMenuOutsideHandler, true), 0);
-  document.addEventListener('keydown', _taskStatusMenuKeyHandler, true);
   menu.querySelector('.task-status-menu-item.active')?.focus();
 }
 
@@ -246,10 +265,7 @@ function openIssueStatusMenu(event, issueId, currentStatus, onChanged = null) {
   if (!anchor || !issueId) return;
 
   const order = ['open', 'in_progress', 'paused', 'resolved'];
-  const menu = document.createElement('div');
-  menu.className = 'task-status-menu issue-status-menu';
-  menu.setAttribute('role', 'menu');
-  menu.innerHTML = order.map((status) => {
+  const itemsHtml = order.map((status) => {
     const label = ISSUE_STATUS_LABEL[status] || status;
     const iconClass = ISSUE_STATUS_ICON_CLASS[status] || 'todo';
     const symbol = ISSUE_STATUS_SYMBOL[status] ?? '';
@@ -259,24 +275,16 @@ function openIssueStatusMenu(event, issueId, currentStatus, onChanged = null) {
       ${status === currentStatus ? `<span class="task-status-menu-check">✓</span>` : ''}
     </button>`;
   }).join('');
-  document.body.appendChild(menu);
-  _taskStatusMenu = menu;
-
-  const rect = anchor.getBoundingClientRect();
-  const menuRect = menu.getBoundingClientRect();
-  const gap = 7;
-  let left = rect.left;
-  let top = rect.bottom + gap;
-  if (left + menuRect.width > window.innerWidth - 10) left = window.innerWidth - menuRect.width - 10;
-  if (top + menuRect.height > window.innerHeight - 10) top = Math.max(10, rect.top - menuRect.height - gap);
-  menu.style.left = `${Math.max(10, left)}px`;
-  menu.style.top = `${Math.max(10, top)}px`;
+  const menu = openStatusMenuAt(anchor, itemsHtml, 'issue-status-menu');
 
   menu.querySelectorAll('.task-status-menu-item').forEach((item) => {
     item.addEventListener('click', async (e) => {
       e.stopPropagation();
       const newStatus = item.dataset.status;
-      if (!newStatus || newStatus === currentStatus) { closeTaskStatusMenu(); return; }
+      if (!newStatus || newStatus === currentStatus) {
+        closeTaskStatusMenu();
+        return;
+      }
       menu.classList.add('is-saving');
       try {
         await api.put('/api/issues/' + issueId, { status: newStatus });
@@ -293,14 +301,6 @@ function openIssueStatusMenu(event, issueId, currentStatus, onChanged = null) {
     });
   });
 
-  _taskStatusMenuOutsideHandler = (e) => {
-    if (!_taskStatusMenu?.contains(e.target) && e.target !== anchor) closeTaskStatusMenu();
-  };
-  _taskStatusMenuKeyHandler = (e) => {
-    if (e.key === 'Escape') { e.preventDefault(); closeTaskStatusMenu(); anchor.focus?.(); }
-  };
-  setTimeout(() => document.addEventListener('mousedown', _taskStatusMenuOutsideHandler, true), 0);
-  document.addEventListener('keydown', _taskStatusMenuKeyHandler, true);
   menu.querySelector('.task-status-menu-item.active')?.focus();
 }
 
@@ -346,10 +346,7 @@ function openTaskStatusMenu(event, taskId, currentStatus, onChanged = null) {
   const anchor = eventTarget?.closest?.('.task-status-interactive') || (eventTarget?.classList?.contains('task-status-icon') ? eventTarget : null);
   if (!anchor || !taskId) return;
 
-  const menu = document.createElement('div');
-  menu.className = 'task-status-menu';
-  menu.setAttribute('role', 'menu');
-  menu.innerHTML = TASK_STATUS_ORDER.map((status) => {
+  const itemsHtml = TASK_STATUS_ORDER.map((status) => {
     const label = TASK_STATUS_LABEL[status] || status;
     const symbol = TASK_STATUS_SYMBOL[status] ?? '○';
     return `<button type="button" class="task-status-menu-item ${status === currentStatus ? 'active' : ''}" role="menuitemradio" aria-checked="${status === currentStatus ? 'true' : 'false'}" data-status="${status}">
@@ -358,24 +355,16 @@ function openTaskStatusMenu(event, taskId, currentStatus, onChanged = null) {
       ${status === currentStatus ? `<span class="task-status-menu-check">✓</span>` : ''}
     </button>`;
   }).join('');
-  document.body.appendChild(menu);
-  _taskStatusMenu = menu;
-
-  const rect = anchor.getBoundingClientRect();
-  const menuRect = menu.getBoundingClientRect();
-  const gap = 7;
-  let left = rect.left;
-  let top = rect.bottom + gap;
-  if (left + menuRect.width > window.innerWidth - 10) left = window.innerWidth - menuRect.width - 10;
-  if (top + menuRect.height > window.innerHeight - 10) top = Math.max(10, rect.top - menuRect.height - gap);
-  menu.style.left = `${Math.max(10, left)}px`;
-  menu.style.top = `${Math.max(10, top)}px`;
+  const menu = openStatusMenuAt(anchor, itemsHtml);
 
   menu.querySelectorAll('.task-status-menu-item').forEach((item) => {
     item.addEventListener('click', async (e) => {
       e.stopPropagation();
       const newStatus = item.dataset.status;
-      if (!newStatus || newStatus === currentStatus) { closeTaskStatusMenu(); return; }
+      if (!newStatus || newStatus === currentStatus) {
+        closeTaskStatusMenu();
+        return;
+      }
       menu.classList.add('is-saving');
       try {
         if (typeof DetailAutosave !== 'undefined') await DetailAutosave.flush();
@@ -393,14 +382,6 @@ function openTaskStatusMenu(event, taskId, currentStatus, onChanged = null) {
     });
   });
 
-  _taskStatusMenuOutsideHandler = (e) => {
-    if (!_taskStatusMenu?.contains(e.target) && e.target !== anchor) closeTaskStatusMenu();
-  };
-  _taskStatusMenuKeyHandler = (e) => {
-    if (e.key === 'Escape') { e.preventDefault(); closeTaskStatusMenu(); anchor.focus?.(); }
-  };
-  setTimeout(() => document.addEventListener('mousedown', _taskStatusMenuOutsideHandler, true), 0);
-  document.addEventListener('keydown', _taskStatusMenuKeyHandler, true);
   menu.querySelector('.task-status-menu-item.active')?.focus();
 }
 

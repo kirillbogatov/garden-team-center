@@ -11,47 +11,78 @@ function labProgress(status) {
   return LAB_PROGRESS[status] ?? 15;
 }
 
+// Панель фильтров списка: статус, тип проекта (только для вкладки «Проекты»),
+// автор и — только для идей — переключатель «только без проекта».
+function labsFilterControlsHtml(isIdeas, statusFilter) {
+  const statusLabels = isIdeas ? IDEA_STATUS_LABEL : LAB_STATUS_LABEL;
+  const statusOptionsHtml = Object.entries(statusLabels)
+    .map(([value, label]) => `<option value="${value}" ${statusFilter === value ? 'selected' : ''}>${label}</option>`)
+    .join('');
+  const statusSelectHtml = `<select id="labs-status-filter" class="task-filter-select task-filter-status" aria-label="Фильтр по статусу">
+          <option value="all" ${statusFilter === 'all' ? 'selected' : ''}>${isIdeas ? 'Все идеи' : 'Все проекты'}</option>
+          ${statusOptionsHtml}
+        </select>`;
+
+  const typeOptionsHtml = Object.entries(LAB_TYPE_LABEL)
+    .map(([value, label]) => `<option value="${value}" ${Views._labTypeFilter === value ? 'selected' : ''}>${label}</option>`)
+    .join('');
+  const typeSelectHtml = !isIdeas ? `<select id="labs-type-filter" class="task-filter-select" aria-label="Фильтр по типу">
+          <option value="all" ${Views._labTypeFilter === 'all' ? 'selected' : ''}>Все типы</option>
+          ${typeOptionsHtml}
+        </select>` : '';
+
+  const authorOptionsHtml = store.team()
+    .map((person) => `<option value="${person.id}" ${Views._labAuthorFilter === person.id ? 'selected' : ''}>${escapeHtml(person.name)}</option>`)
+    .join('');
+  const authorSelectHtml = `<select id="labs-author-filter" class="task-filter-select task-filter-person" aria-label="Фильтр по автору">
+          <option value="all" ${Views._labAuthorFilter === 'all' ? 'selected' : ''}>Все сотрудники</option>
+          ${authorOptionsHtml}
+        </select>`;
+
+  const unassignedToggleHtml = isIdeas
+    ? `<label class="task-dense-toggle labs-unassigned-toggle"><input id="labs-unassigned-filter" type="checkbox" ${Views._labOnlyUnassignedIdeas ? 'checked' : ''}/> Только идеи без проектов</label>`
+    : '';
+
+  return `${statusSelectHtml}${typeSelectHtml}${authorSelectHtml}${unassignedToggleHtml}`;
+}
+
 Views.labs = async function () {
-  
   const requestedTab = Router.queryParam('tab');
   if (requestedTab === 'ideas' || requestedTab === 'projects') Views._labsTab = requestedTab;
   const isIdeas = Views._labsTab === 'ideas';
-  setTopbar(`<h1>The Labs</h1>${Auth.canCreate('labs') ? `<div class="actions"><button class="ui-button ui-button--primary btn btn-primary" data-command="${isIdeas ? 'openLabIdeaModal' : 'openLabModal'}">${isIdeas ? '+ Добавить идею' : '+ Создать проект'}</button></div>` : ''}`);
+  const addButton = Auth.canCreate('labs')
+    ? `<div class="actions"><button class="ui-button ui-button--primary btn btn-primary" data-command="${isIdeas ? 'openLabIdeaModal' : 'openLabModal'}">${isIdeas ? '+ Добавить идею' : '+ Создать проект'}</button></div>`
+    : '';
+  setTopbar(`<h1>The Labs</h1>${addButton}`);
   const view = document.getElementById('view');
   view.classList.add('labs-page-view');
   view.innerHTML = `<div class="tiny">Загрузка…</div>`;
-  const allItems = (await Resources.labs.list()).sort((a,b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
+  const allItems = (await Resources.labs.list()).sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
   Views._theLabsProjects = allItems.filter((lab) => lab.entityType !== 'idea');
-  let items = allItems.filter((lab) => isIdeas ? lab.entityType === 'idea' : lab.entityType !== 'idea');
+  let items = allItems.filter((lab) => (isIdeas ? lab.entityType === 'idea' : lab.entityType !== 'idea'));
   const statusFilter = isIdeas ? Views._labIdeaStatusFilter : Views._labProjectStatusFilter;
   if (statusFilter !== 'all') items = items.filter((lab) => (lab.status || 'idea') === statusFilter);
   if (!isIdeas && Views._labTypeFilter !== 'all') items = items.filter((lab) => (lab.projectType || 'pet') === Views._labTypeFilter);
   if (Views._labAuthorFilter !== 'all') items = items.filter((lab) => lab.authorId === Views._labAuthorFilter);
   if (isIdeas && Views._labOnlyUnassignedIdeas) items = items.filter((idea) => !idea.labProjectId);
+
+  const listHtml = items.length
+    ? `<div class="labs-list ${isIdeas ? 'labs-ideas-list task-list-unified' : ''}">${items.map(isIdeas ? labIdeaRowHtml : labRowHtml).join('')}</div>`
+    : `<div class="zen-empty">${isIdeas ? 'Идей пока нет' : 'Проектов не найдено'}</div>`;
+  const introText = isIdeas
+    ? 'Идеи команды. Идея может существовать отдельно или быть прикреплена к проекту The Labs.'
+    : 'Экспериментальные проекты команды — от идеи до готового результата.';
+
   view.innerHTML = `<div class="labs-page view-narrow">
     <div class="list-tabs labs-section-tabs" role="tablist" aria-label="Раздел The Labs">
       <button type="button" class="list-tab ${isIdeas ? 'active' : ''}" role="tab" aria-selected="${isIdeas}" data-route="/labs?tab=ideas">Идеи</button>
       <button type="button" class="list-tab ${!isIdeas ? 'active' : ''}" role="tab" aria-selected="${!isIdeas}" data-route="/labs?tab=projects">Проекты The Labs</button>
     </div>
     <div class="labs-sticky-toolbar">
-      <div class="labs-filter-controls">
-        <select id="labs-status-filter" class="task-filter-select task-filter-status" aria-label="Фильтр по статусу">
-          <option value="all" ${statusFilter === 'all' ? 'selected' : ''}>${isIdeas ? 'Все идеи' : 'Все проекты'}</option>
-          ${Object.entries(isIdeas ? IDEA_STATUS_LABEL : LAB_STATUS_LABEL).map(([value,label]) => `<option value="${value}" ${statusFilter === value ? 'selected' : ''}>${label}</option>`).join('')}
-        </select>
-        ${!isIdeas ? `<select id="labs-type-filter" class="task-filter-select" aria-label="Фильтр по типу">
-          <option value="all" ${Views._labTypeFilter === 'all' ? 'selected' : ''}>Все типы</option>
-          ${Object.entries(LAB_TYPE_LABEL).map(([value,label]) => `<option value="${value}" ${Views._labTypeFilter === value ? 'selected' : ''}>${label}</option>`).join('')}
-        </select>` : ''}
-        <select id="labs-author-filter" class="task-filter-select task-filter-person" aria-label="Фильтр по автору">
-          <option value="all" ${Views._labAuthorFilter === 'all' ? 'selected' : ''}>Все сотрудники</option>
-          ${store.team().map((person) => `<option value="${person.id}" ${Views._labAuthorFilter === person.id ? 'selected' : ''}>${escapeHtml(person.name)}</option>`).join('')}
-        </select>
-        ${isIdeas ? `<label class="task-dense-toggle labs-unassigned-toggle"><input id="labs-unassigned-filter" type="checkbox" ${Views._labOnlyUnassignedIdeas ? 'checked' : ''}/> Только идеи без проектов</label>` : ''}
-      </div>
+      <div class="labs-filter-controls">${labsFilterControlsHtml(isIdeas, statusFilter)}</div>
     </div>
-    <p class="labs-intro">${isIdeas ? 'Идеи команды. Идея может существовать отдельно или быть прикреплена к проекту The Labs.' : 'Экспериментальные проекты команды — от идеи до готового результата.'}</p>
-    ${items.length ? `<div class="labs-list ${isIdeas ? 'labs-ideas-list task-list-unified' : ''}">${items.map(isIdeas ? labIdeaRowHtml : labRowHtml).join('')}</div>` : `<div class="zen-empty">${isIdeas ? 'Идей пока нет' : 'Проектов не найдено'}</div>`}
+    <p class="labs-intro">${introText}</p>
+    ${listHtml}
   </div>`;
   const statusSelect = document.getElementById('labs-status-filter');
   if (statusSelect) statusSelect.onchange = (e) => {
@@ -101,10 +132,30 @@ async function openLabIdeaModal(existing, opts) {
   const schema = [
     { key: 'title', label: 'Название', type: 'text', trim: true },
     { key: 'description', label: 'Описание', type: 'textarea', rows: 6, trim: true },
-    { key: 'private', label: 'Видимость', type: 'checkbox', render: ({ id, value, disabled }) => `<label class="check-row lab-private-checkbox"><input id="${id}" type="checkbox" ${value ? 'checked' : ''} ${disabled}/><span>Приватная идея (видна только вам и тимлиду)</span></label>` },
-    { key: 'authorId', label: 'Автор', type: 'select', emptyLabel: '—', options: () => store.team().map((person) => ({ value: person.id, label: person.name })), parse: (v) => v || null },
-    { key: 'status', label: 'Статус', type: 'select', options: Object.entries(IDEA_STATUS_LABEL).map(([value,label]) => ({ value, label })) },
-    { key: 'labProjectId', label: 'Проект The Labs', type: 'select', emptyLabel: 'Без проекта', options: () => (Views._theLabsProjects || []).filter((item) => item.entityType !== 'idea').map((project) => ({ value: project.id, label: project.title || 'Без названия' })), parse: (v) => v || null, hint: 'Идея может существовать отдельно или быть связана с существующим проектом.' },
+    {
+      key: 'private',
+      label: 'Видимость',
+      type: 'checkbox',
+      render: ({ id, value, disabled }) => `<label class="check-row lab-private-checkbox"><input id="${id}" type="checkbox" ${value ? 'checked' : ''} ${disabled}/><span>Приватная идея (видна только вам и тимлиду)</span></label>`,
+    },
+    {
+      key: 'authorId',
+      label: 'Автор',
+      type: 'select',
+      emptyLabel: '—',
+      options: () => store.team().map((person) => ({ value: person.id, label: person.name })),
+      parse: (v) => v || null,
+    },
+    { key: 'status', label: 'Статус', type: 'select', options: Object.entries(IDEA_STATUS_LABEL).map(([value, label]) => ({ value, label })) },
+    {
+      key: 'labProjectId',
+      label: 'Проект The Labs',
+      type: 'select',
+      emptyLabel: 'Без проекта',
+      options: () => (Views._theLabsProjects || []).filter((item) => item.entityType !== 'idea').map((project) => ({ value: project.id, label: project.title || 'Без названия' })),
+      parse: (v) => v || null,
+      hint: 'Идея может существовать отдельно или быть связана с существующим проектом.',
+    },
   ];
   EntityForm.open({
     title: existing ? (editable ? 'Редактировать идею' : 'Идея') : 'Новая идея',
@@ -323,16 +374,31 @@ function labRowHtml(lab) {
   const links = normalizeLabLinks(lab.links);
   const progress = labProgress(lab.status || 'idea');
   const typeLabel = LAB_TYPE_LABEL[lab.projectType || 'pet'] || 'Другое';
+
+  const descriptionHtml = lab.description
+    ? `<div class="tiny lab-card-description formatted-text">${escapeHtml(lab.description)}</div>`
+    : '';
+  const privacyBadgeHtml = lab.private
+    ? `<span class="lab-private-meta" title="Приватный проект">${icon('eyeOff', 12)} Приватный</span>`
+    : '';
+  const typeBadgeHtml = `<span class="ui-tag badge lab-type-badge">${escapeHtml(typeLabel)}</span>`;
+  const authorHtml = author
+    ? `<span class="lab-row-author">${personAvatarLinkHtml(author)}<span>${escapeHtml(author.name)}</span>${typeBadgeHtml}</span>`
+    : typeBadgeHtml;
+  const linksHtml = links.length
+    ? `<span class="lab-row-links">${links.map((link) => `<a href="${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer" data-stop-propagation="1">${escapeHtml(labLinkLabel(link))}</a>`).join('')}</span>`
+    : '';
+
   return `<div class="ui-surface card lab-card clickable" data-action-id="${idx}">
     <div class="lab-card-main">
       <div class="lab-card-copy">
         <div class="lab-card-head"><div class="lab-card-title">${escapeHtml(lab.title || 'Без названия')}</div></div>
-        ${lab.description ? `<div class="tiny lab-card-description formatted-text">${escapeHtml(lab.description)}</div>` : ''}
+        ${descriptionHtml}
         <div class="lab-card-meta">
           <div class="lab-card-status">${labStatusHtml(lab.status || 'idea', lab)}</div>
-          ${lab.private ? `<span class="lab-private-meta" title="Приватный проект">${icon('eyeOff', 12)} Приватный</span>` : ''}
-          ${author ? `<span class="lab-row-author">${personAvatarLinkHtml(author)}<span>${escapeHtml(author.name)}</span><span class="ui-tag badge lab-type-badge">${escapeHtml(typeLabel)}</span></span>` : `<span class="ui-tag badge lab-type-badge">${escapeHtml(typeLabel)}</span>`}
-          ${links.length ? `<span class="lab-row-links">${links.map((link) => `<a href="${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer" data-stop-propagation="1">${escapeHtml(labLinkLabel(link))}</a>`).join('')}</span>` : ''}
+          ${privacyBadgeHtml}
+          ${authorHtml}
+          ${linksHtml}
         </div>
       </div>
       <div class="lab-card-tree" aria-hidden="true">${goalTreeHtml(progress, 'compact', lab.id)}</div>
@@ -362,11 +428,22 @@ function openLabModal(existing) {
   const schema = [
     { key: 'title', label: 'Название', type: 'text', trim: true },
     { key: 'description', label: 'Описание', type: 'textarea', rows: 5, trim: true },
-    { key: 'links', label: 'Ссылки', render: ({ id, value, disabled }) => labLinksEditorHtml(id, value, !disabled), read: () => readLabLinksEditor('ef-links'), init: ({ root }) => bindLabLinksEditor(root?.id || 'ef-links') },
-    { key: 'projectType', label: 'Тип проекта', type: 'select', options: Object.entries(LAB_TYPE_LABEL).map(([value,label]) => ({ value, label })) },
-    { key: 'private', label: 'Доступ', type: 'checkbox', render: ({ id, value, disabled }) => `<label class="check-row lab-private-checkbox"><input id="${id}" type="checkbox" ${value ? 'checked' : ''} ${disabled}/><span>Приватный проект (Виден только вам и вашему тимлиду)</span></label>` },
+    {
+      key: 'links',
+      label: 'Ссылки',
+      render: ({ id, value, disabled }) => labLinksEditorHtml(id, value, !disabled),
+      read: () => readLabLinksEditor('ef-links'),
+      init: ({ root }) => bindLabLinksEditor(root?.id || 'ef-links'),
+    },
+    { key: 'projectType', label: 'Тип проекта', type: 'select', options: Object.entries(LAB_TYPE_LABEL).map(([value, label]) => ({ value, label })) },
+    {
+      key: 'private',
+      label: 'Доступ',
+      type: 'checkbox',
+      render: ({ id, value, disabled }) => `<label class="check-row lab-private-checkbox"><input id="${id}" type="checkbox" ${value ? 'checked' : ''} ${disabled}/><span>Приватный проект (Виден только вам и вашему тимлиду)</span></label>`,
+    },
     { key: 'authorId', label: 'Автор', type: 'select', emptyLabel: '—', options: authors.map((person) => ({ value: person.id, label: person.name })) },
-    { key: 'status', label: 'Статус', type: 'select', options: Object.entries(LAB_STATUS_LABEL).map(([value,label]) => ({ value, label })) },
+    { key: 'status', label: 'Статус', type: 'select', options: Object.entries(LAB_STATUS_LABEL).map(([value, label]) => ({ value, label })) },
   ];
 
   EntityForm.open({
@@ -399,85 +476,106 @@ function openLabModal(existing) {
 }
 
 
-Views.labDetail = async function (ref) {
-  
-  const { lab, ideas, comments } = await LabService.detail(ref);
-  if (lab.entityType === 'idea') { Router.go('/labs?tab=ideas'); return; }
-  if (lab.labKey && String(ref || '').toUpperCase() !== String(lab.labKey).toUpperCase()) {
-    Router.replace(`/labs/${encodeURIComponent(lab.labKey)}`);
-  }
-
-  const editable = canEditLab(lab);
-  const authors = store.team();
-  const progress = labProgress(lab.status || 'idea');
-  const hasActions = true;
-
-  // /labs/:key само по себе не отличает «Идею» от проекта The Labs (только
-  // ?tab= в ссылках меню это делает) — но выше по коду страница уже увела
-  // идеи на /labs?tab=ideas, так что здесь lab всегда проект The Labs. Крошки
-  // передаём явно, а не через автоматический резолвер по пути.
-  setTopbar(`<h1 class="topbar-h1-key">${escapeHtml(lab.labKey || '')}</h1>
+// Топбар страницы проекта: ключ проекта, меню «Действия» (история версий +
+// удаление, если можно редактировать) и нейтральная кнопка «Назад».
+function labDetailTopbarHtml(lab, editable) {
+  const deleteButtonHtml = editable
+    ? `<button type="button" class="task-actions-menu-item task-actions-menu-item-danger" id="lab-detail-delete" role="menuitem">${icon('trash', 14)} Удалить</button>`
+    : '';
+  return `<h1 class="topbar-h1-key">${escapeHtml(lab.labKey || '')}</h1>
     <div class="actions task-detail-topbar-actions">
-      ${hasActions ? `<div class="task-actions-menu-wrap">
+      <div class="task-actions-menu-wrap">
         <button type="button" class="ui-button btn task-detail-topbar-btn" id="lab-actions-toggle" aria-haspopup="menu" aria-expanded="false">Действия</button>
         <div class="task-actions-menu" id="lab-actions-menu" role="menu" hidden>
-          <button type="button" class="task-actions-menu-item" id="lab-version-history" role="menuitem">${icon('clock',14)} История версий</button>
-          ${editable ? `<button type="button" class="task-actions-menu-item task-actions-menu-item-danger" id="lab-detail-delete" role="menuitem">${icon('trash',14)} Удалить</button>` : ''}
+          <button type="button" class="task-actions-menu-item" id="lab-version-history" role="menuitem">${icon('clock', 14)} История версий</button>
+          ${deleteButtonHtml}
         </div>
-      </div>` : ''}
+      </div>
       <button type="button" class="ui-button btn task-detail-topbar-btn" data-router-back>Назад</button>
     </div>
-  `, { crumbs: [
-    { label: 'Garden', path: '/overview' },
-    { label: 'The Labs', path: '/labs?tab=projects' },
-  ] });
+  `;
+}
 
-  const ideasHtml = ideas.length ? ideas.map((idea) => {
-    const author = store.person(idea.authorId);
-    return `<div class="task-relation-item" data-lab-idea-id="${escapeHtml(idea.id)}">
+function labDetailIdeaRelationRowHtml(idea) {
+  const author = store.person(idea.authorId);
+  return `<div class="task-relation-item" data-lab-idea-id="${escapeHtml(idea.id)}">
       <span class="task-relation-kind">Идея</span>
       <button type="button" class="task-relation-link" data-lab-idea-open="${escapeHtml(idea.id)}">${escapeHtml(idea.title || idea.description || 'Без названия')}</button>
       ${author ? `<span class="tiny">${escapeHtml(author.name)}</span>` : ''}
     </div>`;
-  }).join('') : `<div class="task-relation-empty">К проекту пока не прикреплено идей</div>`;
+}
 
-  const view = document.getElementById('view');
-  view.classList.add('task-detail-page-view');
+// Три поля-свойства (автор/тип/статус) плюс дерево прогресса второй колонкой,
+// плюс переключатель приватности — только для тимлида и автора проекта.
+function labDetailPropertiesSectionHtml({ lab, editable, authors, progress, canManagePrivacy }) {
   const authorControl = detailInlineSelectHtml({ id: 'lab-detail-author', value: lab.authorId || '', editable, emptyLabel: '—', options: authors.map((person) => ({ value: person.id, label: person.name })) });
-  const typeControl = detailInlineSelectHtml({ id: 'lab-detail-type', value: lab.projectType || 'pet', editable, options: Object.entries(LAB_TYPE_LABEL).map(([value,label]) => ({ value, label })) });
-  const canManagePrivacy = Boolean(Auth.isTeamlead() || (Auth.user?.personId && Auth.user.personId === lab.authorId));
-  const accessControl = canManagePrivacy ? `<label class="lab-detail-access-toggle"><input id="lab-detail-private" type="checkbox" ${lab.private ? 'checked' : ''} ${editable ? '' : 'disabled'}/><span>Приватный проект (виден только вам и тимлиду)</span></label>` : '';
-  const linkControl = labLinksEditorHtml('lab-detail-links', lab.links, editable);
+  const typeControl = detailInlineSelectHtml({ id: 'lab-detail-type', value: lab.projectType || 'pet', editable, options: Object.entries(LAB_TYPE_LABEL).map(([value, label]) => ({ value, label })) });
   const statusControl = `<div class="task-detail-status-control">${labStatusHtml(lab.status || 'idea', editable ? lab : null)}</div>`;
   // Дерево — второй колонкой рядом с полями, без процентной подписи (это просто декоративный
   // индикатор стадии, а не отдельная метрика); высота выровнена по колонке полей через CSS.
   const treeColumn = `<div class="task-detail-details-column lab-tree-column"><div class="lab-detail-progress-tree" aria-label="Стадия проекта">${goalTreeHtml(progress, 'compact', lab.labKey || lab.id)}</div></div>`;
-  const details = `<section class="task-detail-section task-detail-details-section">
+  const privacyRowHtml = canManagePrivacy
+    ? `<div class="lab-detail-privacy-row"><label class="lab-detail-access-toggle"><input id="lab-detail-private" type="checkbox" ${lab.private ? 'checked' : ''} ${editable ? '' : 'disabled'}/><span>Приватный проект (виден только вам и тимлиду)</span></label></div>`
+    : '';
+  return `<section class="task-detail-section task-detail-details-section">
     <div class="task-detail-details-grid"><div class="task-detail-details-column">
-      ${detailPropertyHtml({ label:'Автор', control:authorControl })}
-      ${detailPropertyHtml({ label:'Тип', control:typeControl })}
-      ${detailPropertyHtml({ label:'Статус', control:statusControl, className:'task-detail-status-property' })}
+      ${detailPropertyHtml({ label: 'Автор', control: authorControl })}
+      ${detailPropertyHtml({ label: 'Тип', control: typeControl })}
+      ${detailPropertyHtml({ label: 'Статус', control: statusControl, className: 'task-detail-status-property' })}
     </div>${treeColumn}</div>
-    ${canManagePrivacy ? `<div class="lab-detail-privacy-row">${accessControl}</div>` : ''}
+    ${privacyRowHtml}
   </section>`;
-  const description = `<section class="task-detail-section task-detail-description-section"><div class="task-detail-section-label task-detail-section-title">Описание</div><div class="task-inline-edit task-inline-edit-description ${editable ? 'is-editable' : ''}">${editable ? `<textarea id="lab-detail-description" class="task-detail-description" rows="4" placeholder="Добавьте описание проекта">${escapeHtml(lab.description || '')}</textarea><span class="task-inline-edit-icon" aria-hidden="true">${icon('edit',11)}</span>` : `<textarea id="lab-detail-description" class="task-detail-description" hidden disabled>${escapeHtml(lab.description || '')}</textarea><div class="task-detail-description task-detail-description-readonly">${renderLinkedText(lab.description || '') || '<span class="muted">Описание не добавлено</span>'}</div>`}</div></section>`;
-  const linksSection = detailSectionHtml('Ссылки', linkControl);
-  const ideasSection = detailSectionHtml('Идеи', `<div class="task-relation-list task-relation-list-unified" id="lab-detail-ideas">${ideasHtml}</div>`, `<button type="button" class="task-section-add-btn" id="lab-detail-add-idea" aria-label="Добавить идею" title="Добавить идею">+</button>`).replace('task-detail-section"','task-detail-section task-relations-section"');
-  const commentsSection = `<section class="task-comments-section"><div class="task-comments-head"><span>Комментарии</span><span class="task-comments-count" id="lab-comments-count">${comments.length || ''}</span></div><div class="task-comments-list" id="lab-comments-list">${commentThreadHtml(comments)}</div><div class="task-comment-compose"><textarea id="lab-comment-input" rows="2" placeholder="Оставить комментарий…"></textarea><button type="button" class="ui-button btn task-comment-send-inline" id="lab-comment-send" hidden>Отправить</button></div></section>`;
-  view.innerHTML = entityDetailHtml({ className:'lab-task-detail-page', header:detailPageHeaderHtml({ title: lab.title, eyebrow: '', inputId:'lab-detail-title', displayId:'lab-title-display', shellId:'lab-title-shell', editable, ariaLabel:'Название проекта The Labs' }), main:details + description + linksSection + ideasSection + commentsSection });
+}
 
-  Views._labDetailIdeas = ideas;
+// Описание рендерится по-разному для читающих и редактирующих: редактор видит
+// textarea сразу, а для read-only исходный textarea прячется (он всё ещё
+// нужен другим частям кода, читающим значение по id) и текст показывается
+// как отформатированный HTML со ссылками на упомянутые сущности.
+function labDetailDescriptionSectionHtml(lab, editable) {
+  // Ссылки в описании должны быть кликабельными без входа в режим редактирования
+  // (см. wireLabDetailDescriptionEdit ниже) — тот же приём, что и на странице задачи.
+  const bodyHtml = editable
+    ? `<div id="lab-detail-description-display" class="task-detail-description task-detail-description-readonly" role="button" tabindex="0">${renderLinkedText(lab.description || '') || '<span class="muted">Добавьте описание проекта</span>'}</div><textarea id="lab-detail-description" class="task-detail-description" rows="4" placeholder="Добавьте описание проекта" hidden>${escapeHtml(lab.description || '')}</textarea><span class="task-inline-edit-icon" aria-hidden="true">${icon('edit', 11)}</span>`
+    : `<textarea id="lab-detail-description" class="task-detail-description" hidden disabled>${escapeHtml(lab.description || '')}</textarea><div class="task-detail-description task-detail-description-readonly">${renderLinkedText(lab.description || '') || '<span class="muted">Описание не добавлено</span>'}</div>`;
+  return `<section class="task-detail-section task-detail-description-section"><div class="task-detail-section-label task-detail-section-title">Описание</div><div class="task-inline-edit task-inline-edit-description ${editable ? 'is-editable' : ''}">${bodyHtml}</div></section>`;
+}
 
-
-  const descriptionField = document.getElementById('lab-detail-description');
-  const resizeDescription = () => {
-    if (!descriptionField) return;
-    descriptionField.style.height = 'auto';
-    descriptionField.style.height = `${Math.max(descriptionField.scrollHeight, 52)}px`;
+// Клик по отображению описания переключает на textarea; потеря фокуса —
+// обратно на читаемый рендер со ссылками (см. labDetailDescriptionSectionHtml).
+function wireLabDetailDescriptionEdit(editable, descriptionField, resizeDescription) {
+  if (!editable || !descriptionField) return;
+  const descriptionDisplay = document.getElementById('lab-detail-description-display');
+  if (!descriptionDisplay) return;
+  const beginDescriptionEdit = (event) => {
+    if (event?.target?.closest?.('a')) return;
+    if (!descriptionField.hidden) return;
+    descriptionDisplay.hidden = true;
+    descriptionField.hidden = false;
+    descriptionField.focus();
+    resizeDescription();
+    const end = descriptionField.value.length;
+    try { descriptionField.setSelectionRange(end, end); } catch (_) {}
   };
-  resizeDescription();
-  descriptionField?.addEventListener('input', resizeDescription);
+  descriptionDisplay.onclick = beginDescriptionEdit;
+  descriptionDisplay.onkeydown = (event) => {
+    if (event.target.closest?.('a')) return;
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); beginDescriptionEdit(event); }
+  };
+  descriptionField.addEventListener('blur', () => {
+    descriptionDisplay.innerHTML = renderLinkedText(descriptionField.value) || '<span class="muted">Добавьте описание проекта</span>';
+    descriptionField.hidden = true;
+    descriptionDisplay.hidden = false;
+  });
+}
 
+function labDetailCommentsSectionHtml(comments) {
+  return `<section class="task-comments-section"><div class="task-comments-head"><span>Комментарии</span><span class="task-comments-count" id="lab-comments-count">${comments.length || ''}</span></div><div class="task-comments-list" id="lab-comments-list">${commentThreadHtml(comments)}</div><div class="task-comment-compose"><textarea id="lab-comment-input" rows="2" placeholder="Оставить комментарий…"></textarea><button type="button" class="ui-button btn task-comment-send-inline" id="lab-comment-send" hidden>Отправить</button></div></section>`;
+}
+
+// Клик по заголовку превращает его в поле ввода; Enter или потеря фокуса
+// возвращают обратно текстовое отображение. Возвращает titleInput — он нужен
+// дальше, чтобы читать текущее значение заголовка при сохранении.
+function wireLabDetailTitleEdit(editable) {
   const titleShell = document.getElementById('lab-title-shell');
   const titleDisplay = document.getElementById('lab-title-display');
   const titleInput = document.getElementById('lab-detail-title');
@@ -502,20 +600,84 @@ Views.labDetail = async function (ref) {
     titleInput.onblur = finishTitleEdit;
     titleInput.onkeydown = (event) => { if (event.key === 'Enter') { event.preventDefault(); titleInput.blur(); } };
   }
+  return { titleInput };
+}
 
+// Меню «Действия» (история версий, удаление) в топбаре страницы проекта.
+// Возвращает сам элемент меню — вызывающий код закрывает его перед тем, как
+// открыть модалку истории версий поверх страницы.
+function wireLabDetailActionsMenu() {
   const actionsToggle = document.getElementById('lab-actions-toggle');
   const actionsMenu = document.getElementById('lab-actions-menu');
-  if (actionsToggle && actionsMenu) {
-    const setActionsOpen = (open) => { actionsMenu.hidden = !open; actionsToggle.setAttribute('aria-expanded', open ? 'true' : 'false'); };
-    const wrap = actionsToggle.closest('.task-actions-menu-wrap');
-    actionsToggle.onclick = (event) => {
-      event.stopPropagation();
-      const open = actionsMenu.hidden;
-      setActionsOpen(open);
-      if (open) bindOutsideClickClose(wrap, () => setActionsOpen(false));
-    };
-    actionsMenu.onclick = (event) => event.stopPropagation();
+  if (!actionsToggle || !actionsMenu) return actionsMenu;
+  const setActionsOpen = (open) => { actionsMenu.hidden = !open; actionsToggle.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+  const wrap = actionsToggle.closest('.task-actions-menu-wrap');
+  actionsToggle.onclick = (event) => {
+    event.stopPropagation();
+    const open = actionsMenu.hidden;
+    setActionsOpen(open);
+    if (open) bindOutsideClickClose(wrap, () => setActionsOpen(false));
+  };
+  actionsMenu.onclick = (event) => event.stopPropagation();
+  return actionsMenu;
+}
+
+Views.labDetail = async function (ref) {
+  const { lab, ideas, comments } = await LabService.detail(ref);
+  if (lab.entityType === 'idea') { Router.go('/labs?tab=ideas'); return; }
+  if (lab.labKey && String(ref || '').toUpperCase() !== String(lab.labKey).toUpperCase()) {
+    Router.replace(`/labs/${encodeURIComponent(lab.labKey)}`);
   }
+
+  const editable = canEditLab(lab);
+  const authors = store.team();
+  const progress = labProgress(lab.status || 'idea');
+
+  // /labs/:key само по себе не отличает «Идею» от проекта The Labs (только
+  // ?tab= в ссылках меню это делает) — но выше по коду страница уже увела
+  // идеи на /labs?tab=ideas, так что здесь lab всегда проект The Labs. Крошки
+  // передаём явно, а не через автоматический резолвер по пути.
+  setTopbar(labDetailTopbarHtml(lab, editable), { crumbs: [
+    { label: 'Garden', path: '/overview' },
+    { label: 'The Labs', path: '/labs?tab=projects' },
+  ] });
+
+  const ideasHtml = ideas.length
+    ? ideas.map(labDetailIdeaRelationRowHtml).join('')
+    : `<div class="task-relation-empty">К проекту пока не прикреплено идей</div>`;
+
+  const view = document.getElementById('view');
+  view.classList.add('task-detail-page-view');
+  const canManagePrivacy = Boolean(Auth.isTeamlead() || (Auth.user?.personId && Auth.user.personId === lab.authorId));
+  const detailsSection = labDetailPropertiesSectionHtml({ lab, editable, authors, progress, canManagePrivacy });
+  const descriptionSection = labDetailDescriptionSectionHtml(lab, editable);
+  const linksSection = detailSectionHtml('Ссылки', labLinksEditorHtml('lab-detail-links', lab.links, editable));
+  const ideasSection = detailSectionHtml(
+    'Идеи',
+    `<div class="task-relation-list task-relation-list-unified" id="lab-detail-ideas">${ideasHtml}</div>`,
+    `<button type="button" class="task-section-add-btn" id="lab-detail-add-idea" aria-label="Добавить идею" title="Добавить идею">+</button>`
+  ).replace('task-detail-section"', 'task-detail-section task-relations-section"');
+  const commentsSection = labDetailCommentsSectionHtml(comments);
+  view.innerHTML = entityDetailHtml({
+    className: 'lab-task-detail-page',
+    header: detailPageHeaderHtml({ title: lab.title, eyebrow: '', inputId: 'lab-detail-title', displayId: 'lab-title-display', shellId: 'lab-title-shell', editable, ariaLabel: 'Название проекта The Labs' }),
+    main: detailsSection + descriptionSection + linksSection + ideasSection + commentsSection,
+  });
+
+  Views._labDetailIdeas = ideas;
+
+  const descriptionField = document.getElementById('lab-detail-description');
+  const resizeDescription = () => {
+    if (!descriptionField) return;
+    descriptionField.style.height = 'auto';
+    descriptionField.style.height = `${Math.max(descriptionField.scrollHeight, 52)}px`;
+  };
+  resizeDescription();
+  descriptionField?.addEventListener('input', resizeDescription);
+  wireLabDetailDescriptionEdit(editable, descriptionField, resizeDescription);
+
+  const { titleInput } = wireLabDetailTitleEdit(editable);
+  const actionsMenu = wireLabDetailActionsMenu();
 
   const versionHistoryButton = document.getElementById('lab-version-history');
   if (versionHistoryButton) versionHistoryButton.onclick = async () => {

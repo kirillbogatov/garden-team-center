@@ -3,6 +3,14 @@
 Views._journalQuery = Views._journalQuery || '';
 Views._journalSearchOpen = Views._journalSearchOpen || false;
 
+// Общий поиск по заметкам: используется и при первичном рендере страницы,
+// и в живом фильтре инлайн-поиска — раньше эта логика была продублирована.
+function filterJournalEntries(entries, query) {
+  const q = (query || '').trim().toLocaleLowerCase('ru');
+  if (!q) return entries;
+  return entries.filter((e) => (e.text || '').toLocaleLowerCase('ru').includes(q));
+}
+
 Views.journal = async function () {
   const requestedEntry = Router.queryParam('entry');
   const composerPrefill = Views._journalComposerPrefill || null;
@@ -17,8 +25,7 @@ Views.journal = async function () {
   const entries = (await Resources.journal.list())
     .filter((entry) => !entry.kind || entry.kind === 'note')
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  const journalQuery = (Views._journalQuery || '').trim().toLocaleLowerCase('ru');
-  const filtered = journalQuery ? entries.filter((e) => (e.text || '').toLocaleLowerCase('ru').includes(journalQuery)) : entries;
+  const filtered = filterJournalEntries(entries, Views._journalQuery);
 
   view.innerHTML = `
     <div class="view-narrow">
@@ -68,8 +75,7 @@ Views.journal = async function () {
     journalSearchInput.oninput = () => {
       Views._journalQuery = journalSearchInput.value;
       const feed = document.getElementById('journal-feed');
-      const q = Views._journalQuery.trim().toLocaleLowerCase('ru');
-      const shown = entries.filter((e) => !q || (e.text || '').toLocaleLowerCase('ru').includes(q));
+      const shown = filterJournalEntries(entries, Views._journalQuery);
       feed.innerHTML = shown.length ? shown.map(journalEntryHtml).join('') : emptyState('Ничего не найдено', 'Попробуйте другой запрос', 'search');
     };
   }
