@@ -24,22 +24,26 @@ function daysBetween(fromKey, toKey) {
 function taskPriorityRank(task, mode = 'balanced', today = new Date().toISOString().slice(0, 10)) {
   const weights = TASK_PRIORITY_WEIGHTS[mode] || TASK_PRIORITY_WEIGHTS.balanced;
   const due = dateKey(task?.dueDate);
-  let score = task?.priority === 'high' ? weights.important : 0;
+  const tier = (task?.status === 'done' || task?.archivedAt) ? 0
+    : (task?.status === 'paused' || task?.status === 'blocked') ? 1
+      : 2;
+  let score = tier === 0 ? 0 : (task?.priority === 'high' ? weights.important : 0);
   const days = due ? daysBetween(today, due) : null;
-  if (days !== null) {
+  if (tier > 0 && days !== null) {
     if (days < 0) score += weights.overdue + Math.min(weights.overdueCap, Math.abs(days) * weights.overduePerDay);
     else if (days === 0) score += weights.today;
     else if (days === 1) score += weights.tomorrow;
     else if (days <= 3) score += weights.soon3;
     else if (days <= 7) score += weights.soon7;
   }
-  return { score, days };
+  return { tier, score, days: tier > 0 ? days : null };
 }
 
 function compareTaskPriority(a, b, mode = 'balanced', today = new Date().toISOString().slice(0, 10)) {
   const ar = taskPriorityRank(a, mode, today);
   const br = taskPriorityRank(b, mode, today);
-  return br.score - ar.score
+  return br.tier - ar.tier
+    || br.score - ar.score
     || ((ar.days ?? 99999) - (br.days ?? 99999))
     || String(a?.title || '').localeCompare(String(b?.title || ''), 'ru');
 }

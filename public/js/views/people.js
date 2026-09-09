@@ -350,18 +350,17 @@ function personDevelopmentLabRowHtml(lab) {
 function personDevelopmentHtml(p, data) {
   if (p.type !== 'team') return '';
 
-  // Свежее сверху; уже выполненные задачи развития опускаются вниз, чтобы не
-  // перекрывать актуальные.
+  // Тот же приоритетный компаратор, что и на странице «Задачи» (и на вкладке
+  // задач проекта) — раньше здесь был свой сорт «выполненные вниз, дальше по
+  // свежести», из-за чего порядок расходился со всеми остальными списками
+  // задач в приложении: горящая просроченная задача без явного приоритета
+  // могла оказаться ниже недавно созданной, но не срочной.
+  const priorityMode = GardenSettings.value?.taskPriorityMode || 'balanced';
+  const todayForSort = todayStr();
   const developmentItems = data.tasks
     .filter((t) => t.taskType === 'development')
-    .sort((a, b) => {
-      const aDone = a.status === 'done' ? 1 : 0;
-      const bDone = b.status === 'done' ? 1 : 0;
-      if (aDone !== bDone) return aDone - bDone;
-      const aTime = Date.parse(a.createdAt || a.updatedAt || '') || 0;
-      const bTime = Date.parse(b.createdAt || b.updatedAt || '') || 0;
-      return bTime - aTime;
-    });
+    .slice()
+    .sort((a, b) => compareTasksByPriority(a, b, priorityMode, todayForSort));
 
   const labProjects = (data.labs || []).filter((lab) => lab.entityType !== 'idea');
   const labRows = labProjects.map(personDevelopmentLabRowHtml);
@@ -653,6 +652,14 @@ Views.personDetail = async function (id) {
   if (!tabs.some((t) => t.key === Views._personTab)) Views._personTab = 'tasks';
 
   const tabBody = (key) => personDetailTabBody(key, { p, data, historyTasks, journalRegular });
+  // Счётчики незакрытых записей на вкладках — только там, где у сущности есть
+  // явное «закрыто/не закрыто» состояние (задачи/проблемы/договорённости);
+  // «Развитие»/«Встречи»/«Журнал»/«Загрузка» такого понятия не имеют.
+  const personTabCounts = {
+    tasks: historyTasks.filter((t) => t.status !== 'done').length,
+    issues: data.issues.filter((i) => i.status !== 'resolved').length,
+    agreements: data.agreements.filter((a) => a.status !== 'done').length,
+  };
 
   view.innerHTML = `
     <div class="person-detail person-detail-${p.type}">
@@ -667,7 +674,7 @@ Views.personDetail = async function (id) {
     </div>
     ${personContextHtml(p, data)}
     <div class="person-history-label">История и работа</div>
-    <div class="ui-tab tabs person-tabs">${tabs.map((t) => `<div class="ui-tab tab ${Views._personTab === t.key ? 'active' : ''}" data-person-detail-tab="${t.key}">${t.label}</div>`).join('')}</div>
+    <div class="ui-tab tabs person-tabs">${tabs.map((t) => `<div class="ui-tab tab ${Views._personTab === t.key ? 'active' : ''}" data-person-detail-tab="${t.key}">${t.label}${listTabCountHtml(personTabCounts[t.key] || 0)}</div>`).join('')}</div>
     <div class="person-tab-body">${tabBody(Views._personTab)}</div>
     ${p.type === 'team' ? `<aside class="overview-comments-drawer person-comments-drawer" id="person-comments-drawer" aria-hidden="true">
       <div class="overview-comments-head">

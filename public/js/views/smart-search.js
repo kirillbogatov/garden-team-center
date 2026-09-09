@@ -476,8 +476,11 @@ function smartSuggestionsForMine(value, prefix) {
     label: item.label,
     hint: 'только моё',
     icon: 'search',
-    insert: `${head} ${item.insert} `,
-    submit: false,
+    // После «Покажи мои» выбор типа уже полностью определяет запрос.
+    // Не заставляем пользователя выбирать ту же точную подсказку второй раз:
+    // первый клик сразу выполняет запрос и показывает результат.
+    insert: `${head} ${item.insert}`,
+    submit: true,
   }));
 }
 
@@ -551,7 +554,7 @@ function smartSuggestionsFor(rawValue) {
 
 // ---------- Отрисовка ответа ----------
 
-// Дату печатаем теми же helpers, что и всё приложение: «просрочено на 2 дн», «12 сентября».
+// Дату печатаем теми же helpers, что и всё приложение: «2 дн. назад», «12 сентября».
 function smartSearchMetaText(item) {
   const parts = [];
   if (item.meta) parts.push(String(item.meta));
@@ -736,10 +739,14 @@ function smartSearchDigestHtml(result) {
       </div>
       ${digest.footer ? `<a class="smart-answer-link" data-route="${escapeHtml(digest.footer.route)}">${escapeHtml(digest.footer.label)}</a>` : ''}
     </header>`;
+  // Строку-саммари ("N просроченных задач — N проблем") над секциями саджеста
+  // убрали по просьбе пользователя: он и так открывает и просматривает сами
+  // секции, а сигналы наверху воспринимались как бесполезный дублирующий шум.
+  // Данные (digest.signals) сервер по-прежнему считает и отдаёт — здесь их
+  // просто не рендерим, чтобы не трогать другие потребители smart-search API.
   return `<section class="smart-answer smart-answer-${escapeHtml(digest.type || 'digest')}">
     ${header}
     ${resolutionNote}
-    ${digest.type !== 'person' && (digest.signals || []).length ? `<p class="smart-signals">${digest.signals.map((signal) => `<span class="smart-signal tone-${escapeHtml(signal.tone || 'info')}">${escapeHtml(signal.text)}</span>`).join('<span class="smart-signal-sep">—</span>')}</p>` : ''}
     ${digest.sections.length
       ? `<div class="smart-sections ${digest.sections.length > 1 ? 'smart-sections-unified' : ''}">${digest.sections.map(smartSearchSectionHtml).join('')}</div>`
       : (!(digest.signals || []).length ? `<div class="smart-empty">Пока ничего не записано</div>` : '')}

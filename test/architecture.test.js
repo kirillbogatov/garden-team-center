@@ -1395,6 +1395,17 @@ test('a pending blur-close never swallows suggestions that were just reopened', 
   assert.match(widget, /input\.addEventListener\('blur', \(\) => \{ clearTimeout\(closeTimer\); closeTimer = setTimeout\(closeSuggestions, 120\); \}\);/);
 });
 
+test('digest answers in the assistant do not render the top signals summary line', () => {
+  // Пользователь: «в разделе с ассистентом я не хочу, чтобы по саджестам
+  // выводилось такое саммари — в нём нет смысла, т.к. я всё равно смотрю всё
+  // сам». Строка вида «1 просроченная задача — 1 серьёзная проблема» больше
+  // не рендерится ни для одного типа дайджеста (сервер данные по-прежнему
+  // считает и отдаёт — просто фронт их не показывает).
+  const widget = read('public/js/views/smart-search.js');
+  assert.doesNotMatch(widget, /class="smart-signals"/, 'строка-саммари сигналов над секциями саджеста должна быть удалена из вёрстки');
+  assert.match(widget, /function smartSearchDigestHtml\(result\) \{[\s\S]*?\n\}/, 'на всякий случай убеждаемся, что функция вообще нашлась для проверки выше');
+});
+
 test('task commands can prefill assignee, project, priority and due date', () => {
   const engine = read('server/domain/smart-search.js');
   assert.match(engine, /function parseCreateDetails\(title, user, options = \{\}, target = 'tasks'\)/);
@@ -1556,6 +1567,149 @@ test('the "Мои задачи" list sorts by the same priority scoring as the O
   assert.doesNotMatch(tasks, /task-sort-filter/, 'переключатель сортировки убран со страницы');
   assert.doesNotMatch(tasks, /openTaskSortMenu/, 'меню выбора стратегии сортировки убрано со страницы');
   assert.match(tasks, /GardenSettings\.value\?\.taskPriorityMode/, 'сортировка должна молча брать стратегию из Настроек, без переопределения на странице');
+});
+
+test('clicking the "Важная" label on the tasks page filters the list to high-priority tasks only', () => {
+  const tasks = read('public/js/views/tasks.js');
+  assert.match(tasks, /Views\._taskPriorityFilter = Views\._taskPriorityFilter \|\| false;/, 'должно быть отдельное состояние фильтра «только важные»');
+  assert.match(tasks, /if \(Views\._taskPriorityFilter\) tasks = tasks\.filter\(\(t\) => t\.priority === 'high'\);/, 'фильтр должен реально сужать список задач');
+  // Клик — делегирование на #task-content, а не на priorityBadge внутри
+  // entity-ui.js: тот переиспользуется на странице сотрудника и проекта,
+  // где кликабельности быть не должно.
+  assert.match(tasks, /content\.addEventListener\('click', \(event\) => \{\s*\n\s*if \(!event\.target\.closest\('\.priority-high'\)\) return;\s*\n\s*event\.stopPropagation\(\);/, 'клик по лейблу должен обрабатываться делегированием на #task-content и не всплывать к обработчику строки/карточки');
+  assert.match(tasks, /Views\._taskPriorityFilter = true;\s*\n\s*Views\.tasks\(\);/, 'клик должен включать фильтр и перерисовывать страницу');
+  assert.match(tasks, /id="task-priority-filter-clear"/, 'должна быть кнопка снятия фильтра — иначе пустой результат фильтра некуда кликнуть, чтобы вернуться');
+  assert.match(tasks, /clearBtn\.onclick = \(\) => \{ Views\._taskPriorityFilter = false; Views\.tasks\(\); \}/, 'кнопка «Показать все» должна сбрасывать фильтр');
+  assert.match(tasks, /bindPriorityFilterClear\(\);/g, 'кнопку сброса нужно перепривязывать и после частичной перерисовки живым поиском, не только при первом рендере');
+
+  const entityUi = read('public/js/lib/entity-ui.js');
+  assert.doesNotMatch(entityUi, /function priorityBadge\(priority\) \{\s*\n\s*if \(priority !== 'high'\) return '';\s*\n\s*return `<span class="ui-tag badge priority-high"[^`]*clickable/, 'сам priorityBadge не должен становиться кликабельным глобально — кликабельность нужна только на странице задач');
+
+  const css = read('public/css/style.css');
+  assert.match(css, /#task-content \.priority-high\{cursor: pointer;\}/, 'курсор-указатель должен быть только в рамках страницы задач, а не у бейджа везде');
+});
+
+test('priority sorting used on the tasks page also applies to the person Development tab and the project Tasks tab', () => {
+  // Раньше вкладка «Развитие» сортировала по своим правилам (готовые вниз,
+  // дальше по свежести), а вкладка задач проекта не сортировала вовсе —
+  // из-за этого порядок расходился со страницей «Задачи».
+  const people = read('public/js/views/people.js');
+  assert.match(people, /function personDevelopmentHtml\(p, data\) \{[\s\S]{0,900}compareTasksByPriority\(a, b, priorityMode, todayForSort\)/, 'вкладка «Развитие» должна сортировать тем же общим компаратором приоритета');
+  assert.doesNotMatch(people, /const aDone = a\.status === 'done' \? 1 : 0;/, 'старый самодельный сорт (готово/по свежести) должен быть удалён');
+
+  const projects = read('public/js/views/projects.js');
+  assert.match(projects, /function projectDetailTabBody\(data, key\) \{\s*\n\s*if \(key === 'tasks'\) \{[\s\S]{0,400}compareTasksByPriority\(a, b, mode, today\)/, 'вкладка «Задачи» карточки проекта должна сортировать задачи, а не показывать их в порядке ответа сервера');
+});
+
+test('project and person detail tabs show a count of open tasks, issues and agreements', () => {
+  const entityUi = read('public/js/lib/entity-ui.js');
+  assert.match(entityUi, /function listTabCountHtml\(count\) \{\s*\n\s*return count > 0 \? `<span class="list-tab-count">\$\{count\}<\/span>` : '';/, 'должен быть переиспользуемый рендер бейджа-счётчика на вкладке, использующий существующий класс .list-tab-count');
+
+  const projects = read('public/js/views/projects.js');
+  assert.match(projects, /tasks: data\.tasks\.filter\(\(t\) => t\.status !== 'done' && !t\.archivedAt\)\.length,/, 'счётчик задач проекта должен считать незавершённые и неархивные');
+  assert.match(projects, /issues: data\.issues\.filter\(\(i\) => i\.status !== 'resolved'\)\.length,/, 'счётчик проблем проекта должен считать нерешённые');
+  assert.match(projects, /agreements: \(data\.agreements \|\| \[\]\)\.filter\(\(a\) => a\.status !== 'done'\)\.length,/, 'счётчик договорённостей проекта должен считать невыполненные');
+  assert.match(projects, /\$\{t\.label\}\$\{listTabCountHtml\(projectTabCounts\[t\.key\] \|\| 0\)\}/, 'счётчик должен реально попадать в разметку вкладки проекта');
+
+  const people = read('public/js/views/people.js');
+  assert.match(people, /tasks: historyTasks\.filter\(\(t\) => t\.status !== 'done'\)\.length,/, 'счётчик задач сотрудника должен считать незавершённые из того же набора, что рендерит вкладка «Задачи»');
+  assert.match(people, /issues: data\.issues\.filter\(\(i\) => i\.status !== 'resolved'\)\.length,/, 'счётчик проблем сотрудника должен считать нерешённые');
+  assert.match(people, /agreements: data\.agreements\.filter\(\(a\) => a\.status !== 'done'\)\.length,/, 'счётчик договорённостей сотрудника должен считать невыполненные');
+  assert.match(people, /\$\{t\.label\}\$\{listTabCountHtml\(personTabCounts\[t\.key\] \|\| 0\)\}/, 'счётчик должен реально попадать в разметку вкладки сотрудника');
+
+  const css = read('public/css/style.css');
+  assert.match(css, /\.tab\.active \.list-tab-count\{background: color-mix\(in srgb, var\(--ltc-color\) 22%, transparent\);\}/, 'активная вкладка карточки должна подсвечивать счётчик так же, как это уже работает у вкладок-фильтров (.list-tab)');
+});
+
+test('the tasks page has a third "wide list" view between compact list and kanban', () => {
+  const tasks = read('public/js/views/tasks.js');
+  // Три кнопки представления, в этом порядке: компактный список, широкий
+  // список, канбан.
+  assert.match(tasks, /id="task-view-list" title="Компактный список"[\s\S]{0,250}id="task-view-wide" title="Широкий список"[\s\S]{0,250}id="task-view-kanban" title="Канбан"/, 'три кнопки представления должны идти в порядке компактный/широкий/канбан');
+  assert.match(tasks, /const isWide = Views\._taskViewMode === 'wide';/, 'должно быть отдельное состояние для широкого списка, не совпадающее с канбаном');
+  // Растягивание рабочей области переиспользует тот же класс, что и у канбана
+  // (.task-board-wide), а не собственный — раз по требованию расширяется
+  // «как в Канбане».
+  assert.match(tasks, /view\.classList\.toggle\('task-board-wide', isKanban \|\| isWide\);/, 'широкий список должен растягивать страницу тем же способом, что и канбан');
+  assert.match(tasks, /document\.getElementById\('task-view-wide'\)\.onclick = \(\) => \{ Views\._taskViewMode = 'wide'; Views\.tasks\(\); \};/, 'должен быть обработчик клика на кнопку широкого списка');
+
+  // Разметка строки: собственная функция, не переиспользующая taskListRowHtml
+  // напрямую — тот рендерит и на страницах поиска/ассистента, где колонки
+  // с кодом задачи быть не должно.
+  assert.match(tasks, /function taskWideListRowHtml\(t\) \{[\s\S]{0,600}task-key-cell tiny[\s\S]{0,50}t\.taskKey/, 'у строки широкого списка должна быть колонка с кодом задачи (taskKey)');
+  assert.match(tasks, /const rowRenderer = isWideList \? taskWideListRowHtml : taskListRowHtml;/, 'группировка должна переключать рендер строки в зависимости от режима');
+  assert.match(tasks, /\$\{isWideList \? 'task-groups-wide' : ''\}/, 'обёртка списка должна отмечаться модификатором для широкого режима');
+
+  // Компактный список и канбан не должны получить новую колонку — только
+  // widget-специфичный класс её вводит.
+  const entityRenderers = read('public/js/domain/entity-renderers.js');
+  assert.doesNotMatch(entityRenderers, /task-key-cell/, 'обычная (переиспользуемая) строка списка задач не должна получить колонку с кодом задачи');
+
+  const css = read('public/css/style.css');
+  assert.match(css, /\.task-list-row-wide \.task-key-cell\{flex: 0 0 auto;width: 96px;/, 'колонка с кодом задачи должна иметь фиксированную ширину, достаточную для самого длинного префикса (GARDEN)');
+});
+
+test('overdue due dates are labelled "X дн. назад" instead of "просрочено на X дн"', () => {
+  const util = read('public/js/lib/util.js');
+  assert.match(util, /if \(diff < 0\) return `\$\{Math\.abs\(diff\)\} дн\. назад`;/, 'формулировка просроченного срока должна быть короче — «X дн. назад» вместо «просрочено на X дн»');
+  assert.doesNotMatch(util, /просрочено на/, 'старая формулировка не должна остаться нигде в dueLabel');
+});
+
+test('task list rows on the tasks page (compact and wide) get wider column gaps and lighter dividers, but keep the standard filled labels', () => {
+  const css = read('public/css/style.css');
+  // Расстояние между колонками строки — раздвинуто и одинаково что между
+  // статусом/кодом/названием (gap самой строки), что внутри правого кластера
+  // лейблы/срок/исполнитель (column-gap у .tl-right).
+  assert.match(css, /#task-content \.task-list-row\{gap: 14px;\}/, 'расстояние между статусом/кодом/названием и правым кластером должно быть увеличено');
+  assert.match(css, /#task-content \.task-list-row \.tl-right\{column-gap: 18px;\}/, 'расстояние между лейблами/сроком/исполнителем должно быть увеличено');
+
+  // Разделительные линии — та же ширина 1px (меньше на растровом экране не
+  // получится), но менее контрастные: странице задач переопределяем общую
+  // переменную --ui-divider, которую читают и бордер строки, и бордер группы.
+  assert.match(css, /#task-content\{--ui-divider: color-mix\(in srgb, var\(--border-soft\) 55%, transparent\);\}/, 'линии-разделители в списке задач должны быть светлее (тоньше на вид), чем стандартный --ui-divider');
+
+  // Лейблы («Важная», тип задачи, проект) вернули к обычному закрашенному
+  // виду — пользователь попросил отменить прозрачно-обводочный редизайн,
+  // так что в строке списка задач для .ui-tag/.badge/.project-chip не должно
+  // остаться никакого прозрачного фона с обводкой по тону.
+  assert.doesNotMatch(css, /background: transparent !important;\s*border: 1px solid color-mix\(in srgb, var\(--ui-tag-tone\)/, 'лейблы в строке списка задач не должны иметь прозрачный фон с цветной обводкой');
+
+  // Клик-фильтр по «Важная» (см. предыдущий тест про приоритет) — простое
+  // правило без лишней специфичности, раз прозрачный фон лейблов убран.
+  assert.match(css, /#task-content \.priority-high\{cursor: pointer;\}/, '«Важная» в списке задач должна оставаться кликабельной');
+  assert.match(css, /#task-content \.priority-high:hover\{background: color-mix\(in srgb, var\(--orange\) 22%, var\(--bg-elevated-2\)\) !important;\}/, 'подсветка при наведении на «Важная» должна работать');
+});
+
+test('group header rows on the tasks page have no color highlight at all, and stay scoped to that page', () => {
+  // Пользователь сначала попросил акцентную подсветку, затем серую, а потом
+  // явно попросил убрать выделение цветом совсем — заголовок группы должен
+  // остаться обычным текстом без фона, как до всех этих правок.
+  const css = read('public/css/style.css');
+  assert.doesNotMatch(css, /#task-content \.task-group-section\.separated \.group-header\{[^}]*background: color-mix/, 'у заголовка группы на странице задач не должно остаться подсветки цветом (ни акцентной, ни серой)');
+  assert.doesNotMatch(css, /#task-content \.task-group-section\.separated \.group-header:hover\{[^}]*background: color-mix/, 'подсветка при наведении на заголовок группы тоже должна быть убрана');
+  assert.doesNotMatch(css, /#task-content \.task-groups > \.task-group-section\.separated:first-child \.group-header\{margin-top: 8px;\}/, 'временная поправка отступа первой группы (под цветную подсветку) больше не нужна');
+});
+
+test('the wide task list view uses the same work-area gutter as the Calendar page, not its own narrower one', () => {
+  const css = read('public/css/style.css');
+  assert.match(css, /\.view\.task-board-wide\{max-width: none;padding-left: var\(--wide-content-gutter, 24px\);padding-right: var\(--wide-content-gutter, 24px\);overflow-x: hidden;\}/, 'широкий список/канбан должны использовать общий --wide-content-gutter (тот же, что и у Календаря), а не собственные фиксированные 18px');
+});
+
+test('switching between compact and wide task list view animates the work-area width instead of snapping', () => {
+  const css = read('public/css/style.css');
+  // Специфичность через #view нужна, чтобы не потерять существующий transition
+  // для отступа под панель комментариев Обзора (.main > .view{transition:
+  // margin-right .22s ease} в system.css) — оба свойства должны остаться в силе.
+  assert.match(css, /#view\.task-page\{transition: padding 220ms cubic-bezier\(\.22,\.75,\.18,1\), margin-right \.22s ease;\}/, 'переключение компактный/широкий список должно плавно анимировать боковые отступы рабочей области');
+});
+
+test('hovering a task due date in the list shows the full deadline date as a tooltip', () => {
+  const renderers = read('public/js/domain/entity-renderers.js');
+  assert.match(renderers, /function taskDueTooltip\(t\) \{\n {2}return t\?\.dueDate \? `Дедлайн по задаче: \$\{fmtDate\(t\.dueDate\)\}` : '';\n\}/, 'должна быть функция, формирующая полную дату для подсказки по сроку');
+  assert.match(renderers, /<span class="tiny" title="\$\{escapeHtml\(taskDueTooltip\(t\)\)\}" style="\$\{overdue \? 'color:var\(--red\)' : ''\}">\$\{taskDueLabel\(t\)\}<\/span>/, 'компактная строка списка задач должна показывать подсказку по сроку при наведении');
+
+  const tasks = read('public/js/views/tasks.js');
+  assert.match(tasks, /<span class="tiny" title="\$\{escapeHtml\(taskDueTooltip\(t\)\)\}" style="\$\{overdue \? 'color:var\(--red\)' : ''\}">\$\{taskDueLabel\(t\)\}<\/span>/, 'широкая строка списка задач должна показывать ту же подсказку по сроку при наведении');
 });
 
 test('the "Мои задачи" list has a compact icon search instead of the sort dropdown', () => {
@@ -1859,4 +2013,72 @@ test('the deadline field on the full task detail page shows its edit pencil by d
   const css = fs.readFileSync(path.join(ROOT, 'public/css/detail-page.css'), 'utf8');
   assert.match(css, /\.view\.task-detail-page-view \.task-inline-edit-due \.task-inline-edit-icon \{\s*\n\s*opacity: \.72;/, 'значок карандаша у дедлайна должен быть виден по умолчанию (как стрелка у select-полей), а не только при наведении');
   assert.match(css, /\.view\.task-detail-page-view \.task-inline-edit-due\.is-editable:hover \.task-inline-edit-icon,\s*\n\s*\.view\.task-detail-page-view \.task-inline-edit-due\.is-editable:focus-within \.task-inline-edit-icon \{\s*\n\s*opacity: \.9;/, 'при наведении/фокусе значок должен становиться чуть заметнее, как у select-полей');
+});
+
+test('the wide-list toggle on the tasks page uses a horizontal double-arrow icon, not the generic list icon', () => {
+  const icons = read('public/js/lib/icons.js');
+  assert.match(icons, /arrowsHorizontal: '<path d="M3\.5 12h17"\/><path d="M7\.2 8\.2 3\.5 12l3\.7 3\.8"\/><path d="M16\.8 8\.2 20\.5 12l-3\.7 3\.8"\/>'/, 'должна быть иконка двусторонней стрелки ↔');
+
+  const tasks = read('public/js/views/tasks.js');
+  assert.match(tasks, /id="task-view-wide" title="Широкий список">\$\{icon\('arrowsHorizontal', 14\)\}/, 'кнопка «Широкий список» должна использовать новую иконку ↔, а не иконку списка');
+});
+
+test('dates are abbreviated everywhere (fmtDate month names), except мая which is already short', () => {
+  const util = read('public/js/lib/util.js');
+  assert.match(util, /const MONTHS_RU = \['янв\.', 'февр\.', 'мар\.', 'апр\.', 'мая', 'июн\.', 'июл\.', 'авг\.', 'сент\.', 'окт\.', 'нояб\.', 'дек\.'\];/, 'месяцы в fmtDate должны быть сокращены (кроме мая, который и так короткий)');
+});
+
+test('the due-date column in the task list is right-aligned and sits close to the avatar', () => {
+  // Пользователь сначала попросил центрировать колонку срока (чтобы отступы
+  // до лейбла и до аватара выглядели одинаково), но затем явно попросил
+  // вернуть выравнивание по правому краю и вместо этого просто придвинуть
+  // колонку ближе к фото — то есть сократить именно зазор дата→аватар,
+  // не трогая зазор лейбл→дата.
+  const css = read('public/css/style.css');
+  assert.match(css, /\.task-list-row \.task-due-cell\{width: 118px;min-width: 0;text-align: right;white-space: nowrap;\}/, 'колонка срока должна быть прижата вправо, как раньше');
+  assert.match(css, /#task-content \.task-list-row \.task-assignee-cell\{margin-left: -8px;\}/, 'аватар в списке задач должен быть сдвинут ближе к дате отрицательным margin-left');
+});
+
+test('the sticky task filter toolbar gets a full-width light shadow once the page is scrolled', () => {
+  const css = read('public/css/style.css');
+  assert.match(css, /\.task-sticky-toolbar::before\{[\s\S]*left: calc\(-1 \* var\(--toolbar-bleed-left, 0px\)\);[\s\S]*right: calc\(-1 \* var\(--toolbar-bleed-right, 0px\)\);[\s\S]*transition: box-shadow 160ms ease;/, 'фон и тень sticky-панели должны быть вынесены в полноширинный слой');
+  assert.match(css, /\.task-sticky-toolbar\.is-scrolled::before\{box-shadow: var\(--shadow-card\);\}/, 'при прокрутке тень должна появляться у полноширинной поверхности панели');
+
+  const tasks = read('public/js/views/tasks.js');
+  // #view — постоянный узел, переживающий все перерисовки Views.tasks(), так
+  // что слушатель обязан быть присвоен через onscroll (перезаписывается), а
+  // не через addEventListener (иначе он копился бы с каждым рендером).
+  assert.match(tasks, /const toolbarEl = document\.querySelector\('\.task-sticky-toolbar'\);\s*\n\s*view\.onscroll = \(\) => \{ toolbarEl\?\.classList\.toggle\('is-scrolled', view\.scrollTop > 2\); \};/, 'скролл страницы должен переключать класс is-scrolled на панели фильтров через onscroll, а не addEventListener');
+});
+
+test('assistant mine suggestions submit immediately after choosing a type', () => {
+  const smart = read('public/js/views/smart-search.js');
+  assert.match(smart, /function smartSuggestionsForMine\([\s\S]*return smartFilterByTail\(SMART_MINE_TARGETS[\s\S]*insert: `\$\{head\} \$\{item\.insert\}`,[\s\S]*submit: true,/, 'выбор типа после «Покажи мои» должен сразу выполнять запрос');
+});
+
+test('the sticky task filter toolbar also gets a full-width divider line on scroll, like the page header', () => {
+  // .topbar — прямой соседний элемент #view внутри .main, поэтому её
+  // border-bottom идёт по border-box самого .topbar и достаёт до истинных
+  // краёв рабочей области. Панель фильтров — дочерний элемент #view и уже
+  // самого #view на его боковой padding, так что просто border-bottom на
+  // ней самой останавливался бы на этом отступе. Линия-разделитель поэтому
+  // сделана псевдоэлементом с бликом на величину реального зазора до .main,
+  // измеренного в JS (тот же приём, что и с --task-due-col-width).
+  const css = read('public/css/style.css');
+  assert.match(css, /\.task-sticky-toolbar\.is-scrolled::after\{\n {2}content: "";\n {2}position: absolute;\n {2}left: calc\(-1 \* var\(--toolbar-bleed-left, 0px\)\);\n {2}right: calc\(-1 \* var\(--toolbar-bleed-right, 0px\)\);\n {2}bottom: 0;\n {2}height: 1px;\n {2}background: var\(--border-soft\);\n\}/, 'при прокрутке под панелью фильтров должна появляться линия-разделитель во всю ширину рабочей области');
+
+  const tasks = read('public/js/views/tasks.js');
+  assert.match(tasks, /function syncTaskToolbarBleed\(\) \{/, 'должна быть функция, измеряющая реальный зазор между панелью фильтров и .main');
+  assert.match(tasks, /bar\.style\.setProperty\('--toolbar-bleed-left', `\$\{Math\.max\(0, barRect\.left - mainRect\.left\)\}px`\);/, 'зазор слева должен браться из фактических координат, а не из формулы отступа .view');
+  assert.match(tasks, /bar\.style\.setProperty\('--toolbar-bleed-right', `\$\{Math\.max\(0, mainRect\.right - barRect\.right\)\}px`\);/, 'зазор справа должен браться из фактических координат, а не из формулы отступа .view');
+
+  // Замер сразу после рендера ловит промежуточное значение анимируемого
+  // padding (#view.task-page{transition: padding 220ms...} при переключении
+  // компактный ⇄ широкий список), поэтому обязателен и отложенный повторный
+  // замер после завершения перехода.
+  assert.match(tasks, /syncTaskToolbarBleed\(\);\s*\n\s*setTimeout\(syncTaskToolbarBleed, 260\);/, 'после переключения режима списка зазор должен пересчитываться повторно уже после завершения CSS-перехода padding');
+
+  // Один window-слушатель на всё приложение (флаг вместо addEventListener на
+  // каждый рендер) — тот же приём, что и scheduleCalendarFit в calendar.js.
+  assert.match(tasks, /if \(!Views\._taskToolbarBleedBound\) \{\s*\n\s*Views\._taskToolbarBleedBound = true;\s*\n\s*window\.addEventListener\('resize', syncTaskToolbarBleed\);/, 'пересчёт зазора при изменении размера окна должен вешаться один раз на всё приложение, а не на каждый рендер списка задач');
 });

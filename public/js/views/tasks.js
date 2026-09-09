@@ -9,6 +9,10 @@ Views._taskViewMode = 'list';
 Views._taskFiltersCollapsed = localStorage.getItem('garden:taskFiltersCollapsed') === '1';
 Views._taskQuery = Views._taskQuery || '';
 Views._taskSearchOpen = Views._taskSearchOpen || false;
+// Клик по лейблу «Важная» у любой задачи в списке включает этот фильтр
+// (обработчик — в Views.tasks); explicitly сбрасывается только кнопкой
+// «Показать все» в баннере, чтобы список не «отфильтровывался незаметно».
+Views._taskPriorityFilter = Views._taskPriorityFilter || false;
 
 // Внутри группы/колонки задачи сортируются по приоритету (та же логика, что
 // в «Обзоре»), а не лежат в порядке создания, как раньше — иначе старая
@@ -42,7 +46,8 @@ function taskListTopbarHtml(mineOnly, filtersCollapsed) {
     <div class="actions task-header-actions">
       ${taskWorkModeControlHtml}
       <div class="ui-segmented seg-toggle task-view-toggle" aria-label="Представление задач">
-        <button class="ui-segmented-item seg-btn ${Views._taskViewMode === 'list' ? 'active' : ''}" id="task-view-list" title="Список">${icon('list', 14)}</button>
+        <button class="ui-segmented-item seg-btn ${Views._taskViewMode === 'list' ? 'active' : ''}" id="task-view-list" title="Компактный список">${icon('list', 14)}</button>
+        <button class="ui-segmented-item seg-btn ${Views._taskViewMode === 'wide' ? 'active' : ''}" id="task-view-wide" title="Широкий список">${icon('arrowsHorizontal', 14)}</button>
         <button class="ui-segmented-item seg-btn ${Views._taskViewMode === 'kanban' ? 'active' : ''}" id="task-view-kanban" title="Канбан">${icon('columns', 14)}</button>
       </div>
       <button type="button" class="ui-button ui-button--sm btn btn-sm task-filter-toggle" id="task-filter-toggle" aria-expanded="${filtersCollapsed ? 'false' : 'true'}" title="${filtersCollapsed ? 'Показать фильтры' : 'Скрыть фильтры'}">
@@ -146,17 +151,67 @@ function syncTaskDueColumnWidth(container) {
   if (dueSpans.length) container.style.setProperty('--task-due-col-width', `${Math.ceil(maxWidth)}px`);
 }
 
+// Разделительная линия под панелью фильтров при скролле должна доходить до
+// истинных краёв рабочей области — как у шапки страницы (.topbar), у которой
+// граница идёт по собственному border-box без отступа .view. У липкой панели
+// фильтров так просто не получится: она сама — дочерний элемент #view и уже
+// самого #view на его боковой padding, а этот padding то фиксированный клэмп
+// по vw (широкий список/канбан), то процентная формула для центрирования
+// узкой колонки в обычном списке — просчитать его как отрицательный margin
+// у ребёнка в чистом CSS нельзя (проценты margin считаются от ширины #view,
+// а не от .main, это другая база отсчёта). Поэтому меряем настоящий зазор до
+// .main через getBoundingClientRect() и прокидываем его в CSS-переменные,
+// которые читает .task-sticky-toolbar.is-scrolled::after в style.css.
+function syncTaskToolbarBleed() {
+  const bar = document.querySelector('.task-sticky-toolbar');
+  const main = document.getElementById('main');
+  if (!bar || !main) return;
+  const barRect = bar.getBoundingClientRect();
+  const mainRect = main.getBoundingClientRect();
+  bar.style.setProperty('--toolbar-bleed-left', `${Math.max(0, barRect.left - mainRect.left)}px`);
+  bar.style.setProperty('--toolbar-bleed-right', `${Math.max(0, mainRect.right - barRect.right)}px`);
+}
+
+// «Широкий список»: та же группировка и разметка строки, что и в компактном
+// списке (taskListRowHtml в domain/entity-renderers.js), плюс колонка с
+// коротким кодом задачи (taskKey) между статусом и названием — в компактном
+// списке ей просто негде поместиться. Отдельная функция, а не параметр
+// у taskListRowHtml: тот переиспользуется на страницах поиска и ассистента,
+// где этой колонки быть не должно.
+function taskWideListRowHtml(t) {
+  const assignees = (t.assigneeIds || []).map((id) => store.person(id)).filter(Boolean);
+  const overdue = t.dueDate && t.status !== 'done' && t.dueDate.slice(0, 10) < todayStr();
+  const openIdx = registerAction(() => FeatureLoader.run('openTaskModal', t.id));
+  return `<div class="ui-row ui-row--task list-row task-list-row task-list-row-wide" data-action-id="${openIdx}">
+    ${taskStatusBadge(t.status, t.id)}
+    <span class="task-key-cell tiny" title="${escapeHtml(t.taskKey || '')}">${escapeHtml(t.taskKey || '')}</span>
+    <span class="tl-title" title="${escapeHtml(t.title)}">${escapeHtml(t.title)}</span>
+    <div class="tl-right">
+      <div class="task-tags-cell">${taskLabelsHtml(t)}</div>
+      <div class="task-due-cell">${t.dueDate ? `<span class="tiny" title="${escapeHtml(taskDueTooltip(t))}" style="${overdue ? 'color:var(--red)' : ''}">${taskDueLabel(t)}</span>` : ''}</div>
+      <div class="task-assignee-cell">${assignees.length ? `<div class="flex gap-4">${assignees.map((a) => personAvatarLinkHtml(a)).join('')}</div>` : avatarHtml(null)}</div>
+    </div>
+  </div>`;
+}
+
 function taskListContentHtml(tasks, archiveMode, allTasksCount, groups) {
+  // Баннер активного фильтра «только важные» (включается кликом по лейблу
+  // «Важная» — см. обработчик в Views.tasks). Это не просто индикатор: если
+  // после фильтра список опустел, кликнуть по лейблу «Важная» больше негде —
+  // кнопка «Показать все» здесь остаётся единственным способом снять фильтр.
+  const priorityBannerHtml = Views._taskPriorityFilter
+    ? `<div class="smart-resolution task-priority-filter-banner">Показаны только важные задачи <button type="button" class="smart-link-button" id="task-priority-filter-clear">Показать все</button></div>`
+    : '';
   if (!tasks.length) {
-    return archiveMode
+    return priorityBannerHtml + (archiveMode
       ? emptyState('Архив пуст', 'Архивные задачи появятся здесь', 'tasks')
       : allTasksCount
         ? emptyState('Ничего не найдено', 'Попробуйте изменить фильтры', 'tasks')
-        : emptyState('Задач пока нет', 'Создайте первую задачу', 'tasks');
+        : emptyState('Задач пока нет', 'Создайте первую задачу', 'tasks'));
   }
   if (Views._taskViewMode === 'kanban') {
     const kanbanTasks = sortTasksForDisplay(tasks);
-    return `<div class="task-kanban-wrap"><div class="kanban task-kanban">${TASK_STATUS_ORDER.map((status) => {
+    return priorityBannerHtml + `<div class="task-kanban-wrap"><div class="kanban task-kanban">${TASK_STATUS_ORDER.map((status) => {
       const columnTasks = kanbanTasks.filter((t) => t.status === status);
       return `<section class="kanban-col task-kanban-col" data-status="${status}">
         <div class="kanban-col-title"><span>${TASK_STATUS_LABEL[status]}</span></div>
@@ -165,11 +220,13 @@ function taskListContentHtml(tasks, archiveMode, allTasksCount, groups) {
     }).join('')}</div></div>`;
   }
   const separated = true;
+  const isWideList = Views._taskViewMode === 'wide';
+  const rowRenderer = isWideList ? taskWideListRowHtml : taskListRowHtml;
   const groupSectionsHtml = groups.map((g) => {
     const hasSavedCollapseState = Object.prototype.hasOwnProperty.call(Views._taskCollapsed, g.key);
     const defaultCollapsed = Views._taskGroupBy === 'status' && g.key === 'done' && !archiveMode;
     const collapsed = hasSavedCollapseState ? !!Views._taskCollapsed[g.key] : defaultCollapsed;
-    const rows = g.tasks.map(taskListRowHtml);
+    const rows = g.tasks.map(rowRenderer);
     return `<section class="task-group-section ${separated ? 'separated' : ''} ${collapsed ? 'is-collapsed' : ''}" data-task-group="${escapeHtml(g.key)}">
         <div class="ui-disclosure group-header clickable" data-command="toggleTaskGroup" data-command-arg="${g.key}" data-command-self="1" aria-expanded="${collapsed ? 'false' : 'true'}">
           <span class="group-chevron" style="${collapsed ? '' : 'transform:rotate(90deg)'}">${icon('chevronRight', 10)}</span><span class="task-group-title">${escapeHtml(g.label)}</span>
@@ -177,7 +234,7 @@ function taskListContentHtml(tasks, archiveMode, allTasksCount, groups) {
         <div class="task-group-body-shell ${collapsed ? 'is-collapsed' : ''}"><div class="task-group-body">${rows.join('') || `<div class="tiny task-group-empty">Пусто</div>`}</div></div>
       </section>`;
   }).join('');
-  return `<div class="view-narrow task-groups ${separated ? 'task-groups-separated' : ''}">${groupSectionsHtml}</div>`;
+  return priorityBannerHtml + `<div class="view-narrow task-groups ${separated ? 'task-groups-separated' : ''} ${isWideList ? 'task-groups-wide' : ''}">${groupSectionsHtml}</div>`;
 }
 
 Views.tasks = async function () {
@@ -203,6 +260,7 @@ Views.tasks = async function () {
     ? currentPersonId
     : (requestedPerson ? requestedPerson.id : Views._taskPersonFilter);
   const isKanban = Views._taskViewMode === 'kanban';
+  const isWide = Views._taskViewMode === 'wide';
   const filtersCollapsed = !!Views._taskFiltersCollapsed;
   setTopbar(taskListTopbarHtml(mineOnly, filtersCollapsed));
   const taskCreateButton = document.getElementById('task-create-button');
@@ -219,7 +277,10 @@ Views.tasks = async function () {
   }
   const view = document.getElementById('view');
   view.classList.add('task-page');
-  view.classList.toggle('task-board-wide', isKanban);
+  // «Широкий список» растягивает рабочую область так же, как Канбан
+  // (.task-board-wide просто уменьшает боковые отступы страницы) — сама
+  // разметка строк при этом остаётся списком, а не досками.
+  view.classList.toggle('task-board-wide', isKanban || isWide);
   const workspace = await api.get('/api/workspace-settings').catch(() => ({ taskAutoArchiveDays: 14 }));
   const archiveDays = Number(workspace?.taskAutoArchiveDays) || 14;
   const archiveMode = !isKanban && Views._taskStatusFilter === 'archived';
@@ -248,10 +309,39 @@ Views.tasks = async function () {
   view.innerHTML = `${taskToolbarHtml}<div id="task-content"><div class="tiny">Загрузка…</div></div>`;
   const content = document.getElementById('task-content');
 
+  // Лёгкая тень у липкой панели фильтров при прокрутке страницы — иначе она
+  // сливается с контентом под ней. Обработчик вешаем через onscroll (не
+  // addEventListener), потому что #view — постоянный узел, переживающий все
+  // перерисовки: addEventListener плодил бы новый слушатель на каждый вызов
+  // Views.tasks(), а onscroll просто перезаписывается.
+  const toolbarEl = document.querySelector('.task-sticky-toolbar');
+  view.onscroll = () => { toolbarEl?.classList.toggle('is-scrolled', view.scrollTop > 2); };
+
+  // Зазор до .main пересчитываем сразу после рендера и при изменении размера
+  // окна (боковые отступы адаптивные) — тем же приёмом, что и у календаря
+  // (см. scheduleCalendarFit в views/calendar.js): один window-слушатель на
+  // всё приложение за флагом Views._taskToolbarBleedBound, а не новый на
+  // каждый вызов Views.tasks(), — сама функция безопасно ничего не делает,
+  // если панели фильтров сейчас нет на странице. Второй, отложенный вызов
+  // нужен из-за #view.task-page{transition: padding 220ms...} (переключение
+  // компактный ⇄ широкий список): сразу после смены класса .task-board-wide
+  // padding ещё анимируется от старого значения к новому, и мгновенный замер
+  // getBoundingClientRect() ловит промежуточное состояние, а не итоговое.
+  syncTaskToolbarBleed();
+  setTimeout(syncTaskToolbarBleed, 260);
+  if (!Views._taskToolbarBleedBound) {
+    Views._taskToolbarBleedBound = true;
+    window.addEventListener('resize', syncTaskToolbarBleed);
+  }
+
   let tasks = isKanban ? scopedActive : (archiveMode ? scopedArchived : scopedActive);
   if (!isKanban && Views._taskStatusFilter !== 'all' && Views._taskStatusFilter !== 'archived') {
     tasks = tasks.filter((t) => t.status === Views._taskStatusFilter);
   }
+  // Клик по лейблу «Важная» у задачи (обработчик ниже) включает этот фильтр —
+  // применяем его и в канбане, и в списке, до текстового поиска, чтобы оба
+  // сужения работали вместе, а не перетирали друг друга.
+  if (Views._taskPriorityFilter) tasks = tasks.filter((t) => t.priority === 'high');
   // Текстовый поиск — последний слой фильтра, уже поверх статуса/сотрудника/
   // проекта; allTasksCount выше считается до него, поэтому пустой результат
   // поиска по-прежнему показывает «Ничего не найдено», а не «Задач пока нет».
@@ -264,6 +354,30 @@ Views.tasks = async function () {
   Views._taskCollapsed = Views._taskCollapsed || {};
   content.innerHTML = taskListContentHtml(tasks, archiveMode, allTasksCount, groups);
   syncTaskDueColumnWidth(content);
+
+  // «Показать все» в баннере активного фильтра — единственная кнопка внутри
+  // #task-content, которую нужно перепривязывать после каждой перерисовки
+  // разметки (полной или частичной, из живого поиска ниже): сама разметка
+  // каждый раз создаётся заново через innerHTML.
+  const bindPriorityFilterClear = () => {
+    const clearBtn = document.getElementById('task-priority-filter-clear');
+    if (clearBtn) clearBtn.onclick = () => { Views._taskPriorityFilter = false; Views.tasks(); };
+  };
+  bindPriorityFilterClear();
+  // Делегирование клика по .priority-high вешаем на сам #task-content один
+  // раз — он не пересоздаётся между рендерами (меняется только innerHTML),
+  // так что слушатель переживает и живой поиск, и переключение канбан/список.
+  // stopPropagation обязателен: иначе клик по лейблу дальше по цепочке
+  // подхватывает глобальный делегированный обработчик data-action-id (или
+  // data-task-open-action в канбане) у самой строки/карточки и открывает
+  // задачу вместо включения фильтра.
+  content.addEventListener('click', (event) => {
+    if (!event.target.closest('.priority-high')) return;
+    event.stopPropagation();
+    if (Views._taskPriorityFilter) return;
+    Views._taskPriorityFilter = true;
+    Views.tasks();
+  });
 
   const filterToggle = document.getElementById('task-filter-toggle');
   if (filterToggle) filterToggle.onclick = () => {
@@ -311,6 +425,7 @@ Views.tasks = async function () {
       const shown = filterTasksByQuery(preSearchTasks, Views._taskQuery);
       content.innerHTML = taskListContentHtml(shown, archiveMode, allTasksCount, taskGroupsFor(shown));
       syncTaskDueColumnWidth(content);
+      bindPriorityFilterClear();
       if (isKanban) initTaskKanbanDnD();
     };
   }
@@ -333,6 +448,7 @@ Views.tasks = async function () {
     Views.tasks();
   };
   document.getElementById('task-view-list').onclick = () => { Views._taskViewMode = 'list'; Views.tasks(); };
+  document.getElementById('task-view-wide').onclick = () => { Views._taskViewMode = 'wide'; Views.tasks(); };
   document.getElementById('task-view-kanban').onclick = () => {
     if (Views._taskStatusFilter === 'archived') Views._taskStatusFilter = 'all';
     Views._taskViewMode = 'kanban'; Views.tasks();

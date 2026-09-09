@@ -105,7 +105,15 @@ function projectAgreementRowHtml(a) {
 }
 
 function projectDetailTabBody(data, key) {
-  if (key === 'tasks') return data.tasks.length ? data.tasks.map(projectTaskRowHtml).join('') : emptyState('Задач нет', '', 'tasks');
+  if (key === 'tasks') {
+    // Тот же приоритетный компаратор, что и на странице «Задачи» (и на вкладке
+    // «Развитие» карточки сотрудника) — раньше задачи проекта вообще не
+    // сортировались и лежали в порядке ответа сервера.
+    const mode = GardenSettings.value?.taskPriorityMode || 'balanced';
+    const today = todayStr();
+    const sortedTasks = data.tasks.slice().sort((a, b) => compareTasksByPriority(a, b, mode, today));
+    return sortedTasks.length ? sortedTasks.map(projectTaskRowHtml).join('') : emptyState('Задач нет', '', 'tasks');
+  }
   if (key === 'issues') return data.issues.length ? data.issues.map(projectIssueRowHtml).join('') : emptyState('Проблем нет', '', 'issues');
   if (key === 'meetings') return data.meetings.length ? data.meetings.map(projectMeetingRowHtml).join('') : emptyState('Встреч не было', '', 'meetings');
   if (key === 'agreements') return (data.agreements || []).length ? data.agreements.map(projectAgreementRowHtml).join('') : emptyState('Договорённостей нет', '', 'agreements');
@@ -241,7 +249,15 @@ Views.projectDetail = async function (id) {
 
   setTopbar(projectDetailTopbarHtml(p, addTaskIdx));
 
-  const tabsHtml = PROJECT_DETAIL_TABS.map((t) => `<div class="ui-tab tab ${Views._projectTab === t.key ? 'active' : ''}" data-project-detail-tab="${t.key}">${t.label}</div>`).join('');
+  // Счётчики незакрытых записей на вкладках — только там, где у сущности есть
+  // явное «закрыто/не закрыто» состояние (задачи/проблемы/договорённости);
+  // «Встречи»/«Журнал» такого понятия не имеют.
+  const projectTabCounts = {
+    tasks: data.tasks.filter((t) => t.status !== 'done' && !t.archivedAt).length,
+    issues: data.issues.filter((i) => i.status !== 'resolved').length,
+    agreements: (data.agreements || []).filter((a) => a.status !== 'done').length,
+  };
+  const tabsHtml = PROJECT_DETAIL_TABS.map((t) => `<div class="ui-tab tab ${Views._projectTab === t.key ? 'active' : ''}" data-project-detail-tab="${t.key}">${t.label}${listTabCountHtml(projectTabCounts[t.key] || 0)}</div>`).join('');
   const goalsHtml = data.goals.length ? `<div class="tiny" style="margin-bottom:16px">Работает на цели: ${data.goals.map((g) => `<span class="link" data-route="${goalPath(g)}">${escapeHtml(g.title)}</span>`).join(', ')}</div>` : '';
   const body = (key) => projectDetailTabBody(data, key);
 

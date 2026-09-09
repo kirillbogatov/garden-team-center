@@ -86,3 +86,18 @@ test('labs, goals and check-ins use domain status/recency ordering when relevanc
   ], 'x');
   assert.deepEqual(checkins.map((x) => x.id), ['new','old']);
 });
+
+test('task search ranking keeps active work above paused/blocked and completed work before applying deadline score', () => {
+  const rows = ranker.rankGroup('tasks', [
+    { id:'done-overdue', title:'X', status:'done', priority:'high', dueDate:'2020-01-01' },
+    { id:'paused-overdue', title:'X', status:'paused', priority:'high', dueDate:'2020-01-01' },
+    { id:'blocked-overdue', title:'X', status:'blocked', priority:'high', dueDate:'2020-01-01' },
+    { id:'todo-plain', title:'X', status:'todo', priority:'normal' },
+    { id:'review-plain', title:'X', status:'in_review', priority:'normal' },
+  ], '');
+  const ids = rows.map((x) => x.id);
+  assert.ok(ids.indexOf('todo-plain') < ids.indexOf('paused-overdue'));
+  assert.ok(ids.indexOf('review-plain') < ids.indexOf('blocked-overdue'));
+  assert.ok(ids.indexOf('paused-overdue') < ids.indexOf('done-overdue'));
+  assert.ok(ids.indexOf('blocked-overdue') < ids.indexOf('done-overdue'));
+});

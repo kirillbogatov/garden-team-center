@@ -53,10 +53,10 @@ function createSearchRanker({ norm, fuzzyTextMatch, taskPriorityRank }) {
           { value: task.description, weight: 0.45 },
         ]),
         active,
-        priority: active ? taskPriorityRank(task, mode, today) : { score: -1, days: null },
+        priority: taskPriorityRank(task, mode, today),
       };
     }).sort((a, b) => b.relevance - a.relevance
-      || Number(b.active) - Number(a.active)
+      || b.priority.tier - a.priority.tier
       || b.priority.score - a.priority.score
       || ((a.priority.days ?? 99999) - (b.priority.days ?? 99999))
       || stable(a.item, b.item)).map((row) => row.item);

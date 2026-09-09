@@ -57,6 +57,13 @@ function taskDueLabel(t) {
   return dueLabel(t.dueDate);
 }
 
+// Подсказка при наведении на срок в строке списка задач: в самой строке дата
+// сокращена («через 3 дн», «2 дн. назад»), поэтому по ховеру показываем полную
+// дату — так не приходится открывать задачу только ради точного дедлайна.
+function taskDueTooltip(t) {
+  return t?.dueDate ? `Дедлайн по задаче: ${fmtDate(t.dueDate)}` : '';
+}
+
 function taskListRowHtml(t) {
   const assignees = (t.assigneeIds || []).map((id) => store.person(id)).filter(Boolean);
   const project = store.project(t.projectId);
@@ -67,7 +74,7 @@ function taskListRowHtml(t) {
     <span class="tl-title" title="${escapeHtml(t.title)}">${escapeHtml(t.title)}</span>
     <div class="tl-right">
       <div class="task-tags-cell">${taskLabelsHtml(t)}</div>
-      <div class="task-due-cell">${t.dueDate ? `<span class="tiny" style="${overdue ? 'color:var(--red)' : ''}">${taskDueLabel(t)}</span>` : ''}</div>
+      <div class="task-due-cell">${t.dueDate ? `<span class="tiny" title="${escapeHtml(taskDueTooltip(t))}" style="${overdue ? 'color:var(--red)' : ''}">${taskDueLabel(t)}</span>` : ''}</div>
       <div class="task-assignee-cell">${assignees.length ? `<div class="flex gap-4">${assignees.map((a) => personAvatarLinkHtml(a)).join('')}</div>` : avatarHtml(null)}</div>
     </div>
   </div>`;

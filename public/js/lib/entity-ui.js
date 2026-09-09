@@ -119,6 +119,13 @@ function priorityBadge(priority) {
   return `<span class="ui-tag badge priority-high" style="--ui-tag-dot: var(--orange)">${PRIORITY_LABEL.high}</span>`;
 }
 
+// Числовой бейдж на вкладке (карточка проекта/сотрудника: «Задачи 3», «Проблемы 1»)
+// — переиспользует .list-tab-count, уже существовавший в CSS для вкладок-фильтров.
+// Пустую вкладку бейджем не отмечаем, чтобы не превращать интерфейс в частокол нулей.
+function listTabCountHtml(count) {
+  return count > 0 ? `<span class="list-tab-count">${count}</span>` : '';
+}
+
 // Аналогично приоритету — обычная серьёзность проблемы не показывается.
 function severityBadge(severity) {
   if (severity !== 'high') return '';
