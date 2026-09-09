@@ -45,11 +45,14 @@ function renderMeetingsWorkspace(meetings) {
   </div>`;
 
   const monthGroups = groupMeetingsByMonth(activeMeetings);
+  const bodyHtml = activeMeetings.length
+    ? `<div class="meeting-month-groups task-groups-separated">${monthGroups.map((group, index) => meetingMonthGroupHtml(group, index)).join('')}</div>`
+    : `<div class="zen-empty">${emptyText}</div>`;
   view.innerHTML = `<div class="view-narrow meetings-view">
     <div class="task-sticky-toolbar meeting-sticky-toolbar"><div class="task-toolbar-inner">${typeFilter}</div></div>
     <div class="work-list-page meetings-work-surface">
       <div class="work-list-toolbar meeting-toolbar">${periodTabs}</div>
-      <div class="work-list-body meetings-list-body">${activeMeetings.length ? `<div class="meeting-month-groups task-groups-separated">${monthGroups.map((group, index) => meetingMonthGroupHtml(group, index)).join('')}</div>` : `<div class="zen-empty">${emptyText}</div>`}</div>
+      <div class="work-list-body meetings-list-body">${bodyHtml}</div>
     </div>
   </div>`;
 
@@ -63,7 +66,10 @@ function renderMeetingsWorkspace(meetings) {
 Views.meetings = async function () {
   const requestedPeriod = Router.queryParam('period');
   if (['upcoming', 'completed', 'missed', 'all'].includes(requestedPeriod)) Views._meetingPeriod = requestedPeriod;
-  setTopbar(`<h1>Встречи</h1>${Auth.canCreate('meetings') ? `<div class="actions"><button class="ui-button ui-button--primary btn btn-primary" data-command="openMeetingModal">+ Добавить встречу</button></div>` : ''}`);
+  const addButton = Auth.canCreate('meetings')
+    ? `<div class="actions"><button class="ui-button ui-button--primary btn btn-primary" data-command="openMeetingModal">+ Добавить встречу</button></div>`
+    : '';
+  setTopbar(`<h1>Встречи</h1>${addButton}`);
   const view = document.getElementById('view');
   view.classList.add('task-page');
   view.innerHTML = `<div class="tiny">Загрузка…</div>`;
@@ -273,42 +279,51 @@ function meetingDetailGoBack() {
   Router.back();
 }
 
-Views.meetingDetailPage = async function (ref) {
-  const meeting = await Resources.meetings.get(ref);
-  if (String(ref || '').toUpperCase() !== String(meeting.meetingKey || '').toUpperCase()) Router.replace(meetingPath(meeting));
-  return renderMeetingDetailPage(meeting);
-};
-
-async function renderMeetingDetailPage(m) {
-  const canEdit = Auth.canEditItem('meetings', m, ['participantIds']);
-  const canDelete = Auth.canDeleteItem('meetings', m);
-  let meetingComments = await Comments.list('meeting', m.id);
-  if (String(m.prepNotes || '').trim()) {
-    const prepText = String(m.prepNotes).trim();
-    if (!meetingComments.some((note) => String(note.text || '').trim() === prepText)) {
-      try { meetingComments.push(await Comments.create('meeting', m.id, { text: prepText, color: 'yellow' })); } catch (_) {}
-    }
-  }
-  const dt = m.date ? m.date.slice(0, 10) : todayStr();
-  const participants = (m.participantIds || []).map((id) => store.person(id)).filter(Boolean);
-  setTopbar(`
+// Топбар страницы встречи: ключ, переключатель панели стикеров, меню
+// «Действия» (история версий + удаление, если можно) и кнопка «Назад».
+function meetingDetailTopbarHtml(m, canDelete) {
+  const deleteButtonHtml = canDelete
+    ? `<button type="button" class="task-actions-menu-item task-actions-menu-item-danger" id="meeting-delete" role="menuitem">${icon('trash', 14)} Удалить</button>`
+    : '';
+  return `
     <h1 class="topbar-h1-key">${escapeHtml(m.meetingKey || '')}</h1>
     <div class="actions task-detail-topbar-actions">
       <button type="button" class="sidebar-collapse-btn task-notes-sidebar-toggle" id="meeting-context-toggle" aria-label="Скрыть панель стикеров" title="Скрыть панель стикеров" aria-expanded="true">${icon('sticky', 16)}</button>
       <div class="task-actions-menu-wrap">
         <button type="button" class="ui-button btn task-detail-topbar-btn" id="meeting-actions-toggle" aria-haspopup="menu" aria-expanded="false">Действия</button>
         <div class="task-actions-menu" id="meeting-actions-menu" role="menu" hidden>
-          <button type="button" class="task-actions-menu-item" id="meeting-version-history" role="menuitem">${icon('clock',14)} История версий</button>
-          ${canDelete ? `<button type="button" class="task-actions-menu-item task-actions-menu-item-danger" id="meeting-delete" role="menuitem">${icon('trash',14)} Удалить</button>` : ''}
+          <button type="button" class="task-actions-menu-item" id="meeting-version-history" role="menuitem">${icon('clock', 14)} История версий</button>
+          ${deleteButtonHtml}
         </div>
       </div>
       <button type="button" class="ui-button btn task-detail-topbar-btn" data-command="meetingDetailGoBack">Назад</button>
     </div>
-  `);
+  `;
+}
 
-  const meetingDetailMarkup = `
+function meetingActionItemsSectionHtml(actionItems) {
+  if (!actionItems.length) return '';
+  const rowsHtml = actionItems.map((ai, idx) => `
+              <label class="meeting-action-item">
+                <input type="checkbox" ${ai.done ? 'checked' : ''} data-action-item-index="${idx}" />
+                <span data-action-item-text="${idx}" style="${ai.done ? 'text-decoration:line-through;color:var(--text-disabled)' : ''}">${escapeHtml(ai.text)}</span>
+                ${ai.assigneeId ? personChip(store.person(ai.assigneeId)) : ''}
+              </label>`).join('');
+  return `<section class="task-detail-section">
+            <div class="task-detail-section-label task-detail-section-title">Action items</div>
+            <div class="meeting-action-items" id="mf-action-items">${rowsHtml}</div>
+          </section>`;
+}
+
+// Основная разметка страницы встречи: детали (тип/дата/проект/участники),
+// итоги, action items (если есть), блок создания сущностей по итогам,
+// документы, и справа — панель стикеров и связанного контекста.
+function meetingDetailMarkupHtml({ m, canEdit, dt, participants, meetingComments }) {
+  const headerHtml = detailPageHeaderHtml({ title: meetingDisplayTitle(m), eyebrow: '', inputId: 'mf-title', displayId: 'mf-title-display', shellId: 'mf-title-shell', editable: canEdit, ariaLabel: 'Название встречи' });
+  const actionItemsHtml = meetingActionItemsSectionHtml(m.actionItems || []);
+  return `
     <div class="task-detail-shell">
-${detailPageHeaderHtml({ title: meetingDisplayTitle(m), eyebrow: '', inputId: 'mf-title', displayId: 'mf-title-display', shellId: 'mf-title-shell', editable: canEdit, ariaLabel: 'Название встречи' })}
+${headerHtml}
 
       <div class="task-detail-layout">
         <main class="task-detail-main">
@@ -341,15 +356,7 @@ ${detailPageHeaderHtml({ title: meetingDisplayTitle(m), eyebrow: '', inputId: 'm
             </div>
           </section>
 
-          ${(m.actionItems || []).length ? `<section class="task-detail-section">
-            <div class="task-detail-section-label task-detail-section-title">Action items</div>
-            <div class="meeting-action-items" id="mf-action-items">${m.actionItems.map((ai, idx) => `
-              <label class="meeting-action-item">
-                <input type="checkbox" ${ai.done ? 'checked' : ''} data-action-item-index="${idx}" />
-                <span data-action-item-text="${idx}" style="${ai.done ? 'text-decoration:line-through;color:var(--text-disabled)' : ''}">${escapeHtml(ai.text)}</span>
-                ${ai.assigneeId ? personChip(store.person(ai.assigneeId)) : ''}
-              </label>`).join('')}</div>
-          </section>` : ''}
+          ${actionItemsHtml}
 
           <section class="task-detail-section meeting-outcomes-box">
             <div class="task-detail-section-label task-detail-section-title">Создать по итогам</div>
@@ -381,20 +388,19 @@ ${detailPageHeaderHtml({ title: meetingDisplayTitle(m), eyebrow: '', inputId: 'm
       <div id="mf-related" class="meeting-related-panel"><div class="tiny">Загрузка…</div></div>
     </aside>
   `;
+}
 
-  const view = document.getElementById('view');
-  view.classList.add('task-detail-page-view', 'meeting-detail-page-view');
-  view.innerHTML = `<section class="modal-panel modal-task-detail task-detail-page">${meetingDetailMarkup}</section>`;
-  if (!canEdit) {
-    view.querySelectorAll('#mf-type, #mf-date, #mf-project, #mf-notes').forEach((el) => { el.disabled = true; });
-    view.querySelectorAll('.task-inline-edit-icon').forEach((el) => { el.hidden = true; });
-    const participantShell = document.getElementById('mf-participants-shell');
-    participantShell?.classList.remove('is-editable');
-    const participantEdit = document.getElementById('mf-participants-edit');
-    if (participantEdit) participantEdit.hidden = true;
-  }
+Views.meetingDetailPage = async function (ref) {
+  const meeting = await Resources.meetings.get(ref);
+  if (String(ref || '').toUpperCase() !== String(meeting.meetingKey || '').toUpperCase()) Router.replace(meetingPath(meeting));
+  return renderMeetingDetailPage(meeting);
+};
 
-  const detailPage = view.querySelector('.task-detail-page');
+// Правая панель стикеров. Открыта по умолчанию, но не ниже брейкпоинта 940px,
+// где detail-page.css превращает эту панель в полноэкранный оверлей (то же
+// правило, что и для панели заметок в tasks.js) — иначе на телефоне при
+// каждом открытии встречи сначала была бы видна пустая панель, а не встреча.
+function wireMeetingContextDrawer(detailPage) {
   const contextDrawer = document.getElementById('meeting-context-drawer');
   const contextToggle = document.getElementById('meeting-context-toggle');
   const mainShell = document.querySelector('.main');
@@ -412,47 +418,33 @@ ${detailPageHeaderHtml({ title: meetingDisplayTitle(m), eyebrow: '', inputId: 'm
       contextToggle.innerHTML = icon('sticky', 16);
     }
   };
-  // Open by default, but not below the 940px breakpoint where detail-page.css
-  // turns this drawer into a full-screen overlay (same rule as the task notes
-  // drawer in tasks.js — defaulting to open there would hide the meeting the
-  // moment the page loads on a phone).
   setContextDrawerOpen(window.innerWidth > 940);
   if (contextToggle) contextToggle.onclick = () => setContextDrawerOpen(!detailPage?.classList.contains('notes-open'));
+}
 
-  createCommentController({
-    entityType: 'meeting', entityId: m.id, comments: meetingComments,
-    listId: 'meeting-comments-list', countId: null,
-    addId: 'meeting-note-add', variant: 'notes',
-  }).bind();
-
+// Меню «Действия» (история версий, удаление) в топбаре страницы встречи.
+// Возвращает сам элемент меню — вызывающий код закрывает его перед тем, как
+// открыть модалку истории версий поверх страницы.
+function wireMeetingDetailActionsMenu() {
   const actionsToggle = document.getElementById('meeting-actions-toggle');
   const actionsMenu = document.getElementById('meeting-actions-menu');
-  if (actionsToggle && actionsMenu) {
-    const setActionsOpen = (open) => { actionsMenu.hidden = !open; actionsToggle.setAttribute('aria-expanded', open ? 'true' : 'false'); };
-    const wrap = actionsToggle.closest('.task-actions-menu-wrap');
-    actionsToggle.onclick = (event) => {
-      event.stopPropagation();
-      const open = actionsMenu.hidden;
-      setActionsOpen(open);
-      if (open) bindOutsideClickClose(wrap, () => setActionsOpen(false));
-    };
-    actionsMenu.onclick = (event) => event.stopPropagation();
-  }
-  const versionHistoryButton = document.getElementById('meeting-version-history');
-  if (versionHistoryButton) versionHistoryButton.onclick = async () => {
-    actionsMenu && (actionsMenu.hidden = true);
-    if (typeof DetailAutosave !== 'undefined') await DetailAutosave.flush();
-    openVersionHistory('meetings', m, { canRestore: canEdit });
+  if (!actionsToggle || !actionsMenu) return actionsMenu;
+  const setActionsOpen = (open) => { actionsMenu.hidden = !open; actionsToggle.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+  const wrap = actionsToggle.closest('.task-actions-menu-wrap');
+  actionsToggle.onclick = (event) => {
+    event.stopPropagation();
+    const open = actionsMenu.hidden;
+    setActionsOpen(open);
+    if (open) bindOutsideClickClose(wrap, () => setActionsOpen(false));
   };
+  actionsMenu.onclick = (event) => event.stopPropagation();
+  return actionsMenu;
+}
 
-  let queueMeetingAutosave = null;
-  const participantsPicker = initPeoplePicker(document.getElementById('mf-participants-wrap'), store.people, m.participantIds, {
-    multi: true,
-    placeholder: 'Добавить участника…',
-    onChange: (ids) => { renderMeetingRelatedPanel(ids, document.getElementById('mf-type')?.value || m.type); queueMeetingAutosave?.(true); },
-  });
-  renderMeetingRelatedPanel(m.participantIds || [], m.type);
-
+// Клик по заголовку встречи превращает его в поле ввода; Enter или потеря
+// фокуса возвращают обратно текстовое отображение. Возвращает titleInput —
+// он нужен дальше, чтобы читать текущее значение заголовка при автосохранении.
+function wireMeetingDetailTitleEdit(m, canEdit) {
   const titleShell = document.getElementById('mf-title-shell');
   const titleDisplay = document.getElementById('mf-title-display');
   const titleInput = document.getElementById('mf-title');
@@ -480,7 +472,13 @@ ${detailPageHeaderHtml({ title: meetingDisplayTitle(m), eyebrow: '', inputId: 'm
     e.preventDefault();
     closeTitleEdit();
   });
+  return { titleInput };
+}
 
+// Клик по списку участников (максимум два аватара + «ещё N») открывает
+// picker для редактирования; клик вне панели или потеря актуальности
+// закрывают её обратно и обновляют отображение по текущему выбору.
+function wireMeetingDetailParticipantsEdit(participantsPicker) {
   const participantsShell = document.getElementById('mf-participants-shell');
   const participantsDisplay = document.getElementById('mf-participants-display');
   const participantsEdit = document.getElementById('mf-participants-edit');
@@ -513,6 +511,82 @@ ${detailPageHeaderHtml({ title: meetingDisplayTitle(m), eyebrow: '', inputId: 'm
   };
   participantsDisplay.onclick = beginParticipantsEdit;
   participantsDisplay.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); beginParticipantsEdit(); } };
+}
+
+// Ресурс, которым управляется конкретный вид "итога встречи" (задача/проблема/
+// договорённость/заметка) — используется и при удалении, и при создании итога.
+function meetingOutcomeResource(kind) {
+  if (kind === 'task') return Resources.tasks;
+  if (kind === 'issue') return Resources.issues;
+  if (kind === 'agreement') return Resources.agreements;
+  return Resources.journal;
+}
+
+// "@Имя" — упоминания участников, добавляемые к тексту итога встречи
+// (используется для договорённостей и заметок).
+function meetingOutcomeMentionsText(participantIds) {
+  return participantIds
+    .map((id) => store.person(id))
+    .filter(Boolean)
+    .map((person) => `@[${person.name}](${person.type === 'stakeholder' ? 'stakeholder' : 'person'}:${person.id})`)
+    .join(' ');
+}
+
+async function renderMeetingDetailPage(m) {
+  const canEdit = Auth.canEditItem('meetings', m, ['participantIds']);
+  const canDelete = Auth.canDeleteItem('meetings', m);
+  let meetingComments = await Comments.list('meeting', m.id);
+  if (String(m.prepNotes || '').trim()) {
+    const prepText = String(m.prepNotes).trim();
+    if (!meetingComments.some((note) => String(note.text || '').trim() === prepText)) {
+      try { meetingComments.push(await Comments.create('meeting', m.id, { text: prepText, color: 'yellow' })); } catch (_) {}
+    }
+  }
+  const dt = m.date ? m.date.slice(0, 10) : todayStr();
+  const participants = (m.participantIds || []).map((id) => store.person(id)).filter(Boolean);
+  setTopbar(meetingDetailTopbarHtml(m, canDelete));
+
+  const meetingDetailMarkup = meetingDetailMarkupHtml({ m, canEdit, dt, participants, meetingComments });
+
+  const view = document.getElementById('view');
+  view.classList.add('task-detail-page-view', 'meeting-detail-page-view');
+  view.innerHTML = `<section class="modal-panel modal-task-detail task-detail-page">${meetingDetailMarkup}</section>`;
+  if (!canEdit) {
+    view.querySelectorAll('#mf-type, #mf-date, #mf-project, #mf-notes').forEach((el) => { el.disabled = true; });
+    view.querySelectorAll('.task-inline-edit-icon').forEach((el) => { el.hidden = true; });
+    const participantShell = document.getElementById('mf-participants-shell');
+    participantShell?.classList.remove('is-editable');
+    const participantEdit = document.getElementById('mf-participants-edit');
+    if (participantEdit) participantEdit.hidden = true;
+  }
+
+  const detailPage = view.querySelector('.task-detail-page');
+  wireMeetingContextDrawer(detailPage);
+
+  createCommentController({
+    entityType: 'meeting', entityId: m.id, comments: meetingComments,
+    listId: 'meeting-comments-list', countId: null,
+    addId: 'meeting-note-add', variant: 'notes',
+  }).bind();
+
+  const actionsMenu = wireMeetingDetailActionsMenu();
+  const versionHistoryButton = document.getElementById('meeting-version-history');
+  if (versionHistoryButton) versionHistoryButton.onclick = async () => {
+    actionsMenu && (actionsMenu.hidden = true);
+    if (typeof DetailAutosave !== 'undefined') await DetailAutosave.flush();
+    openVersionHistory('meetings', m, { canRestore: canEdit });
+  };
+
+  let queueMeetingAutosave = null;
+  const participantsPicker = initPeoplePicker(document.getElementById('mf-participants-wrap'), store.people, m.participantIds, {
+    multi: true,
+    placeholder: 'Добавить участника…',
+    onChange: (ids) => { renderMeetingRelatedPanel(ids, document.getElementById('mf-type')?.value || m.type); queueMeetingAutosave?.(true); },
+  });
+  renderMeetingRelatedPanel(m.participantIds || [], m.type);
+
+  const { titleInput } = wireMeetingDetailTitleEdit(m, canEdit);
+  wireMeetingDetailParticipantsEdit(participantsPicker);
 
   // The disclosure chevron sits outside native selects. Clicking that small
   // affordance should open the same picker as clicking the value itself.
@@ -540,8 +614,18 @@ ${detailPageHeaderHtml({ title: meetingDisplayTitle(m), eyebrow: '', inputId: 'm
     });
   });
 
-  const outcomeLabels = { note: 'Заметка', issue: 'Проблема', agreement: 'Договорённость', task: 'Задача' };
-  const outcomePlaceholders = { note:'Что важно зафиксировать?', issue:'В чём проблема?', agreement:'О чём договорились?', task:'Что нужно сделать?' };
+  const outcomeLabels = {
+    note: 'Заметка',
+    issue: 'Проблема',
+    agreement: 'Договорённость',
+    task: 'Задача',
+  };
+  const outcomePlaceholders = {
+    note: 'Что важно зафиксировать?',
+    issue: 'В чём проблема?',
+    agreement: 'О чём договорились?',
+    task: 'Что нужно сделать?',
+  };
   const outcomeKind = document.getElementById('mf-outcome-kind');
   const outcomeText = document.getElementById('mf-outcome-text');
   let meetingOutcomes = [];
@@ -602,7 +686,7 @@ ${detailPageHeaderHtml({ title: meetingDisplayTitle(m), eyebrow: '', inputId: 'm
       btn.onclick = async () => {
         const kind = btn.dataset.outcomeKind;
         const id = btn.dataset.outcomeId;
-        const resource = kind === 'task' ? Resources.tasks : kind === 'issue' ? Resources.issues : kind === 'agreement' ? Resources.agreements : Resources.journal;
+        const resource = meetingOutcomeResource(kind);
         try {
           await resource.remove(id);
           meetingOutcomes = meetingOutcomes.filter((item) => !(String(item.id) === String(id) && item.kind === kind));
@@ -640,15 +724,46 @@ ${detailPageHeaderHtml({ title: meetingDisplayTitle(m), eyebrow: '', inputId: 'm
     try {
       let created;
       if (kind === 'task') {
-        created = await Resources.tasks.create({ title:text, description:`Из встречи: ${meetingDisplayTitle(m)}`, taskType:'standard', projectId, assigneeIds:participantIds.filter((id) => store.person(id)?.type === 'team'), status:'todo', priority:'normal', dueDate:null, sourceMeetingId:m.id });
+        created = await Resources.tasks.create({
+          title: text,
+          description: `Из встречи: ${meetingDisplayTitle(m)}`,
+          taskType: 'standard',
+          projectId,
+          assigneeIds: participantIds.filter((id) => store.person(id)?.type === 'team'),
+          status: 'todo',
+          priority: 'normal',
+          dueDate: null,
+          sourceMeetingId: m.id,
+        });
       } else if (kind === 'issue') {
-        created = await Resources.issues.create({ title:text, description:'', projectId, severity:'normal', status:'open', relatedPersonIds:participantIds, solutionOptions:[], sourceMeetingId:m.id });
+        created = await Resources.issues.create({
+          title: text,
+          description: '',
+          projectId,
+          severity: 'normal',
+          status: 'open',
+          relatedPersonIds: participantIds,
+          solutionOptions: [],
+          sourceMeetingId: m.id,
+        });
       } else if (kind === 'agreement') {
-        const mentions = participantIds.map((id) => store.person(id)).filter(Boolean).map((person) => `@[${person.name}](${person.type === 'stakeholder' ? 'stakeholder' : 'person'}:${person.id})`).join(' ');
-        created = await Resources.agreements.create({ text:mentions ? `${text} — ${mentions}` : text, date:(document.getElementById('mf-date').value || todayStr()).slice(0,10), dueDate:null, projectId, status:'open', withPersonIds:participantIds, sourceMeetingId:m.id });
+        const mentions = meetingOutcomeMentionsText(participantIds);
+        created = await Resources.agreements.create({
+          text: mentions ? `${text} — ${mentions}` : text,
+          date: (document.getElementById('mf-date').value || todayStr()).slice(0, 10),
+          dueDate: null,
+          projectId,
+          status: 'open',
+          withPersonIds: participantIds,
+          sourceMeetingId: m.id,
+        });
       } else {
-        const mentions = participantIds.map((id) => store.person(id)).filter(Boolean).map((person) => `@[${person.name}](${person.type === 'stakeholder' ? 'stakeholder' : 'person'}:${person.id})`).join(' ');
-        created = await Resources.journal.create({ text:mentions ? `${text} — ${mentions}` : text, kind:'note', sourceMeetingId:m.id });
+        const mentions = meetingOutcomeMentionsText(participantIds);
+        created = await Resources.journal.create({
+          text: mentions ? `${text} — ${mentions}` : text,
+          kind: 'note',
+          sourceMeetingId: m.id,
+        });
       }
       meetingOutcomes.push({ id: created.id, kind, text });
       outcomeText.value = '';
@@ -791,7 +906,6 @@ function renderMeetingRelatedPanel(personIds, meetingType = '') {
     `;
   });
 }
-
 
 // Закрываем управленческий цикл после встречи: из результатов сразу создаются follow-up сущности.
 // Public feature commands used by the declarative command layer.

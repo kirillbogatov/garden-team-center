@@ -3,12 +3,24 @@
 module.exports = function registerCommentRoutes(app, { db, canReadItem, denied, isAdmin }) {
   const entityConfig = {
     task: { collection: 'tasks' },
+    // A separate discussion thread on the same task ("Комментарии", like The
+    // Labs projects have) — independent from the sticky notes above. Both
+    // resolve/permission-check against the same task, but store their rows
+    // under different entityType keys so they never mix.
+    'task-discussion': { collection: 'tasks' },
     meeting: { collection: 'meetings' },
     project: { collection: 'projects' },
     person: { collection: 'people' },
     lab: { collection: 'labs', validate: (item) => item && item.entityType !== 'idea' },
     overview: { synthetic: true },
   };
+
+  // These entity types use "comments" as sticky notes (color, free editing)
+  // rather than a plain discussion thread — see noteEntity/patch.color below.
+  const STICKY_ENTITY_TYPES = ['overview', 'task', 'meeting', 'project', 'person'];
+  const STICKY_COLORS = new Set(['yellow', 'pink', 'blue', 'green']);
+  const isStickyEntity = (entityType) => STICKY_ENTITY_TYPES.includes(entityType);
+  const sanitizeStickyColor = (candidate) => (STICKY_COLORS.has(String(candidate || '')) ? String(candidate) : null);
 
   function resolveEntity(type, id) {
     const config = entityConfig[type];
@@ -21,21 +33,27 @@ module.exports = function registerCommentRoutes(app, { db, canReadItem, denied, 
     if (!item || (config.validate && !config.validate(item))) return null;
     return { config, item };
   }
+
   function canRead(resolved, user) {
     if (resolved.config.synthetic) return Boolean(user);
     return canReadItem(resolved.config.collection, resolved.item, user);
   }
-  function publicComment(comment, user) { return { ...comment, canEdit: comment.createdByUserId === user.id }; }
+
+  function publicComment(comment, user) {
+    return { ...comment, canEdit: comment.createdByUserId === user.id };
+  }
 
   function list(type) {
     return (req, res) => {
-      const resolved = resolveEntity(type || String(req.params.entityType || '').toLowerCase(), req.params.entityId || req.params.id);
+      const entityType = type || String(req.params.entityType || '').toLowerCase();
+      const resolved = resolveEntity(entityType, req.params.entityId || req.params.id);
       if (!resolved) return res.status(404).json({ error: 'not_found' });
       if (!canRead(resolved, req.auth.user)) return denied(res);
-      const entityType = type || String(req.params.entityType || '').toLowerCase();
-      res.json(db.comments.related(`${entityType}:${resolved.item.id}`)
+
+      const comments = db.comments.related(`${entityType}:${resolved.item.id}`)
         .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
-        .map((comment) => publicComment(comment, req.auth.user)));
+        .map((comment) => publicComment(comment, req.auth.user));
+      res.json(comments);
     };
   }
 
@@ -45,12 +63,16 @@ module.exports = function registerCommentRoutes(app, { db, canReadItem, denied, 
       const resolved = resolveEntity(entityType, req.params.entityId || req.params.id);
       if (!resolved) return res.status(404).json({ error: 'not_found' });
       if (!canRead(resolved, req.auth.user)) return denied(res);
+
       const text = String(req.body?.text || '').trim().slice(0, 10000);
       if (!text) return res.status(400).json({ error: 'text_required' });
-      const stickyColors = new Set(['yellow', 'pink', 'blue', 'green']);
-      const color = ['overview', 'task', 'meeting', 'project', 'person'].includes(entityType) && stickyColors.has(String(req.body?.color || '')) ? String(req.body.color) : 'yellow';
+
+      const color = (isStickyEntity(entityType) && sanitizeStickyColor(req.body?.color)) || 'yellow';
       const comment = db.comments.create({
-        entityType, entityId: resolved.item.id, text, color,
+        entityType,
+        entityId: resolved.item.id,
+        text,
+        color,
         createdByUserId: req.auth.user.id,
         authorPersonId: req.auth.user.personId || null,
         authorDisplayName: req.auth.user.displayName || req.auth.user.username || 'Сотрудник',
@@ -59,33 +81,52 @@ module.exports = function registerCommentRoutes(app, { db, canReadItem, denied, 
     };
   }
 
-  function update(req, res) {
+  // Update/delete share the same ownership rule: the author always may, and
+  // an admin may on top of that — mirroring the all_manage override every
+  // other collection's canDelete/canUpdate already gives admins.
+  function canModify(comment, user) {
+    return comment.createdByUserId === user.id || isAdmin(user);
+  }
+
+  function loadModifiableComment(req, res) {
     const comment = db.comments.get(req.params.id);
-    if (!comment) return res.status(404).json({ error: 'not_found' });
+    if (!comment) {
+      res.status(404).json({ error: 'not_found' });
+      return null;
+    }
     const resolved = resolveEntity(comment.entityType, comment.entityId);
-    if (!resolved || !canRead(resolved, req.auth.user)) return denied(res);
-    // Every other collection's canDelete/canUpdate give all_manage roles (which
-    // include admins) an override to modify other users' data; comments mirror
-    // that here via isAdmin, on top of the author's own unconditional access.
-    if (comment.createdByUserId !== req.auth.user.id && !isAdmin(req.auth.user)) return denied(res);
+    if (!resolved || !canRead(resolved, req.auth.user)) {
+      denied(res);
+      return null;
+    }
+    if (!canModify(comment, req.auth.user)) {
+      denied(res);
+      return null;
+    }
+    return comment;
+  }
+
+  function update(req, res) {
+    const comment = loadModifiableComment(req, res);
+    if (!comment) return;
+
     const rawText = String(req.body?.text ?? comment.text ?? '').slice(0, 10000);
-    const noteEntity = ['overview', 'task', 'meeting', 'project', 'person'].includes(comment.entityType);
-    const text = noteEntity ? rawText : rawText.trim();
-    if (!noteEntity && !text) return res.status(400).json({ error: 'text_required' });
+    const stickyEntity = isStickyEntity(comment.entityType);
+    const text = stickyEntity ? rawText : rawText.trim();
+    if (!stickyEntity && !text) return res.status(400).json({ error: 'text_required' });
+
     const patch = { text };
-    if (['overview', 'task', 'meeting', 'project', 'person'].includes(comment.entityType) && req.body && Object.prototype.hasOwnProperty.call(req.body, 'color')) {
-      const stickyColors = new Set(['yellow', 'pink', 'blue', 'green']);
-      if (stickyColors.has(String(req.body.color))) patch.color = String(req.body.color);
+    if (stickyEntity && req.body && Object.prototype.hasOwnProperty.call(req.body, 'color')) {
+      const color = sanitizeStickyColor(req.body.color);
+      if (color) patch.color = color;
     }
     res.json(publicComment(db.comments.update(comment.id, patch), req.auth.user));
   }
 
   function remove(req, res) {
-    const comment = db.comments.get(req.params.id);
-    if (!comment) return res.status(404).json({ error: 'not_found' });
-    const resolved = resolveEntity(comment.entityType, comment.entityId);
-    if (!resolved || !canRead(resolved, req.auth.user)) return denied(res);
-    if (comment.createdByUserId !== req.auth.user.id && !isAdmin(req.auth.user)) return denied(res);
+    const comment = loadModifiableComment(req, res);
+    if (!comment) return;
+
     db.comments.remove(comment.id);
     res.status(204).end();
   }

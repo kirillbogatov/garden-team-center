@@ -1,3 +1,5 @@
+'use strict';
+
 const crypto = require('crypto');
 const db = require('./db');
 const createAuthCore = require('./auth-core');

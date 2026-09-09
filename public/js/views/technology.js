@@ -5,23 +5,37 @@ Views._technologyQuarter = Views._technologyQuarter || 'all';
 let _lastTechnologyEvents = [];
 let _lastTechnologyMeetings = [];
 
-function technologyCurrentYear() { return new Date().getFullYear(); }
-function technologyYearValue() { return Number(Views._technologyYear || technologyCurrentYear()); }
+// ---------------------------------------------------------------------------
+// Small date/format helpers
+// ---------------------------------------------------------------------------
+
+function technologyCurrentYear() {
+  return new Date().getFullYear();
+}
+
+function technologyYearValue() {
+  return Number(Views._technologyYear || technologyCurrentYear());
+}
+
 function technologyQuarterOf(dateKey) {
   const month = Number(String(dateKey || '').slice(5, 7));
   return month >= 1 && month <= 12 ? Math.floor((month - 1) / 3) + 1 : null;
 }
+
 function technologyQuarterLabel(value, year = technologyYearValue()) {
   const q = Number(value);
   return q >= 1 && q <= 4 ? `Q${q} ${year}` : 'Весь год';
 }
+
 function technologyTimingLabel(hours) {
   const value = Number(hours || 0);
   if (!Number.isFinite(value) || value <= 0) return '—';
   return `${String(value).replace('.', ',')} ч`;
 }
 
-
+// Сопоставляет плановое мероприятие с уже созданной встречей Garden — либо по
+// прямой ссылке (sourceTechnologyEventId), либо, для старых записей без неё,
+// по совпадению даты и темы клубной встречи.
 function technologyMeetingForEvent(item, meetings = _lastTechnologyMeetings) {
   if (!item) return null;
   const topic = String(item.topic || '').trim().toLocaleLowerCase('ru');
@@ -41,43 +55,68 @@ function technologyPeopleNames(ids) {
 function technologyPeopleHtml(ids) {
   const people = (ids || []).map((id) => store.person(id)).filter(Boolean);
   if (!people.length) return '<span class="technology-empty-cell">—</span>';
-  return `<div class="technology-people" aria-label="Драйверы и гости">${people.map((person) => `<div class="technology-person-row">${personAvatarLinkHtml(person, 22)}<span class="technology-person-name">${escapeHtml(person.name || '')}</span></div>`).join('')}</div>`;
+  const rows = people.map((person) => `<div class="technology-person-row">${personAvatarLinkHtml(person, 22)}<span class="technology-person-name">${escapeHtml(person.name || '')}</span></div>`).join('');
+  return `<div class="technology-people" aria-label="Драйверы и гости">${rows}</div>`;
 }
+
+// ---------------------------------------------------------------------------
+// Table row rendering
+// ---------------------------------------------------------------------------
 
 function technologyInlineInputHtml(item, key, value, editable) {
   const common = `class="technology-inline-input" data-technology-inline="1" data-technology-id="${escapeHtml(item.id)}" data-technology-key="${key}" ${editable ? '' : 'disabled'}`;
-  if (key === 'plannedDate') return `<div class="technology-date-editor"><input ${common} type="date" value="${escapeHtml(value || '')}" aria-label="Плановая дата проведения" /><button type="button" class="technology-date-picker" data-technology-date-picker="1" aria-label="Открыть календарь" tabindex="-1">${icon('calendar', 14)}</button></div>`;
-  if (key === 'hours') return `<input ${common} type="number" min="1" step="1" inputmode="numeric" value="${escapeHtml(value || 1)}" aria-label="Тайминг в часах" />`;
+  if (key === 'plannedDate') {
+    return `<div class="technology-date-editor"><input ${common} type="date" value="${escapeHtml(value || '')}" aria-label="Плановая дата проведения" /><button type="button" class="technology-date-picker" data-technology-date-picker="1" aria-label="Открыть календарь" tabindex="-1">${icon('calendar', 14)}</button></div>`;
+  }
+  if (key === 'hours') {
+    return `<input ${common} type="number" min="1" step="1" inputmode="numeric" value="${escapeHtml(value || 1)}" aria-label="Тайминг в часах" />`;
+  }
   return `<input ${common} type="text" value="${escapeHtml(value || '')}" aria-label="Тема мероприятия" placeholder="Без темы" />`;
+}
+
+// Иконки-действия строки: запланировать встречу в Garden (если ещё не
+// запланирована) и удалить мероприятие — доступны только тем, у кого есть
+// соответствующее право, и рисуются только когда хотя бы одно из них есть.
+function technologyRowActionsHtml(item) {
+  if (!Auth.canCreate('meetings') && !Auth.canDeleteItem('labs', item)) return '';
+
+  const scheduled = Boolean(technologyMeetingForEvent(item));
+  const tooltip = scheduled ? 'Встреча уже запланирована' : 'Запланировать встречу в Garden';
+  const meetingAction = Auth.canCreate('meetings')
+    ? `<span class="technology-row-action-wrap${scheduled ? ' is-disabled' : ''}" title="${tooltip}"><button type="button" class="technology-row-action technology-meeting-action" ${scheduled ? 'disabled' : `data-command-stop="1" data-command="scheduleTechnologyMeeting" data-command-arg="${escapeHtml(item.id)}"`} aria-label="${tooltip}">${icon('scheduleMeeting', 15)}</button></span>`
+    : '';
+  const deleteAction = Auth.canDeleteItem('labs', item)
+    ? `<span class="technology-row-action-wrap technology-delete-action-wrap" title="Удалить мероприятие"><button type="button" class="technology-row-action technology-delete-action" data-command-stop="1" data-command="deleteTechnologyEvent" data-command-arg="${escapeHtml(item.id)}" aria-label="Удалить мероприятие">${icon('trash', 15)}</button></span>`
+    : '';
+
+  return `<span class="technology-row-actions">${meetingAction}${deleteAction}</span>`;
 }
 
 function technologyRowHtml(item) {
   const editable = Auth.canEditItem('labs', item);
+  const peopleCell = editable
+    ? `<div class="technology-people-read" data-technology-people-read="${escapeHtml(item.id)}">${(item.personIds || []).length ? technologyPeopleHtml(item.personIds) : '<span class="technology-people-placeholder">Добавить…</span>'}</div><div class="technology-inline-people" data-technology-people="${escapeHtml(item.id)}">${peoplePickerHtml('Добавить…')}</div>`
+    : technologyPeopleHtml(item.personIds);
+
   return `<div class="checkins-table-row technology-table-row ${item.completed ? 'is-completed' : ''}" role="row" data-technology-row="${escapeHtml(item.id)}">
     <div class="checkins-cell checkins-cell-text checkins-cell-editable technology-table-cell technology-date" role="cell">${technologyInlineInputHtml(item, 'plannedDate', item.plannedDate, editable)}</div>
     <div class="checkins-cell checkins-cell-text checkins-cell-editable technology-table-cell technology-topic" role="cell">${technologyInlineInputHtml(item, 'topic', item.topic, editable)}</div>
     <div class="checkins-cell checkins-cell-text checkins-cell-editable technology-table-cell technology-timing" role="cell">${technologyInlineInputHtml(item, 'hours', item.hours, editable)}</div>
     <div class="checkins-cell checkins-cell-text ${editable ? 'checkins-cell-editable ' : ''}technology-table-cell technology-people-cell" role="cell">
-      ${editable ? `<div class="technology-people-read" data-technology-people-read="${escapeHtml(item.id)}">${(item.personIds || []).length ? technologyPeopleHtml(item.personIds) : '<span class="technology-people-placeholder">Добавить…</span>'}</div><div class="technology-inline-people" data-technology-people="${escapeHtml(item.id)}">${peoplePickerHtml('Добавить…')}</div>` : technologyPeopleHtml(item.personIds)}
+      ${peopleCell}
     </div>
     <div class="checkins-cell technology-table-cell technology-done" role="cell" data-action-stop="1">
       <label class="technology-done-control" title="${item.completed ? 'Проведено' : 'Отметить проведённым'}">
         <input type="checkbox" ${item.completed ? 'checked' : ''} ${editable ? `data-command="toggleTechnologyEvent" data-command-arg="${escapeHtml(item.id)}" data-command-checked="1" data-command-stop="1"` : 'disabled'} aria-label="Мероприятие проведено" />
       </label>
     </div>
-    ${(Auth.canCreate('meetings') || Auth.canDeleteItem('labs', item)) ? (() => {
-      const scheduled = Boolean(technologyMeetingForEvent(item));
-      const tooltip = scheduled ? 'Встреча уже запланирована' : 'Запланировать встречу в Garden';
-      const meetingAction = Auth.canCreate('meetings')
-        ? `<span class="technology-row-action-wrap${scheduled ? ' is-disabled' : ''}" title="${tooltip}"><button type="button" class="technology-row-action technology-meeting-action" ${scheduled ? 'disabled' : `data-command-stop="1" data-command="scheduleTechnologyMeeting" data-command-arg="${escapeHtml(item.id)}"`} aria-label="${tooltip}">${icon('scheduleMeeting', 15)}</button></span>`
-        : '';
-      const deleteAction = Auth.canDeleteItem('labs', item)
-        ? `<span class="technology-row-action-wrap technology-delete-action-wrap" title="Удалить мероприятие"><button type="button" class="technology-row-action technology-delete-action" data-command-stop="1" data-command="deleteTechnologyEvent" data-command-arg="${escapeHtml(item.id)}" aria-label="Удалить мероприятие">${icon('trash', 15)}</button></span>`
-        : '';
-      return `<span class="technology-row-actions">${meetingAction}${deleteAction}</span>`;
-    })() : ''}
+    ${technologyRowActionsHtml(item)}
   </div>`;
 }
+
+// ---------------------------------------------------------------------------
+// Toolbar: year nav and quarter filter
+// ---------------------------------------------------------------------------
 
 function technologyYearNavHtml() {
   const year = technologyYearValue();
@@ -107,12 +146,18 @@ function technologyQuarterFilterHtml() {
 }
 
 function technologyFilteredItems(items, year = technologyYearValue(), quarter = Views._technologyQuarter) {
-  return (items || []).filter((item) => {
-    if (!item?.plannedDate || Number(String(item.plannedDate).slice(0, 4)) !== Number(year)) return false;
-    if (String(quarter || 'all') === 'all') return true;
-    return technologyQuarterOf(item.plannedDate) === Number(quarter);
-  }).sort((a, b) => String(a.plannedDate || '').localeCompare(String(b.plannedDate || '')) || String(a.topic || '').localeCompare(String(b.topic || ''), 'ru'));
+  return (items || [])
+    .filter((item) => {
+      if (!item?.plannedDate || Number(String(item.plannedDate).slice(0, 4)) !== Number(year)) return false;
+      if (String(quarter || 'all') === 'all') return true;
+      return technologyQuarterOf(item.plannedDate) === Number(quarter);
+    })
+    .sort((a, b) => String(a.plannedDate || '').localeCompare(String(b.plannedDate || '')) || String(a.topic || '').localeCompare(String(b.topic || ''), 'ru'));
 }
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
 
 Views.technology = async function () {
   setTopbar(`<h1>План мероприятий</h1>${Auth.canCreate('labs') ? '<div class="actions"><button class="ui-button ui-button--primary btn btn-primary" data-command="openTechnologyEventModal">+ Добавить мероприятие</button></div>' : ''}`);
@@ -146,9 +191,18 @@ Views.technology = async function () {
   </div>`;
 
   const quarter = document.getElementById('technology-quarter-filter');
-  if (quarter) quarter.onchange = () => { Views._technologyQuarter = quarter.value || 'all'; Views.technology(); };
+  if (quarter) {
+    quarter.onchange = () => {
+      Views._technologyQuarter = quarter.value || 'all';
+      Views.technology();
+    };
+  }
   wireTechnologyInlineEditors();
 };
+
+// ---------------------------------------------------------------------------
+// Export
+// ---------------------------------------------------------------------------
 
 function technologyExportRows(items, year, quarter) {
   return technologyFilteredItems(items, year, quarter).map((item) => [
@@ -188,15 +242,22 @@ function openTechnologyExportModal() {
       <button type="button" class="ui-button ui-button--primary btn btn-primary" id="technology-export-submit">Выгрузить</button>
     </div>
   `);
+
   const submit = document.getElementById('technology-export-submit');
   if (!submit) return;
   submit.onclick = () => {
     const year = Number(document.getElementById('technology-export-year')?.value || 0);
     const quarter = document.getElementById('technology-export-quarter')?.value || 'all';
     const format = document.getElementById('technology-export-format')?.value || 'xlsx';
-    if (!Number.isInteger(year) || year < 2000 || year > 2100) { toast('Укажите корректный год'); return; }
+    if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+      toast('Укажите корректный год');
+      return;
+    }
     const rows = technologyExportRows(_lastTechnologyEvents, year, quarter);
-    if (!rows.length) { toast('За выбранный период нет мероприятий'); return; }
+    if (!rows.length) {
+      toast('За выбранный период нет мероприятий');
+      return;
+    }
     const headers = ['Плановая дата проведения', 'Тема', 'Тайминг, часов', 'Драйвер / гость', 'Проведено'];
     const suffix = quarter === 'all' ? `${year}` : `${year}_q${quarter}`;
     TabularExport.download({ headers, rows, format, filename: `technology_${suffix}` });
@@ -205,19 +266,38 @@ function openTechnologyExportModal() {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Inline editing
+// ---------------------------------------------------------------------------
+
 async function saveTechnologyInlineField(field) {
   const id = field?.dataset?.technologyId;
   const key = field?.dataset?.technologyKey;
   if (!id || !key) return;
   const item = _lastTechnologyEvents.find((entry) => entry.id === id);
   if (!item || !Auth.canEditItem('labs', item)) return;
+
   let value = field.value;
   if (key === 'topic') value = String(value || '').trim();
   if (key === 'hours') value = Number(value || 0);
-  if (key === 'plannedDate' && !value) { field.classList.add('is-error'); toast('Укажите плановую дату'); return; }
-  if (key === 'topic' && !value) { field.classList.add('is-error'); toast('Укажите тему мероприятия'); return; }
-  if (key === 'hours' && (!Number.isInteger(value) || value <= 0)) { field.classList.add('is-error'); toast('Тайминг должен быть целым числом часов больше нуля'); return; }
+
+  if (key === 'plannedDate' && !value) {
+    field.classList.add('is-error');
+    toast('Укажите плановую дату');
+    return;
+  }
+  if (key === 'topic' && !value) {
+    field.classList.add('is-error');
+    toast('Укажите тему мероприятия');
+    return;
+  }
+  if (key === 'hours' && (!Number.isInteger(value) || value <= 0)) {
+    field.classList.add('is-error');
+    toast('Тайминг должен быть целым числом часов больше нуля');
+    return;
+  }
   if (String(item[key] ?? '') === String(value)) return;
+
   try {
     const updated = await Resources.technologyEvents.update(id, { [key]: value });
     Object.assign(item, updated || { [key]: value });
@@ -229,7 +309,10 @@ async function saveTechnologyInlineField(field) {
   }
 }
 
-function wireTechnologyInlineEditors() {
+// Кнопка-календарь рядом с полем даты — тонкая обёртка над нативным
+// showPicker(), просто даёт кликабельную иконку вместо system-специфичного
+// вида самого <input type="date">.
+function wireTechnologyDatePickerButtons() {
   document.querySelectorAll('[data-technology-date-picker]').forEach((button) => {
     button.addEventListener('mousedown', (event) => event.preventDefault());
     button.addEventListener('click', (event) => {
@@ -240,30 +323,48 @@ function wireTechnologyInlineEditors() {
       if (typeof input.showPicker === 'function') input.showPicker();
     });
   });
+}
 
+function wireTechnologyInlineFields() {
   document.querySelectorAll('.technology-inline-input').forEach((field) => {
     if (field.disabled) return;
     let timer = null;
     const cell = field.closest('.checkins-cell-editable');
-    if (cell) cell.addEventListener('click', (event) => {
-      if (document.activeElement !== field) field.focus();
-    });
-    const save = () => { clearTimeout(timer); saveTechnologyInlineField(field); };
+    if (cell) {
+      cell.addEventListener('click', () => {
+        if (document.activeElement !== field) field.focus();
+      });
+    }
+    const save = () => {
+      clearTimeout(timer);
+      saveTechnologyInlineField(field);
+    };
     if (field.tagName === 'TEXTAREA') {
-      field.addEventListener('input', () => { field.classList.remove('is-error'); clearTimeout(timer); timer = setTimeout(save, 650); });
-      field.addEventListener('keydown', (event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); field.blur(); } });
+      field.addEventListener('input', () => {
+        field.classList.remove('is-error');
+        clearTimeout(timer);
+        timer = setTimeout(save, 650);
+      });
+      field.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && !event.shiftKey) {
+          event.preventDefault();
+          field.blur();
+        }
+      });
     } else {
       field.addEventListener('input', () => field.classList.remove('is-error'));
       field.addEventListener('change', save);
     }
     field.addEventListener('blur', save);
   });
+}
 
+function wireTechnologyPeoplePickers() {
   document.querySelectorAll('[data-technology-people]').forEach((root) => {
     const id = root.dataset.technologyPeople;
     const item = _lastTechnologyEvents.find((entry) => entry.id === id);
-    if (!item) return;
-    if (!Auth.canEditItem('labs', item)) return;
+    if (!item || !Auth.canEditItem('labs', item)) return;
+
     const read = document.querySelector(`[data-technology-people-read="${CSS.escape(id)}"]`);
     const picker = initPeoplePicker(root, store.people, item.personIds || [], {
       multi: true,
@@ -277,16 +378,23 @@ function wireTechnologyInlineEditors() {
           if (read) read.innerHTML = selected.length ? technologyPeopleHtml(selected) : '<span class="technology-people-placeholder">Добавить…</span>';
           root.classList.add('is-saved');
           setTimeout(() => root.classList.remove('is-saved'), 500);
-        } catch (_) { root.classList.add('is-error'); }
+        } catch (_) {
+          root.classList.add('is-error');
+        }
       },
     });
+
     const input = root.querySelector('.pp-input');
     const activate = () => {
       root.classList.add('is-editing');
       read?.classList.add('is-hidden');
       requestAnimationFrame(() => input?.focus());
     };
-    read?.addEventListener('click', (event) => { event.preventDefault(); event.stopPropagation(); activate(); });
+    read?.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      activate();
+    });
     root.closest('.technology-people-cell')?.addEventListener('click', (event) => {
       if (root.classList.contains('is-editing') || event.target.closest('.pp-chip-x')) return;
       activate();
@@ -299,7 +407,15 @@ function wireTechnologyInlineEditors() {
   });
 }
 
+function wireTechnologyInlineEditors() {
+  wireTechnologyDatePickerButtons();
+  wireTechnologyInlineFields();
+  wireTechnologyPeoplePickers();
+}
 
+// ---------------------------------------------------------------------------
+// Row-level actions
+// ---------------------------------------------------------------------------
 
 async function deleteTechnologyEvent(id) {
   const item = await Resources.technologyEvents.get(id);
@@ -334,6 +450,21 @@ async function toggleTechnologyEvent(id, checked) {
   Views.technology();
 }
 
+// ---------------------------------------------------------------------------
+// Create/edit modal
+// ---------------------------------------------------------------------------
+
+function technologyEventOnDelete(isEdit, item) {
+  if (!isEdit || !Auth.canDeleteItem('labs', item)) return null;
+  return async () => {
+    if (!(await confirmAction('Удалить это мероприятие?'))) return;
+    await Resources.technologyEvents.remove(item.id);
+    Modal.close();
+    toast('Мероприятие удалено');
+    Views.technology();
+  };
+}
+
 async function openTechnologyEventModal(id) {
   const isEdit = Boolean(id);
   const item = isEdit ? await Resources.technologyEvents.get(id) : {};
@@ -342,7 +473,8 @@ async function openTechnologyEventModal(id) {
     { key: 'plannedDate', label: 'Плановая дата проведения', type: 'date' },
     { key: 'topic', label: 'Тема', type: 'text', trim: true, placeholder: 'Тема мероприятия' },
     {
-      key: 'hours', label: 'Тайминг, часов',
+      key: 'hours',
+      label: 'Тайминг, часов',
       render: ({ id: fieldId, value, disabled }) => `<input id="${fieldId}" type="number" min="1" step="1" inputmode="numeric" value="${escapeHtml(value || 1)}" ${disabled} />`,
       read: () => Number(document.getElementById('ef-hours')?.value || 0),
     },
@@ -370,13 +502,7 @@ async function openTechnologyEventModal(id) {
       toast('Сохранено');
       Views.technology();
     },
-    onDelete: isEdit && Auth.canDeleteItem('labs', item) ? async () => {
-      if (!(await confirmAction('Удалить это мероприятие?'))) return;
-      await Resources.technologyEvents.remove(item.id);
-      Modal.close();
-      toast('Мероприятие удалено');
-      Views.technology();
-    } : null,
+    onDelete: technologyEventOnDelete(isEdit, item),
   });
 }
 

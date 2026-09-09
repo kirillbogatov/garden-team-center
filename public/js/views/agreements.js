@@ -4,7 +4,12 @@ Views._agreementFilter = 'open';
 
 Views.agreements = async function () {
   const mineOnly = Router.queryParam('mine') === '1';
-  setTopbar(`<h1>${mineOnly ? 'Мои договорённости' : 'Договорённости'}</h1>${Auth.canCreate('agreements') ? `<div class="actions"><button class="ui-button ui-button--primary btn btn-primary" data-command="openAgreementModal">+ Добавить договорённость</button></div>` : ''}`);
+  const title = mineOnly ? 'Мои договорённости' : 'Договорённости';
+  const addButton = Auth.canCreate('agreements')
+    ? `<div class="actions"><button class="ui-button ui-button--primary btn btn-primary" data-command="openAgreementModal">+ Добавить договорённость</button></div>`
+    : '';
+  setTopbar(`<h1>${title}</h1>${addButton}`);
+
   const view = document.getElementById('view');
   let agreements = (await Resources.agreements.list()).sort((a, b) => new Date(b.date) - new Date(a.date));
   if (mineOnly) {
@@ -20,17 +25,26 @@ Views.agreements = async function () {
   const active = filters.find((f) => f.key === Views._agreementFilter) || filters[0];
   const filtered = agreements.filter(active.test);
 
-  const tabsHtml = `<div class="list-tabs" role="tablist" aria-label="Статус договорённостей">
-    ${filters.map((f) => `<button type="button" class="list-tab ${Views._agreementFilter === f.key ? 'active' : ''}" role="tab" aria-selected="${Views._agreementFilter === f.key}" data-view-state="_agreementFilter" data-view-value="${f.key}" data-view-render="agreements">${f.label}</button>`).join('')}
-  </div>`;
+  const tabsHtml = agreementFilterTabsHtml(filters);
+  const bodyHtml = filtered.length
+    ? filtered.map(agreementCardHtml).join('')
+    : emptyState('Договорённостей не найдено', '', 'agreements');
 
   view.innerHTML = `
     <div class="view-narrow work-list-page agreements-view">
       <div class="work-list-toolbar">${tabsHtml}</div>
-      <div class="work-list-body">${filtered.length ? filtered.map(agreementCardHtml).join('') : emptyState('Договорённостей не найдено', '', 'agreements')}</div>
+      <div class="work-list-body">${bodyHtml}</div>
     </div>
   `;
 };
+
+function agreementFilterTabsHtml(filters) {
+  const buttons = filters.map((f) => {
+    const active = Views._agreementFilter === f.key;
+    return `<button type="button" class="list-tab ${active ? 'active' : ''}" role="tab" aria-selected="${active}" data-view-state="_agreementFilter" data-view-value="${f.key}" data-view-render="agreements">${f.label}</button>`;
+  }).join('');
+  return `<div class="list-tabs" role="tablist" aria-label="Статус договорённостей">${buttons}</div>`;
+}
 
 function agreementCardHtml(a) {
   const project = store.project(a.projectId);
@@ -80,7 +94,14 @@ async function openAgreementModal(id, opts) {
       },
       { key: 'date', label: 'Дата', type: 'date', default: todayStr() },
       { key: 'dueDate', label: 'Срок (необязательно)', type: 'date', parse: (value) => value || null },
-      { key: 'projectId', label: 'Проект (необязательно)', type: 'select', emptyLabel: '—', options: () => (store.projects || []).map((project) => ({ value: project.id, label: project.name })), parse: (value) => value || null },
+      {
+        key: 'projectId',
+        label: 'Проект (необязательно)',
+        type: 'select',
+        emptyLabel: '—',
+        options: () => (store.projects || []).map((project) => ({ value: project.id, label: project.name })),
+        parse: (value) => value || null,
+      },
       { key: 'status', label: 'Статус', type: 'select', default: 'open', options: Object.entries(AGREEMENT_STATUS_LABEL).map(([value, label]) => ({ value, label })) },
     ],
     validate: (payload) => payload.text ? null : 'Опишите договорённость',
@@ -97,12 +118,7 @@ async function openAgreementModal(id, opts) {
     onDelete: isEdit && Auth.canDeleteItem('agreements', a) ? async () => {
       const ok = await confirmAction('Удалить эту договорённость?');
       if (!ok) return;
-      const deleteJournalToo = a.sourceJournalId ? await askDeleteLinkedJournal() : false;
       await Resources.agreements.remove(a.id);
-      if (deleteJournalToo && a.sourceJournalId) {
-        try { await Resources.journal.remove(a.sourceJournalId); }
-        catch (err) { console.warn('Не удалось удалить связанную запись журнала', err); }
-      }
       Modal.close();
       toast('Договорённость удалена');
       Router.render();

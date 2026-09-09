@@ -377,14 +377,14 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
     const value = norm(rawQuery).replace(/[?!.]+$/, '').trim();
     for (const prefix of PROJECT_DIGEST_PREFIXES) {
       if (startsWithPhrase(value, prefix)) {
-        const fragment = value.replace(new RegExp(`^${escapeRe(prefix)}\s*`, 'i'), '').trim();
+        const fragment = value.replace(new RegExp(`^${escapeRe(prefix)}\\s*`, 'i'), '').trim();
         if (!fragment) return null;
         return { fragment, subjectType: 'project' };
       }
     }
     for (const prefix of PERSON_DIGEST_PREFIXES) {
       if (startsWithPhrase(value, prefix)) {
-        const fragment = value.replace(new RegExp(`^${escapeRe(prefix)}\s*`, 'i'), '').trim();
+        const fragment = value.replace(new RegExp(`^${escapeRe(prefix)}\\s*`, 'i'), '').trim();
         if (!fragment) return null;
         return { fragment, subjectType: 'auto' };
       }
@@ -616,34 +616,44 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
     open: { route: '/technology' },
   });
 
+  // Краткая карточка человека для заголовка «сводки по …» (today/week digest).
+  // Личная сводка (personDigest) собирает свою, более полную карточку отдельно.
+  const focusPersonSummary = (focus) => ({
+    id: focus.id,
+    name: focus.name,
+    role: focus.role || '',
+    slug: focus.slug || '',
+    photoUrl: focus.photoUrl || '',
+    photoPosition: focus.photoPosition || '',
+    type: focus.type || 'team',
+  });
+
   function personDigest(person, user) {
     const today = todayKey();
     const id = person.id;
     const tasks = visibleItems('tasks', user).filter((task) => !task.archivedAt && (task.assigneeIds || []).includes(id));
     const openTasks = tasks.filter((task) => task.status !== 'done');
     const inProgressTasks = openTasks.filter((task) => task.status === 'in_progress');
-    const overdueTasks = openTasks.filter((task) => task.dueDate && dateKey(task.dueDate) < today);
     const meetings = visibleItems('meetings', user).filter((meeting) => (meeting.participantIds || []).includes(id));
     const upcomingMeetings = meetings.filter((meeting) => dateKey(meeting.date) >= today)
       .sort((a, b) => dateKey(a.date).localeCompare(dateKey(b.date)));
     const upcomingTechnologyEvents = visibleItems('technologyEvents', user)
       .filter((item) => !item.completed && dateKey(item.plannedDate) >= today && (item.personIds || []).includes(id))
       .sort((a, b) => dateKey(a.plannedDate).localeCompare(dateKey(b.plannedDate)));
-    const pastOneOnOnes = meetings.filter((meeting) => norm(meeting.type) === '1:1' && dateKey(meeting.date) < today)
-      .sort((a, b) => dateKey(b.date).localeCompare(dateKey(a.date)));
-    const lastOneOnOne = pastOneOnOnes[0] || null;
+    // Показываем самый свежий check-in человека, а не строго текущую календарную
+    // неделю: если сотрудник ещё не успел заполнить check-in за эту неделю, сводка
+    // не должна молча остаться без раздела — прошлый check-in всё ещё актуален для разговора.
+    const latestCheckin = visibleItems('checkins', user)
+      .filter((item) => item.personId === id)
+      .sort((a, b) => dateKey(b.weekStart).localeCompare(dateKey(a.weekStart)))[0] || null;
 
-    const week = currentWeekRange(today);
-    const checkin = visibleItems('checkins', user).find((item) => item.personId === id && dateKey(item.weekStart) === week.start) || null;
-
-    // В персональной сводке «Договорённости» — это все сущности, где человек
-    // упомянут, независимо от текущего статуса. Так сводка не теряет уже решённый
-    // контекст, который всё ещё важен для разговора с сотрудником. «Проблемы» же
-    // показываем только нерешённые и сортируем по важности — как в общем списке проблем.
+    // В персональной сводке «Договорённости» и «Проблемы» — это все сущности, где
+    // человек упомянут, независимо от текущего статуса. Так сводка не теряет уже
+    // решённый контекст, который всё ещё важен для разговора с сотрудником.
     const agreements = visibleItems('agreements', user).filter((item) =>
       (item.withPersonIds || []).includes(id) || (item.mentions || []).some((mention) => mention.id === id));
     const issues = visibleItems('issues', user).filter((item) =>
-      item.status !== 'resolved' && ((item.relatedPersonIds || []).includes(id) || (item.mentions || []).some((mention) => mention.id === id)))
+      (item.relatedPersonIds || []).includes(id) || (item.mentions || []).some((mention) => mention.id === id))
       .sort((a, b) => Number(b.severity === 'high') - Number(a.severity === 'high')
         || String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
 
@@ -665,10 +675,6 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
 
     const totalMaxHours = loadItems.reduce((sum, item) => sum + item.maxHours, 0);
 
-    const absences = visibleItems('vacations', user).filter((item) => item.personId === id && dateKey(item.endDate) >= today)
-      .sort((a, b) => dateKey(a.startDate).localeCompare(dateKey(b.startDate)));
-    const absence = absences[0] || null;
-
     const sections = [
       {
         title: 'Загрузка',
@@ -682,39 +688,64 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
         },
         emptyText: 'Нет активных проектов',
       },
-      checkin ? {
-        title: `Check-in за ${ruDate(week.start)} — ${ruDate(week.end)}`,
+      latestCheckin ? {
+        title: `Check-in за ${ruDate(latestCheckin.weekStart)} — ${ruDate(shiftDay(dateKey(latestCheckin.weekStart), 6))}`,
         count: 3,
         layout: 'labeled-text',
         items: [
-          { label: 'На прошлой неделе', title: String(checkin.did || '').trim() || '—', wrapText: true },
-          { label: 'На этой неделе', title: String(checkin.willDo || '').trim() || '—', wrapText: true },
-          { label: 'Блокеры', title: String(checkin.blockers || '').trim() || '—', tone: String(checkin.blockers || '').trim() ? 'warning' : '', wrapText: true },
+          { label: 'На прошлой неделе', title: String(latestCheckin.did || '').trim() || '—', wrapText: true },
+          { label: 'На этой неделе', title: String(latestCheckin.willDo || '').trim() || '—', wrapText: true },
+          { label: 'Блокеры', title: String(latestCheckin.blockers || '').trim() || '—', tone: String(latestCheckin.blockers || '').trim() ? 'warning' : '', wrapText: true },
         ],
         more: 0,
         footer: { label: 'Все check-in', route: `/checkins?person=${encodeURIComponent(id)}` },
       } : null,
-      section('Задачи в работе', inProgressTasks.map((task) => taskItem(task, today)), { footer: { label: 'Все задачи', route: `/tasks?person=${encodeURIComponent(id)}` } }),
+      section(
+        'Задачи в работе',
+        inProgressTasks.map((task) => taskItem(task, today)),
+        { footer: { label: 'Все задачи', route: `/tasks?person=${encodeURIComponent(id)}` } },
+      ),
       section('Ближайшие встречи', upcomingMeetings.map((meeting) => meetingItem(meeting, user, id))),
-      section('Запланированные мероприятия', upcomingTechnologyEvents.map(technologyEventItem), { footer: { label: 'План мероприятий', route: '/technology' } }),
+      section(
+        'Запланированные мероприятия',
+        upcomingTechnologyEvents.map(technologyEventItem),
+        { footer: { label: 'План мероприятий', route: '/technology' } },
+      ),
       section('Заметки в журнале', notes.map(journalItem), { limit: 5, footer: { label: 'Журнал', route: `/journal` } }),
-      issues.length ? section('Проблемы', issues.map(issueItem), { limit: issues.length, footer: { label: 'Все проблемы', route: `/issues?person=${encodeURIComponent(id)}` } }) : null,
-      agreements.length ? section('Договорённости', agreements.map((item) => agreementItem(item, today)), { limit: agreements.length, footer: { label: 'Все договорённости', route: `/agreements?person=${encodeURIComponent(id)}` } }) : null,
+      issues.length
+        ? section('Проблемы', issues.map(issueItem), {
+          limit: issues.length,
+          footer: { label: 'Все проблемы', route: `/issues?person=${encodeURIComponent(id)}` },
+        })
+        : null,
+      agreements.length
+        ? section('Договорённости', agreements.map((item) => agreementItem(item, today)), {
+          limit: agreements.length,
+          footer: { label: 'Все договорённости', route: `/agreements?person=${encodeURIComponent(id)}` },
+        })
+        : null,
     ].filter(Boolean);
 
     return {
       type: 'person',
       title: person.name,
       person: {
-        id: person.id, name: person.name, role: person.role || '', slug: person.slug || '',
-        photoUrl: person.photoUrl || '', photoPosition: person.photoPosition || '', type: person.type || 'team',
-        status: person.status || 'active', timezone: person.timezone || '', workStart: person.workStart || '', workEnd: person.workEnd || '',
+        id: person.id,
+        name: person.name,
+        role: person.role || '',
+        slug: person.slug || '',
+        photoUrl: person.photoUrl || '',
+        photoPosition: person.photoPosition || '',
+        type: person.type || 'team',
+        status: person.status || 'active',
+        timezone: person.timezone || '',
+        workStart: person.workStart || '',
+        workEnd: person.workEnd || '',
       },
       signals: [],
       sections,
     };
   }
-
 
   function teamDigest(user) {
     const today = todayKey();
@@ -921,12 +952,24 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
       ...(footer ? { footer } : {}),
     });
 
+    // Сигналы наверху сводки — краткий ответ на «на что обратить внимание сегодня»
+    // ещё до того, как читать сами карточки: просрочки и важные проблемы важнее
+    // всего, встречи без итогов — предупреждение, а если тревожного ничего нет,
+    // сводка честно говорит об этом, а не остаётся пустой строкой.
+    const overdueTasks = ownTasks.filter((task) => task.dueDate && dateKey(task.dueDate) < today);
+    const highIssues = issues.filter((item) => item.severity === 'high');
+    const signals = [];
+    if (overdueTasks.length) signals.push({ tone: 'danger', text: `${overdueTasks.length} ${plural(overdueTasks.length, 'просроченная задача', 'просроченные задачи', 'просроченных задач')}` });
+    if (highIssues.length) signals.push({ tone: 'danger', text: `${highIssues.length} ${plural(highIssues.length, 'серьёзная проблема', 'серьёзные проблемы', 'серьёзных проблем')}` });
+    if (meetingsWithoutOutcomes.length) signals.push({ tone: 'warning', text: `${meetingsWithoutOutcomes.length} ${plural(meetingsWithoutOutcomes.length, 'встреча без итогов', 'встречи без итогов', 'встреч без итогов')}` });
+    if (!signals.length) signals.push({ tone: 'ok', text: 'Тревожных сигналов нет' });
+
     return {
       type: 'today',
       title: focus ? `Чем заняться сегодня — ${focus.name}` : 'Чем заняться сегодня',
       subtitle: ruDate(today),
-      ...(focus ? { person: { id: focus.id, name: focus.name, role: focus.role || '', slug: focus.slug || '', photoUrl: focus.photoUrl || '', photoPosition: focus.photoPosition || '', type: focus.type || 'team' } } : {}),
-      signals: [],
+      ...(focus ? { person: focusPersonSummary(focus) } : {}),
+      signals,
       // Пустые карточки в дневном сценарии не показываем: ответ должен содержать
       // только реальные действия, которыми можно заняться сейчас.
       sections: [
@@ -1001,7 +1044,7 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
       type: 'week',
       title: focus ? `Обзор недели — ${focus.name}` : 'Обзор недели',
       subtitle: `${ruDate(today)} — ${ruDate(weekEnd)}`,
-      ...(focus ? { person: { id: focus.id, name: focus.name, role: focus.role || '', slug: focus.slug || '', photoUrl: focus.photoUrl || '', photoPosition: focus.photoPosition || '', type: focus.type || 'team' } } : {}),
+      ...(focus ? { person: focusPersonSummary(focus) } : {}),
       signals,
       sections: [
         section('Встречи недели', meetings.map((meeting) => meetingItem(meeting, user, focus ? personId : null)), { footer: { label: 'Календарь', route: '/calendar' } }),
@@ -1022,7 +1065,6 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
       ].filter(Boolean),
     };
   }
-
 
   // Узкие персональные запросы должны возвращать только запрошенный блок сводки,
   // а не весь person digest. Проверяем их раньше общих «как дела у …».
@@ -1070,14 +1112,21 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
     return { kind: 'ambiguous', query, ambiguous: { fragment, hintKey: resolution.hintKey, candidates: resolution.candidates } };
   }
 
+  // Как именно был выбран человек и кто ещё подходил — используется и когда
+  // разрешение произошло внутри digestFocusFor (сводки дня/недели), и когда
+  // оно сделано напрямую в smartSearch (personDigest/scopedPersonDigest).
+  function resolutionSummary(resolution) {
+    return {
+      via: resolution.via,
+      hintKey: resolution.hintKey,
+      personId: resolution.person.id,
+      alternatives: (resolution.candidates || []).filter((item) => item.id !== resolution.person.id),
+    };
+  }
+
   function resolutionPayload(focus) {
     if (!focus?.resolution || !focus.person) return undefined;
-    return {
-      via: focus.resolution.via,
-      hintKey: focus.resolution.hintKey,
-      personId: focus.person.id,
-      alternatives: (focus.resolution.candidates || []).filter((item) => item.id !== focus.person.id),
-    };
+    return resolutionSummary(focus.resolution);
   }
 
   function smartSearch(rawQuery, user, options = {}) {
@@ -1124,7 +1173,7 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
         return {
           kind: 'digest',
           query,
-          resolution: { via: resolution.via, hintKey: resolution.hintKey, personId: resolution.person.id, alternatives: (resolution.candidates || []).filter((item) => item.id !== resolution.person.id) },
+          resolution: resolutionSummary(resolution),
           digest: scopedPersonDigest(resolution.person, user, personSection.section),
         };
       }
@@ -1148,7 +1197,7 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
         return {
           kind: 'digest',
           query,
-          resolution: { via: resolution.via, hintKey: resolution.hintKey, personId: resolution.person.id, alternatives: (resolution.candidates || []).filter((item) => item.id !== resolution.person.id) },
+          resolution: resolutionSummary(resolution),
           digest: personDigest(resolution.person, user),
         };
       }

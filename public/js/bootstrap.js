@@ -59,8 +59,15 @@ document.addEventListener('click', (event) => {
     Router.go(route.dataset.route);
     return;
   }
-  if (event.target.closest?.('[data-router-back]')) { event.preventDefault(); Router.back(); return; }
-  if (event.target.closest?.('[data-modal-close]')) { event.preventDefault(); Modal.close(); }
+  if (event.target.closest?.('[data-router-back]')) {
+    event.preventDefault();
+    Router.back();
+    return;
+  }
+  if (event.target.closest?.('[data-modal-close]')) {
+    event.preventDefault();
+    Modal.close();
+  }
 });
 
 document.addEventListener('click', (event) => {
@@ -79,7 +86,10 @@ document.addEventListener('click', (event) => {
   if (FeatureLoader.canRun(command)) {
     event.preventDefault();
     if (node.dataset.commandStop === '1') event.stopPropagation();
-    FeatureLoader.run(command, ...args).catch((error) => { console.error(error); toast('Не удалось выполнить действие'); });
+    FeatureLoader.run(command, ...args).catch((error) => {
+      console.error(error);
+      toast('Не удалось выполнить действие');
+    });
     return;
   }
 
@@ -103,10 +113,12 @@ document.addEventListener('click', (event) => {
   event.preventDefault();
   Views[key] = node.dataset.viewValue ?? null;
   if (node.dataset.viewReset) {
-    for (const resetKey of node.dataset.viewReset.split(',').map((v) => v.trim()).filter(Boolean)) Views[resetKey] = null;
+    const resetKeys = node.dataset.viewReset.split(',').map((v) => v.trim()).filter(Boolean);
+    for (const resetKey of resetKeys) Views[resetKey] = null;
   }
   const arg = node.dataset.viewRenderArg;
-  if (arg !== undefined) Views[render](arg); else Views[render]();
+  if (arg !== undefined) Views[render](arg);
+  else Views[render]();
 });
 
 // Sidebar interactions are declarative as well: no inline mouse/focus/click JS.
@@ -141,7 +153,10 @@ document.addEventListener('focusout', (event) => {
 // клику, в отличие от hover-флайаутов свёрнутого сайдбара выше.
 document.addEventListener('click', (event) => {
   const trigger = event.target.closest?.('[data-header-menu]');
-  if (trigger) { openHeaderMenu(event, trigger.dataset.headerMenu); return; }
+  if (trigger) {
+    openHeaderMenu(event, trigger.dataset.headerMenu);
+    return;
+  }
   if (event.target.closest?.('[data-close-header-menu]')) closeHeaderMenu();
 });
 

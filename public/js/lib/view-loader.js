@@ -15,7 +15,6 @@ const ACTION_FEATURES = {
   openLabModal: 'labs',
   openMeetingModal: 'meetings',
   openPersonLoadModal: 'projects',
-  openDocumentModal: 'documents',
   openToolModal: 'tools',
   openProcessModal: 'processes',
   openTaskModal: 'tasks',
@@ -29,8 +28,14 @@ function loadViewScript(name) {
   if (_loadingViewScripts.has(name)) return _loadingViewScripts.get(name);
   const url = new URL(`${name}.js`, VIEW_BASE_URL);
   const promise = import(url.href)
-    .then(() => { _loadedViewScripts.add(name); _loadingViewScripts.delete(name); })
-    .catch((error) => { _loadingViewScripts.delete(name); throw new Error(`Не удалось загрузить feature: ${name}`, { cause: error }); });
+    .then(() => {
+      _loadedViewScripts.add(name);
+      _loadingViewScripts.delete(name);
+    })
+    .catch((error) => {
+      _loadingViewScripts.delete(name);
+      throw new Error(`Не удалось загрузить feature: ${name}`, { cause: error });
+    });
   _loadingViewScripts.set(name, promise);
   return promise;
 }

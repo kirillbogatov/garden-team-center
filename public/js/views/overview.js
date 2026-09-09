@@ -258,6 +258,220 @@ function overviewShelfRowsHtml(widgets, shelf, renderWidget, addSlot) {
   return `${rowsHtml}${addSlot}`;
 }
 
+// ---------------------------------------------------------------------------
+// Signal/quick-action widget renderers
+//
+// Each function renders one widget type's body for overviewWidgetShell().
+// ctx bundles the data fetched once at the top of Views.overview (tasks,
+// meetings, the "my …" pre-filtered lists, today/weekEnd date keys, etc.) so
+// none of these need to re-fetch or re-filter anything themselves.
+// ---------------------------------------------------------------------------
+
+function overviewMyTasksWidgetHtml(widget, shelf, ctx) {
+  const rows = ctx.myTasks.slice(0, 5).map((t) => overviewMiniRow({ title: t.title, meta: TASK_STATUS_LABEL[t.status] || '', iconName: 'tasks', command: 'openTaskModal', commandArg: t.id }));
+  return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Нет открытых задач'), `<a data-route="/tasks?mine=1&project=all">Все мои задачи</a>`);
+}
+
+function overviewProjectTasksWidgetHtml(widget, shelf, ctx) {
+  const project = store.project(widget.projectId);
+  const list = ctx.tasks.filter((t) => !t.archivedAt && t.status !== 'done' && t.projectId === widget.projectId);
+  const rows = list.slice(0, 5).map((t) => overviewMiniRow({ title: t.title, meta: TASK_STATUS_LABEL[t.status] || '', iconName: 'tasks', command: 'openTaskModal', commandArg: t.id }));
+  return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty(project ? 'Нет открытых задач' : 'Проект недоступен'), project ? `<a data-route="${projectPath(project)}">Открыть проект</a>` : '');
+}
+
+function overviewMyIssuesWidgetHtml(widget, shelf, ctx) {
+  const rows = ctx.myIssues.slice(0, 5).map((i) => overviewMiniRow({ title: i.title, meta: ISSUE_STATUS_LABEL?.[i.status] || '', iconName: 'issues', command: 'openIssueModal', commandArg: i.id }));
+  return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Нет нерешённых проблем'), `<a data-route="/issues?mine=1">Все мои проблемы</a>`);
+}
+
+function overviewMyAgreementsWidgetHtml(widget, shelf, ctx) {
+  const rows = ctx.myAgreements.slice(0, 5).map((a) => overviewMiniRow({ title: plainJournalText(a.text).slice(0, 100) || 'Договорённость', meta: a.dueDate ? fmtDate(a.dueDate) : '', iconName: 'agreements', command: 'openAgreementModal', commandArg: a.id }));
+  return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Нет открытых договорённостей'), `<a data-route="/agreements?mine=1">Все мои договорённости</a>`);
+}
+
+function overviewMyJournalWidgetHtml(widget, shelf, ctx) {
+  const rows = ctx.authoredJournal.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5).map((j) => overviewMiniRow({ title: plainJournalText(j.text).split(/\r?\n/)[0].slice(0, 100) || 'Запись', meta: JOURNAL_KIND_LABEL[j.kind] || '', iconName: 'journal', route: `/journal?entry=${encodeURIComponent(j.id)}` }));
+  return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Журнал пока пуст'), `<a data-route="/journal">Открыть журнал</a>`);
+}
+
+function overviewMyIdeasWidgetHtml(widget, shelf, ctx) {
+  const rows = ctx.myIdeas.slice().sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt)).slice(0, 5).map((idea) => overviewMiniRow({ title: idea.title || 'Идея', meta: IDEA_STATUS_LABEL?.[idea.status] || '', iconName: 'ideas', route: '/labs?tab=ideas' }));
+  return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Идей пока нет'), `<a data-route="/labs?tab=ideas">Все идеи</a>`);
+}
+
+function overviewMyMeetingsWidgetHtml(widget, shelf, ctx) {
+  const upcoming = ctx.myMeetings.filter((m) => String(m.date || '').slice(0, 10) >= ctx.today).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const rows = upcoming.slice(0, 5).map((m) => overviewMiniRow({ title: meetingDisplayTitle(m), meta: fmtDate(m.date), iconName: 'meetings', route: meetingPath ? meetingPath(m) : `/meetings/${encodeURIComponent(m.meetingKey || m.id)}` }));
+  return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Нет предстоящих встреч'), `<a data-route="/meetings">Все встречи</a>`);
+}
+
+function overviewQuickLinksWidgetHtml(widget, shelf) {
+  const links = [
+    ['tasks', 'Задачи', '/tasks'], ['projects', 'Проекты', '/projects'], ['team', 'Команда', '/team'], ['meetings', 'Встречи', '/meetings'],
+    ['journal', 'Журнал', '/journal'], ['labs', 'The Labs', '/labs'], ['documents', 'База знаний', '/knowledge-base'], ['calendar', 'Календарь', '/calendar'],
+  ];
+  const body = `<div class="overview-quick-links">${links.map(([ico, label, path]) => `<button type="button" data-route="${path}">${icon(ico, 15)}<span>${label}</span></button>`).join('')}</div>`;
+  return overviewWidgetShell(widget, shelf, body);
+}
+
+function overviewGoalsWidgetHtml(widget, shelf, ctx) {
+  const activeGoals = ctx.goals.slice(0, 5);
+  const rows = activeGoals.map((g) => overviewMiniRow({ title: g.title, iconName: 'goals', route: goalPath(g) }));
+  return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Нет активных целей'), `<a data-route="/goals">Все цели</a>`);
+}
+
+function overviewAttentionNotesWidgetHtml(widget, shelf, ctx) {
+  const pinned = ctx.journal.filter((entry) => entry.attentionPinned).sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
+  const rows = pinned.slice(0, 7).map((entry) => overviewMiniRow({ title: plainJournalText(entry.text).split(/\r?\n/)[0].slice(0, 110) || 'Заметка', meta: JOURNAL_KIND_LABEL[entry.kind] || '', iconName: 'bookmark', route: `/journal?entry=${encodeURIComponent(entry.id)}` }));
+  return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Закрепите записи в журнале, чтобы увидеть их здесь'), `<a data-route="/journal">Открыть журнал</a>`);
+}
+
+// «Проблемы с загрузкой»: вместо простого списка «кто сколько загружен»
+// показываем только тех, у кого реально стоит разобраться — нет
+// активных проектов, есть проекты без единой открытой задачи, или
+// суммарная загрузка по активным проектам неполная либо превышает норму.
+function overviewTeamWorkloadWidgetHtml(widget, shelf, ctx) {
+  const activeProjects = store.projects.filter((pr) => pr.status === 'active');
+  const openTaskStatuses = new Set(['todo', 'in_progress', 'in_review', 'paused', 'blocked']);
+  const problems = store.activeTeam().map((p) => {
+    const projects = activeProjects.filter((pr) => (pr.memberIds || []).includes(p.id));
+    const maxHours = projects.reduce((sum, pr) => sum + PROJECT_LOAD_OPTIONS[normalizeProjectMemberLoad((pr.memberLoads || {})[p.id]).mode].max, 0);
+    const level = projectLoadLevel(maxHours);
+    const projectIds = new Set(projects.map((pr) => pr.id));
+    const hasOpenTaskOnProject = ctx.tasks.some((t) => !t.archivedAt && openTaskStatuses.has(t.status) && t.projectId && projectIds.has(t.projectId) && (t.assigneeIds || []).includes(p.id));
+    const issues = [];
+    if (!projects.length) issues.push({ label: 'Нет активных проектов', tone: 'danger' });
+    else if (!hasOpenTaskOnProject) issues.push({ label: 'Нет задач на активном проекте', tone: 'warning' });
+    if (projects.length && (level.tone === 'overloaded' || level.tone === 'medium' || level.tone === 'small')) {
+      issues.push({ label: level.tone === 'overloaded' ? 'Перегруз' : 'Неполная загрузка', tone: level.tone === 'overloaded' ? 'danger' : 'warning' });
+    }
+    return { p, issues };
+  }).filter(({ issues }) => issues.length)
+    .sort((a, b) => (b.issues.some((i) => i.tone === 'danger') ? 1 : 0) - (a.issues.some((i) => i.tone === 'danger') ? 1 : 0));
+  const rows = problems.slice(0, 6).map(({ p, issues }) => overviewMiniRow({
+    title: p.name,
+    meta: issues.map((i) => i.label).join(' · '),
+    person: p,
+    route: `${personPath(p)}?tab=load`,
+    tone: issues.some((i) => i.tone === 'danger') ? 'danger' : 'warning',
+  }));
+  return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Проблем с загрузкой нет'), `<a data-route="/projects?tab=load">Загрузка команды</a>`);
+}
+
+function overviewPriorityTasksWidgetHtml(widget, shelf, ctx) {
+  const { tasks, personId, today, settings } = ctx;
+  const priorityMode = settings?.taskPriorityMode || 'balanced';
+  const isTeamWidget = widget.type === 'team-priority-tasks';
+  const sourceTasks = isTeamWidget
+    ? tasks.filter((task) => !personId || !(task.assigneeIds || []).includes(personId))
+    : (personId ? tasks.filter((task) => (task.assigneeIds || []).includes(personId)) : []);
+  const ranked = rankedPriorityTasks(sourceTasks, priorityMode, today).slice(0, 5);
+  const rows = ranked.map(({ task, info }) => {
+    const assignee = store.person((task.assigneeIds || [])[0]) || null;
+    const projectName = store.project(task.projectId)?.name || '';
+    const metaParts = [...info.reasons];
+    if (projectName) metaParts.push(projectName);
+    return overviewMiniRow({
+      title: task.title,
+      meta: metaParts.join(' · '),
+      person: isTeamWidget ? assignee : null,
+      iconName: isTeamWidget ? '' : 'tasks',
+      route: taskPath(task),
+      tone: info.days != null && info.days < 0 ? 'warning' : '',
+      trailingHtml: taskStatusBadge(task.status || 'todo', task.id),
+    });
+  });
+  const emptyText = isTeamWidget ? 'Нет приоритетных задач команды' : 'Нет моих задач с дедлайном или пометкой «Важная»';
+  const taskRoute = isTeamWidget ? '/tasks?project=all' : '/tasks?mine=1&project=all';
+  return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty(emptyText), `<a data-route="${taskRoute}">${isTeamWidget ? 'Все задачи' : 'Все мои задачи'}</a>`);
+}
+
+function overviewMissedMeetingsWidgetHtml(widget, shelf, ctx) {
+  const missedMeetings = ctx.meetings
+    .map((meeting) => ({ meeting, days: meetingMissedDays(meeting, ctx.today) }))
+    .filter((item) => item.days > 0)
+    .sort((a, b) => b.days - a.days || String(a.meeting.date || '').localeCompare(String(b.meeting.date || '')));
+  const rows = missedMeetings.slice(0, 7).map(({ meeting, days }) => overviewMiniRow({
+    title: meetingDisplayTitle(meeting),
+    meta: `${MEETING_TYPE_LABEL[meeting.type] || 'Другое'} · ${days} ${pluralRu(days, 'день', 'дня', 'дней')} назад`,
+    iconName: 'meetings',
+    route: meetingPath ? meetingPath(meeting) : `/meetings/${encodeURIComponent(meeting.meetingKey || meeting.id)}`,
+    tone: 'warning',
+  }));
+  return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Нет встреч без итогов'), `<a data-route="/meetings?period=missed">Все без итогов</a>`);
+}
+
+function overviewUnresolvedIssuesWidgetHtml(widget, shelf, ctx) {
+  const list = ctx.issues.filter((i) => i.status !== 'resolved').sort((a, b) => (a.severity === 'high' ? -1 : 0) - (b.severity === 'high' ? -1 : 0));
+  const rows = list.slice(0, 6).map((i) => overviewMiniRow({ title: i.title, meta: store.project(i.projectId)?.name || '', iconName: 'issues', command: 'openIssueModal', commandArg: i.id, tone: i.severity === 'high' ? 'danger' : '' }));
+  return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Нерешённых проблем нет'), `<a data-route="/issues">Все проблемы</a>`);
+}
+
+function overviewWeekEventsWidgetHtml(widget, shelf, ctx) {
+  const eventRows = [];
+  const tomorrowDate = new Date(ctx.now.getFullYear(), ctx.now.getMonth(), ctx.now.getDate() + 1);
+  const tomorrow = localDateKey(tomorrowDate);
+  // «Сегодня»/«Завтра» выделяем цветом (metaHtml, не meta) — это то, на что
+  // в первую очередь смотрят в виджете предстоящих 7 дней; более дальние
+  // даты остаются обычным текстом.
+  const dayLabelHtml = (value) => {
+    const key = String(value || '').slice(0, 10);
+    if (key === ctx.today) return `<span class="overview-day-flag">Сегодня</span> · ${escapeHtml(fmtDate(key))}`;
+    if (key === tomorrow) return `<span class="overview-day-flag">Завтра</span> · ${escapeHtml(fmtDate(key))}`;
+    return escapeHtml(fmtDate(key));
+  };
+  const eventMetaHtml = (type, value, extra = '') => [escapeHtml(type), extra ? escapeHtml(extra) : '', dayLabelHtml(value)].filter(Boolean).join(' · ');
+
+  ctx.meetings
+    .filter((m) => { const d = String(m.date || '').slice(0, 10); return d >= ctx.today && d <= ctx.weekEnd; })
+    .forEach((m) => {
+      const meetingType = MEETING_TYPE_LABEL[m.type] || 'Встреча';
+      eventRows.push({
+        sort: String(m.date),
+        html: overviewMiniRow({
+          title: meetingDisplayTitle(m),
+          metaHtml: eventMetaHtml('Встреча', m.date, meetingType !== 'Встреча' ? meetingType : ''),
+          iconName: 'meetings',
+          route: `/meetings/${encodeURIComponent(m.meetingKey || m.id)}`,
+        }),
+      });
+    });
+
+  ctx.tasks
+    .filter((t) => !t.archivedAt && t.status !== 'done' && t.dueDate && String(t.dueDate).slice(0, 10) >= ctx.today && String(t.dueDate).slice(0, 10) <= ctx.weekEnd)
+    .forEach((t) => eventRows.push({
+      sort: `${String(t.dueDate).slice(0, 10)}T23:59`,
+      html: overviewMiniRow({
+        title: t.title,
+        metaHtml: eventMetaHtml('Задача', t.dueDate),
+        iconName: 'tasks',
+        command: 'openTaskModal',
+        commandArg: t.id,
+      }),
+    }));
+
+  const absenceTypeLabel = { vacation: 'Отпуск', sick: 'Больничный', dayoff: 'Отгул' };
+  store.vacations
+    .filter((v) => v.startDate <= ctx.weekEnd && v.endDate >= ctx.today)
+    .forEach((v) => {
+      const person = store.person(v.personId);
+      if (!person) return;
+      const displayDate = v.startDate < ctx.today ? ctx.today : v.startDate;
+      eventRows.push({
+        sort: `${displayDate}T00:00`,
+        html: overviewMiniRow({
+          title: person.name,
+          metaHtml: eventMetaHtml(absenceTypeLabel[v.type] || 'Отсутствие', displayDate),
+          person,
+          route: personPath(person),
+        }),
+      });
+    });
+
+  eventRows.sort((a, b) => a.sort.localeCompare(b.sort));
+  return overviewWidgetShell(widget, shelf, eventRows.length ? overviewList(eventRows.slice(0, 7).map((x) => x.html)) : overviewEmpty('На ближайшие 7 дней событий нет'), `<a data-route="/calendar">Календарь</a>`);
+}
+
 Views.overview = async function () {
   Views._overviewEditing = !!Views._overviewEditing;
   const customizeLabel = Views._overviewEditing ? 'Готово' : 'Настроить';
@@ -346,7 +560,6 @@ Views.overview = async function () {
   const today = todayStr();
   const weekEndDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 6);
   const weekEnd = localDateKey(weekEndDate);
-  const activeTaskStatuses = new Set(['todo', 'in_progress', 'in_review']);
 
   const myTasks = personId ? tasks.filter((t) => !t.archivedAt && t.status !== 'done' && (t.assigneeIds || []).includes(personId)) : [];
   const myIssues = issues.filter((i) => i.status !== 'resolved' && (i.createdByUserId === userId || (personId && (i.relatedPersonIds || []).includes(personId))));
@@ -355,196 +568,23 @@ Views.overview = async function () {
   const myIdeas = labs.filter((item) => item.entityType === 'idea' && (!personId || item.authorId === personId || item.createdByUserId === userId));
   const myMeetings = meetings.filter((m) => !personId || (m.participantIds || []).includes(personId) || m.createdByUserId === userId);
 
+  const widgetCtx = { tasks, meetings, issues, goals, journal, labs, settings, personId, today, weekEnd, now, myTasks, myIssues, myAgreements, authoredJournal, myIdeas, myMeetings };
   const renderWidget = (widget, shelf) => {
-    if (widget.type === 'my-tasks') {
-      const rows = myTasks.slice(0, 5).map((t) => overviewMiniRow({ title: t.title, meta: TASK_STATUS_LABEL[t.status] || '', iconName: 'tasks', command: 'openTaskModal', commandArg: t.id }));
-      return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Нет открытых задач'), `<a data-route="/tasks?mine=1&project=all">Все мои задачи</a>`);
-    }
-    if (widget.type === 'project-tasks') {
-      const project = store.project(widget.projectId);
-      const list = tasks.filter((t) => !t.archivedAt && t.status !== 'done' && t.projectId === widget.projectId);
-      const rows = list.slice(0, 5).map((t) => overviewMiniRow({ title: t.title, meta: TASK_STATUS_LABEL[t.status] || '', iconName: 'tasks', command: 'openTaskModal', commandArg: t.id }));
-      return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty(project ? 'Нет открытых задач' : 'Проект недоступен'), project ? `<a data-route="${projectPath(project)}">Открыть проект</a>` : '');
-    }
-    if (widget.type === 'my-issues') {
-      const rows = myIssues.slice(0, 5).map((i) => overviewMiniRow({ title: i.title, meta: ISSUE_STATUS_LABEL?.[i.status] || '', iconName: 'issues', command: 'openIssueModal', commandArg: i.id }));
-      return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Нет нерешённых проблем'), `<a data-route="/issues?mine=1">Все мои проблемы</a>`);
-    }
-    if (widget.type === 'my-agreements') {
-      const rows = myAgreements.slice(0, 5).map((a) => overviewMiniRow({ title: plainJournalText(a.text).slice(0, 100) || 'Договорённость', meta: a.dueDate ? fmtDate(a.dueDate) : '', iconName: 'agreements', command: 'openAgreementModal', commandArg: a.id }));
-      return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Нет открытых договорённостей'), `<a data-route="/agreements?mine=1">Все мои договорённости</a>`);
-    }
-    if (widget.type === 'my-journal') {
-      const rows = authoredJournal.slice().sort((a,b) => new Date(b.createdAt)-new Date(a.createdAt)).slice(0, 5).map((j) => overviewMiniRow({ title: plainJournalText(j.text).split(/\r?\n/)[0].slice(0, 100) || 'Запись', meta: JOURNAL_KIND_LABEL[j.kind] || '', iconName: 'journal', route: `/journal?entry=${encodeURIComponent(j.id)}` }));
-      return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Журнал пока пуст'), `<a data-route="/journal">Открыть журнал</a>`);
-    }
-    if (widget.type === 'my-ideas') {
-      const rows = myIdeas.slice().sort((a,b) => new Date(b.updatedAt || b.createdAt)-new Date(a.updatedAt || a.createdAt)).slice(0, 5).map((idea) => overviewMiniRow({ title: idea.title || 'Идея', meta: IDEA_STATUS_LABEL?.[idea.status] || '', iconName: 'ideas', route: '/labs?tab=ideas' }));
-      return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Идей пока нет'), `<a data-route="/labs?tab=ideas">Все идеи</a>`);
-    }
-    if (widget.type === 'my-meetings') {
-      const upcoming = myMeetings.filter((m) => String(m.date || '').slice(0,10) >= today).sort((a,b) => String(a.date).localeCompare(String(b.date)));
-      const rows = upcoming.slice(0, 5).map((m) => overviewMiniRow({ title: meetingDisplayTitle(m), meta: fmtDate(m.date), iconName: 'meetings', route: meetingPath ? meetingPath(m) : `/meetings/${encodeURIComponent(m.meetingKey || m.id)}` }));
-      return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Нет предстоящих встреч'), `<a data-route="/meetings">Все встречи</a>`);
-    }
-    if (widget.type === 'quick-links') {
-      const links = [
-        ['tasks','Задачи','/tasks'], ['projects','Проекты','/projects'], ['team','Команда','/team'], ['meetings','Встречи','/meetings'],
-        ['journal','Журнал','/journal'], ['labs','The Labs','/labs'], ['documents','База знаний','/knowledge-base'], ['calendar','Календарь','/calendar'],
-      ];
-      const body = `<div class="overview-quick-links">${links.map(([ico,label,path]) => `<button type="button" data-route="${path}">${icon(ico, 15)}<span>${label}</span></button>`).join('')}</div>`;
-      return overviewWidgetShell(widget, shelf, body);
-    }
-    if (widget.type === 'goals') {
-      const activeGoals = goals.slice(0, 5);
-      const rows = activeGoals.map((g) => overviewMiniRow({ title: g.title, iconName: 'goals', route: goalPath(g) }));
-      return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Нет активных целей'), `<a data-route="/goals">Все цели</a>`);
-    }
-    if (widget.type === 'attention-notes') {
-      const pinned = journal.filter((entry) => entry.attentionPinned).sort((a,b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
-      const rows = pinned.slice(0, 7).map((entry) => overviewMiniRow({ title: plainJournalText(entry.text).split(/\r?\n/)[0].slice(0, 110) || 'Заметка', meta: JOURNAL_KIND_LABEL[entry.kind] || '', iconName: 'bookmark', route: `/journal?entry=${encodeURIComponent(entry.id)}` }));
-      return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Закрепите записи в журнале, чтобы увидеть их здесь'), `<a data-route="/journal">Открыть журнал</a>`);
-    }
-    if (widget.type === 'team-workload') {
-      // «Проблемы с загрузкой»: вместо простого списка «кто сколько загружен»
-      // показываем только тех, у кого реально стоит разобраться — нет
-      // активных проектов, есть проекты без единой открытой задачи, или
-      // суммарная загрузка по активным проектам неполная либо превышает норму.
-      const activeProjects = store.projects.filter((pr) => pr.status === 'active');
-      const openTaskStatuses = new Set(['todo', 'in_progress', 'in_review', 'paused', 'blocked']);
-      const problems = store.activeTeam().map((p) => {
-        const projects = activeProjects.filter((pr) => (pr.memberIds || []).includes(p.id));
-        const maxHours = projects.reduce((sum, pr) => sum + PROJECT_LOAD_OPTIONS[normalizeProjectMemberLoad((pr.memberLoads || {})[p.id]).mode].max, 0);
-        const level = projectLoadLevel(maxHours);
-        const projectIds = new Set(projects.map((pr) => pr.id));
-        const hasOpenTaskOnProject = tasks.some((t) => !t.archivedAt && openTaskStatuses.has(t.status) && t.projectId && projectIds.has(t.projectId) && (t.assigneeIds || []).includes(p.id));
-        const issues = [];
-        if (!projects.length) issues.push({ label: 'Нет активных проектов', tone: 'danger' });
-        else if (!hasOpenTaskOnProject) issues.push({ label: 'Нет задач на активном проекте', tone: 'warning' });
-        if (projects.length && (level.tone === 'overloaded' || level.tone === 'medium' || level.tone === 'small')) {
-          issues.push({ label: level.tone === 'overloaded' ? 'Перегруз' : 'Неполная загрузка', tone: level.tone === 'overloaded' ? 'danger' : 'warning' });
-        }
-        return { p, issues };
-      }).filter(({ issues }) => issues.length)
-        .sort((a, b) => (b.issues.some((i) => i.tone === 'danger') ? 1 : 0) - (a.issues.some((i) => i.tone === 'danger') ? 1 : 0));
-      const rows = problems.slice(0, 6).map(({ p, issues }) => overviewMiniRow({
-        title: p.name,
-        meta: issues.map((i) => i.label).join(' · '),
-        person: p,
-        route: `${personPath(p)}?tab=load`,
-        tone: issues.some((i) => i.tone === 'danger') ? 'danger' : 'warning',
-      }));
-      return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Проблем с загрузкой нет'), `<a data-route="/projects?tab=load">Загрузка команды</a>`);
-    }
-    if (widget.type === 'priority-tasks' || widget.type === 'team-priority-tasks') {
-      const priorityMode = settings?.taskPriorityMode || 'balanced';
-      const isTeamWidget = widget.type === 'team-priority-tasks';
-      const sourceTasks = isTeamWidget
-        ? tasks.filter((task) => !personId || !(task.assigneeIds || []).includes(personId))
-        : (personId ? tasks.filter((task) => (task.assigneeIds || []).includes(personId)) : []);
-      const ranked = rankedPriorityTasks(sourceTasks, priorityMode, today).slice(0, 5);
-      const rows = ranked.map(({ task, info }) => {
-        const assignee = store.person((task.assigneeIds || [])[0]) || null;
-        const projectName = store.project(task.projectId)?.name || '';
-        const metaParts = [...info.reasons];
-        if (projectName) metaParts.push(projectName);
-        return overviewMiniRow({
-          title: task.title,
-          meta: metaParts.join(' · '),
-          person: isTeamWidget ? assignee : null,
-          iconName: isTeamWidget ? '' : 'tasks',
-          route: taskPath(task),
-          tone: info.days != null && info.days < 0 ? 'warning' : '',
-          trailingHtml: taskStatusBadge(task.status || 'todo', task.id),
-        });
-      });
-      const emptyText = isTeamWidget ? 'Нет приоритетных задач команды' : 'Нет моих задач с дедлайном или пометкой «Важная»';
-      const taskRoute = isTeamWidget ? '/tasks?project=all' : '/tasks?mine=1&project=all';
-      return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty(emptyText), `<a data-route="${taskRoute}">${isTeamWidget ? 'Все задачи' : 'Все мои задачи'}</a>`);
-    }
-    if (widget.type === 'missed-meetings') {
-      const missedMeetings = meetings
-        .map((meeting) => ({ meeting, days: meetingMissedDays(meeting, today) }))
-        .filter((item) => item.days > 0)
-        .sort((a, b) => b.days - a.days || String(a.meeting.date || '').localeCompare(String(b.meeting.date || '')));
-      const rows = missedMeetings.slice(0, 7).map(({ meeting, days }) => overviewMiniRow({
-        title: meetingDisplayTitle(meeting),
-        meta: `${MEETING_TYPE_LABEL[meeting.type] || 'Другое'} · ${days} ${pluralRu(days, 'день', 'дня', 'дней')} назад`,
-        iconName: 'meetings',
-        route: meetingPath ? meetingPath(meeting) : `/meetings/${encodeURIComponent(meeting.meetingKey || meeting.id)}`,
-        tone: 'warning',
-      }));
-      return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Нет встреч без итогов'), `<a data-route="/meetings?period=missed">Все без итогов</a>`);
-    }
-    if (widget.type === 'unresolved-issues') {
-      const list = issues.filter((i) => i.status !== 'resolved').sort((a,b) => (a.severity === 'high' ? -1 : 0) - (b.severity === 'high' ? -1 : 0));
-      const rows = list.slice(0, 6).map((i) => overviewMiniRow({ title: i.title, meta: store.project(i.projectId)?.name || '', iconName: 'issues', command: 'openIssueModal', commandArg: i.id, tone: i.severity === 'high' ? 'danger' : '' }));
-      return overviewWidgetShell(widget, shelf, rows.length ? overviewList(rows) : overviewEmpty('Нерешённых проблем нет'), `<a data-route="/issues">Все проблемы</a>`);
-    }
-    if (widget.type === 'week-events') {
-      const eventRows = [];
-      const tomorrowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-      const tomorrow = localDateKey(tomorrowDate);
-      // «Сегодня»/«Завтра» выделяем цветом (metaHtml, не meta) — это то, на что
-      // в первую очередь смотрят в виджете предстоящих 7 дней; более дальние
-      // даты остаются обычным текстом.
-      const dayLabelHtml = (value) => {
-        const key = String(value || '').slice(0, 10);
-        if (key === today) return `<span class="overview-day-flag">Сегодня</span> · ${escapeHtml(fmtDate(key))}`;
-        if (key === tomorrow) return `<span class="overview-day-flag">Завтра</span> · ${escapeHtml(fmtDate(key))}`;
-        return escapeHtml(fmtDate(key));
-      };
-      const eventMetaHtml = (type, value, extra = '') => [escapeHtml(type), extra ? escapeHtml(extra) : '', dayLabelHtml(value)].filter(Boolean).join(' · ');
-
-      meetings
-        .filter((m) => { const d = String(m.date || '').slice(0, 10); return d >= today && d <= weekEnd; })
-        .forEach((m) => {
-          const meetingType = MEETING_TYPE_LABEL[m.type] || 'Встреча';
-          eventRows.push({
-            sort: String(m.date),
-            html: overviewMiniRow({
-              title: meetingDisplayTitle(m),
-              metaHtml: eventMetaHtml('Встреча', m.date, meetingType !== 'Встреча' ? meetingType : ''),
-              iconName: 'meetings',
-              route: `/meetings/${encodeURIComponent(m.meetingKey || m.id)}`,
-            }),
-          });
-        });
-
-      tasks
-        .filter((t) => !t.archivedAt && t.status !== 'done' && t.dueDate && String(t.dueDate).slice(0, 10) >= today && String(t.dueDate).slice(0, 10) <= weekEnd)
-        .forEach((t) => eventRows.push({
-          sort: `${String(t.dueDate).slice(0, 10)}T23:59`,
-          html: overviewMiniRow({
-            title: t.title,
-            metaHtml: eventMetaHtml('Задача', t.dueDate),
-            iconName: 'tasks',
-            command: 'openTaskModal',
-            commandArg: t.id,
-          }),
-        }));
-
-      const absenceTypeLabel = { vacation: 'Отпуск', sick: 'Больничный', dayoff: 'Отгул' };
-      store.vacations
-        .filter((v) => v.startDate <= weekEnd && v.endDate >= today)
-        .forEach((v) => {
-          const person = store.person(v.personId);
-          if (!person) return;
-          const displayDate = v.startDate < today ? today : v.startDate;
-          eventRows.push({
-            sort: `${displayDate}T00:00`,
-            html: overviewMiniRow({
-              title: person.name,
-              metaHtml: eventMetaHtml(absenceTypeLabel[v.type] || 'Отсутствие', displayDate),
-              person,
-              route: personPath(person),
-            }),
-          });
-        });
-
-      eventRows.sort((a, b) => a.sort.localeCompare(b.sort));
-      return overviewWidgetShell(widget, shelf, eventRows.length ? overviewList(eventRows.slice(0, 7).map((x) => x.html)) : overviewEmpty('На ближайшие 7 дней событий нет'), `<a data-route="/calendar">Календарь</a>`);
-    }
+    if (widget.type === 'my-tasks') return overviewMyTasksWidgetHtml(widget, shelf, widgetCtx);
+    if (widget.type === 'project-tasks') return overviewProjectTasksWidgetHtml(widget, shelf, widgetCtx);
+    if (widget.type === 'my-issues') return overviewMyIssuesWidgetHtml(widget, shelf, widgetCtx);
+    if (widget.type === 'my-agreements') return overviewMyAgreementsWidgetHtml(widget, shelf, widgetCtx);
+    if (widget.type === 'my-journal') return overviewMyJournalWidgetHtml(widget, shelf, widgetCtx);
+    if (widget.type === 'my-ideas') return overviewMyIdeasWidgetHtml(widget, shelf, widgetCtx);
+    if (widget.type === 'my-meetings') return overviewMyMeetingsWidgetHtml(widget, shelf, widgetCtx);
+    if (widget.type === 'quick-links') return overviewQuickLinksWidgetHtml(widget, shelf);
+    if (widget.type === 'goals') return overviewGoalsWidgetHtml(widget, shelf, widgetCtx);
+    if (widget.type === 'attention-notes') return overviewAttentionNotesWidgetHtml(widget, shelf, widgetCtx);
+    if (widget.type === 'team-workload') return overviewTeamWorkloadWidgetHtml(widget, shelf, widgetCtx);
+    if (widget.type === 'priority-tasks' || widget.type === 'team-priority-tasks') return overviewPriorityTasksWidgetHtml(widget, shelf, widgetCtx);
+    if (widget.type === 'missed-meetings') return overviewMissedMeetingsWidgetHtml(widget, shelf, widgetCtx);
+    if (widget.type === 'unresolved-issues') return overviewUnresolvedIssuesWidgetHtml(widget, shelf, widgetCtx);
+    if (widget.type === 'week-events') return overviewWeekEventsWidgetHtml(widget, shelf, widgetCtx);
     return '';
   };
 

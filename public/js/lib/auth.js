@@ -1,39 +1,120 @@
 // Authentication feature.
 // ---------------- Авторизация ----------------
 
+// Уровень доступа раздела (см. server/auth-core.js) переводится в пару чисел
+// view/manage: 0 — нет доступа, 1 — только свои записи, 2 — все записи.
+// Так canView/canManage и т.п. ниже сравнивают числа, а не строки уровней.
+const ACCESS_LEVEL_CAPABILITIES = {
+  none: { view: 0, manage: 0 },
+  own_read: { view: 1, manage: 0 },
+  own_manage: { view: 1, manage: 1 },
+  all_read: { view: 2, manage: 0 },
+  all_own_manage: { view: 2, manage: 1 },
+  all_manage: { view: 2, manage: 2 },
+  // Синонимы уровней из более старых политик доступа.
+  read: { view: 2, manage: 0 },
+  own: { view: 2, manage: 1 },
+  manage: { view: 2, manage: 2 },
+};
+
+// Общая проверка формы смены пароля: используется и при обязательной смене
+// временного пароля, и в диалоге аккаунта — правила одни и те же.
+function passwordChangeValidationError(newPassword, confirmPassword) {
+  if (newPassword.length < 8) return 'Минимум 8 символов.';
+  if (newPassword !== confirmPassword) return 'Новые пароли не совпадают.';
+  return '';
+}
+
+function passwordChangeErrorMessage(err) {
+  return err.data?.error === 'wrong_current_password' ? 'Текущий пароль неверен.' : 'Не удалось сменить пароль.';
+}
+
 const Auth = {
   user: null,
   _starting: false,
   _started: false,
 
-  roles() { return Array.isArray(Auth.user?.roles) && Auth.user.roles.length ? Auth.user.roles : [Auth.user?.role || 'member']; },
-  hasRole(role) { return Auth.roles().includes(role); },
-  can(permission) { return Auth.isAdmin() || Boolean(Auth.user?.permissions?.[permission]); },
-  accessLevel(section) { return Auth.isAdmin() ? 'all_manage' : (Auth.user?.access?.[section] || 'none'); },
-  accessCapabilities(section) {
-    return ({
-      none:{ view:0, manage:0 }, own_read:{ view:1, manage:0 }, own_manage:{ view:1, manage:1 },
-      all_read:{ view:2, manage:0 }, all_own_manage:{ view:2, manage:1 }, all_manage:{ view:2, manage:2 },
-      read:{ view:2, manage:0 }, own:{ view:2, manage:1 }, manage:{ view:2, manage:2 },
-    })[Auth.accessLevel(section)] || { view:0, manage:0 };
+  roles() {
+    return Array.isArray(Auth.user?.roles) && Auth.user.roles.length ? Auth.user.roles : [Auth.user?.role || 'member'];
   },
-  canView(section) { return Auth.accessCapabilities(section).view > 0; },
-  canViewAll(section) { return Auth.accessCapabilities(section).view >= 2; },
-  canCreate(section) { return Auth.accessCapabilities(section).manage >= 1; },
-  isManager() { return Auth.isAdmin() || Auth.can('workspace.manage'); },
-  isTeamlead() { return Auth.hasRole('teamlead'); },
-  isAdmin() { return Auth.hasRole('admin'); },
-  isOwnPerson(personId) { return Boolean(Auth.user?.personId && Auth.user.personId === personId); },
-  canManage(section) { return Auth.accessCapabilities(section).manage >= 2; },
-  canManageOwn(section) { return Auth.accessCapabilities(section).manage >= 1; },
-  canEditOwned(item, section = null) { return Boolean((section && Auth.canManage(section)) || (!section && Auth.isManager()) || ((section ? Auth.canManageOwn(section) : true) && item?.createdByUserId === Auth.user?.id)); },
-  canEditTask(task) { const caps = Auth.accessCapabilities('tasks'); return Boolean(caps.manage >= 2 || (caps.manage >= 1 && (task?.createdByUserId === Auth.user?.id || (Auth.user?.personId && (task?.assigneeIds || []).includes(Auth.user.personId))))); },
-  canDeleteTask(task) { return Auth.canEditTask(task); },
-  canEditItem(section, item, relationFields = []) { const caps = Auth.accessCapabilities(section); if (caps.manage >= 2) return true; if (caps.manage < 1 || !item) return false; if (item.createdByUserId === Auth.user?.id) return true; return Boolean(Auth.user?.personId && relationFields.some((field) => Array.isArray(item?.[field]) && item[field].includes(Auth.user.personId))); },
-  canDeleteItem(section, item, relationFields = []) { return Auth.canEditItem(section, item, relationFields); },
-  roleLabel(role) { return ({ admin: 'Администратор', teamlead: 'Тимлид', member: 'Сотрудник' })[role] || 'Сотрудник'; },
-  rolesLabel(user = Auth.user) { const roles = Array.isArray(user?.roles) && user.roles.length ? user.roles : [user?.role || 'member']; return roles.map((r) => Auth.roleLabel(r)).join(' · '); },
-  canManagePerson(person) { const caps = Auth.accessCapabilities('people'); return Boolean(caps.manage >= 2 || (caps.manage >= 1 && Auth.user?.personId && person?.type === 'team' && person.id === Auth.user.personId)); },
+  hasRole(role) {
+    return Auth.roles().includes(role);
+  },
+  can(permission) {
+    return Auth.isAdmin() || Boolean(Auth.user?.permissions?.[permission]);
+  },
+  accessLevel(section) {
+    return Auth.isAdmin() ? 'all_manage' : (Auth.user?.access?.[section] || 'none');
+  },
+  accessCapabilities(section) {
+    return ACCESS_LEVEL_CAPABILITIES[Auth.accessLevel(section)] || { view: 0, manage: 0 };
+  },
+  canView(section) {
+    return Auth.accessCapabilities(section).view > 0;
+  },
+  canViewAll(section) {
+    return Auth.accessCapabilities(section).view >= 2;
+  },
+  canCreate(section) {
+    return Auth.accessCapabilities(section).manage >= 1;
+  },
+  isManager() {
+    return Auth.isAdmin() || Auth.can('workspace.manage');
+  },
+  isTeamlead() {
+    return Auth.hasRole('teamlead');
+  },
+  isAdmin() {
+    return Auth.hasRole('admin');
+  },
+  isOwnPerson(personId) {
+    return Boolean(Auth.user?.personId && Auth.user.personId === personId);
+  },
+  canManage(section) {
+    return Auth.accessCapabilities(section).manage >= 2;
+  },
+  canManageOwn(section) {
+    return Auth.accessCapabilities(section).manage >= 1;
+  },
+  canEditOwned(item, section = null) {
+    if (section && Auth.canManage(section)) return true;
+    if (!section && Auth.isManager()) return true;
+    const ownRecordsAllowed = section ? Auth.canManageOwn(section) : true;
+    return Boolean(ownRecordsAllowed && item?.createdByUserId === Auth.user?.id);
+  },
+  canEditTask(task) {
+    const caps = Auth.accessCapabilities('tasks');
+    if (caps.manage >= 2) return true;
+    if (caps.manage < 1) return false;
+    const isOwnTask = task?.createdByUserId === Auth.user?.id
+      || (Auth.user?.personId && (task?.assigneeIds || []).includes(Auth.user.personId));
+    return Boolean(isOwnTask);
+  },
+  canDeleteTask(task) {
+    return Auth.canEditTask(task);
+  },
+  canEditItem(section, item, relationFields = []) {
+    const caps = Auth.accessCapabilities(section);
+    if (caps.manage >= 2) return true;
+    if (caps.manage < 1 || !item) return false;
+    if (item.createdByUserId === Auth.user?.id) return true;
+    return Boolean(Auth.user?.personId && relationFields.some((field) => Array.isArray(item?.[field]) && item[field].includes(Auth.user.personId)));
+  },
+  canDeleteItem(section, item, relationFields = []) {
+    return Auth.canEditItem(section, item, relationFields);
+  },
+  roleLabel(role) {
+    return ({ admin: 'Администратор', teamlead: 'Тимлид', member: 'Сотрудник' })[role] || 'Сотрудник';
+  },
+  rolesLabel(user = Auth.user) {
+    const roles = Array.isArray(user?.roles) && user.roles.length ? user.roles : [user?.role || 'member'];
+    return roles.map((r) => Auth.roleLabel(r)).join(' · ');
+  },
+  canManagePerson(person) {
+    const caps = Auth.accessCapabilities('people');
+    const isSelf = Auth.user?.personId && person?.type === 'team' && person.id === Auth.user.personId;
+    return Boolean(caps.manage >= 2 || (caps.manage >= 1 && isSelf));
+  },
 
   async init() {
     try {
@@ -93,18 +174,26 @@ const Auth = {
       passwordToggle.setAttribute('title', willShow ? 'Скрыть пароль' : 'Показать пароль');
       passwordInput.focus({ preventScroll: true });
       const end = passwordInput.value.length;
-      try { passwordInput.setSelectionRange(end, end); } catch (_) {}
+      try {
+        passwordInput.setSelectionRange(end, end);
+      } catch (_) {}
     };
 
     document.getElementById('auth-demo').onclick = async () => {
       const button = document.getElementById('auth-demo');
       const error = document.getElementById('login-error');
-      button.disabled = true; error.textContent = '';
+      button.disabled = true;
+      error.textContent = '';
       try {
         const data = await api.post('/api/auth/demo', {});
-        Auth.user = data.user; Auth.showApp(); await startGardenApp();
-      } catch (err) { error.textContent = 'Не удалось запустить демо.'; }
-      finally { button.disabled = false; }
+        Auth.user = data.user;
+        Auth.showApp();
+        await startGardenApp();
+      } catch (err) {
+        error.textContent = 'Не удалось запустить демо.';
+      } finally {
+        button.disabled = false;
+      }
     };
 
     document.getElementById('login-form').onsubmit = async (e) => {
@@ -156,21 +245,26 @@ const Auth = {
       const newPassword = document.getElementById('auth-new-password').value;
       const confirmPassword = document.getElementById('auth-new-password-2').value;
       const error = document.getElementById('password-change-error');
-      if (newPassword.length < 8) { error.textContent = 'Минимум 8 символов.'; return; }
-      if (newPassword !== confirmPassword) { error.textContent = 'Новые пароли не совпадают.'; return; }
+      const validationError = passwordChangeValidationError(newPassword, confirmPassword);
+      if (validationError) {
+        error.textContent = validationError;
+        return;
+      }
       try {
         const data = await api.post('/api/auth/password', { currentPassword, newPassword });
         Auth.user = data.user;
         Auth.showApp();
         await startGardenApp();
       } catch (err) {
-        error.textContent = err.data?.error === 'wrong_current_password' ? 'Текущий пароль неверен.' : 'Не удалось сменить пароль.';
+        error.textContent = passwordChangeErrorMessage(err);
       }
     };
   },
 
   async logout() {
-    try { await api.post('/api/auth/logout', {}); } catch (_) {}
+    try {
+      await api.post('/api/auth/logout', {});
+    } catch (_) {}
     Auth.user = null;
     Auth.renderLogin();
   },
@@ -190,7 +284,10 @@ const Auth = {
         <button class="ui-button btn" id="account-logout">Выйти</button>
       </div>`);
     document.getElementById('account-password').onclick = () => Auth.openPasswordModal();
-    document.getElementById('account-logout').onclick = async () => { Modal.close(); await Auth.logout(); };
+    document.getElementById('account-logout').onclick = async () => {
+      Modal.close();
+      await Auth.logout();
+    };
   },
 
   openPasswordModal() {
@@ -205,8 +302,11 @@ const Auth = {
       const newPassword = document.getElementById('account-new').value;
       const again = document.getElementById('account-new2').value;
       const error = document.getElementById('account-password-error');
-      if (newPassword.length < 8) { error.textContent = 'Минимум 8 символов.'; return; }
-      if (newPassword !== again) { error.textContent = 'Новые пароли не совпадают.'; return; }
+      const validationError = passwordChangeValidationError(newPassword, again);
+      if (validationError) {
+        error.textContent = validationError;
+        return;
+      }
       try {
         const data = await api.post('/api/auth/password', { currentPassword, newPassword });
         Auth.user = data.user;
@@ -214,7 +314,7 @@ const Auth = {
         toast('Пароль изменён');
         renderSidebar(Router.current());
       } catch (err) {
-        error.textContent = err.data?.error === 'wrong_current_password' ? 'Текущий пароль неверен.' : 'Не удалось сменить пароль.';
+        error.textContent = passwordChangeErrorMessage(err);
       }
     };
   },

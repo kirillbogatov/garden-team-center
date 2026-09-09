@@ -4,7 +4,7 @@ const { taskPriorityRank } = require('../domain/task-priority');
 const { createSearchRanker } = require('../domain/search-ranking');
 
 module.exports = function registerSearchRoutes(app, { db, visibleItems, normalizeUserSettings }) {
-// ---------- Search ----------
+// ---------- Нормализация и нечёткое сравнение текста ----------
 function norm(s) {
   return (s || '').toString().toLowerCase().replace(/ё/g, 'е').replace(/@(?=[a-zа-я0-9])/gi, '').trim();
 }
@@ -13,6 +13,52 @@ function stemRu(word) {
   return norm(word).replace(/(ами|ями|ого|ему|ому|ыми|ими|ов|ев|ей|ах|ях|ью|ям|ам|а|я|ы|и|у|ю|е|ь)$/i, '');
 }
 
+// Экранирование спецсимволов regex перед подстановкой пользовательской/словарной
+// фразы в шаблон. Используется по всему разбору команд поиска.
+function escapeRe(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Фраза встречается в тексте как отдельное слово/словосочетание, а не как
+// подстрока внутри другого слова.
+function containsPhrase(text, phrase) {
+  return new RegExp(`(^|\\s)${escapeRe(phrase)}(?=\\s|$)`, 'i').test(text);
+}
+
+// Как containsPhrase, но сравнивает не точную форму слова, а стем каждого
+// слова фразы («задач» находит «задачи», «задача», «задачам», «задачах» —
+// любую словоформу, а не только ту, что явно перечислена в словаре).
+// Возвращает реально найденную подстроку текста (в её исходной форме) —
+// её и нужно вырезать из remainder, а не словарную форму фразы.
+function findStemPhrase(text, phrase) {
+  const words = text.split(/\s+/).filter(Boolean);
+  const phraseStems = phrase.split(/\s+/).filter(Boolean).map(stemRu);
+  if (!phraseStems.length) return null;
+  for (let i = 0; i + phraseStems.length <= words.length; i++) {
+    if (phraseStems.every((stem, j) => stemRu(words[i + j]) === stem)) {
+      return words.slice(i, i + phraseStems.length).join(' ');
+    }
+  }
+  return null;
+}
+
+// Ищет тип/раздел по словарю алиасов: сначала точным совпадением формы (как
+// раньше), и только если буквально ничего не нашлось — по стему. Точная форма
+// проверяется первой намеренно: грамматическая форма иногда — единственное,
+// что отличает разные по смыслу фразы («в процессе» — статус задачи, «Процессы»
+// — раздел; «задачи команды» — контекст, а не раздел «Люди» через «команда»).
+// Стемминг поэтому только расширяет покрытие для реально новых словоформ, а не
+// переигрывает уже работающие случаи короткой формой из другого слова.
+function matchTypeAlias(text, aliasList) {
+  for (const [alias, spec] of aliasList) {
+    if (containsPhrase(text, alias)) return { alias, spec, matchedText: alias };
+  }
+  for (const [alias, spec] of aliasList) {
+    const matchedText = findStemPhrase(text, alias);
+    if (matchedText) return { alias, spec, matchedText };
+  }
+  return null;
+}
 
 const SEARCH_FILLER_WORDS = new Set([
   'про', 'о', 'об', 'обо', 'по', 'для', 'у', 'с', 'со', 'к', 'ко', 'от', 'из', 'за',
@@ -40,8 +86,7 @@ function stripSearchFillers(text) {
 function stripSearchIntentPrefix(text) {
   let value = norm(text);
   for (const phrase of SEARCH_INTENT_PREFIXES) {
-    const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const re = new RegExp(`^${escaped}(?=\\s|$)`, 'i');
+    const re = new RegExp(`^${escapeRe(phrase)}(?=\\s|$)`, 'i');
     if (re.test(value)) {
       value = value.replace(re, '').trim();
       break;
@@ -51,7 +96,8 @@ function stripSearchIntentPrefix(text) {
 }
 
 function levenshtein(a, b) {
-  a = norm(a); b = norm(b);
+  a = norm(a);
+  b = norm(b);
   if (a === b) return 0;
   if (!a.length) return b.length;
   if (!b.length) return a.length;
@@ -88,8 +134,9 @@ function fuzzyTextMatch(query, text) {
   return qWords.every((q) => tWords.some((t) => fuzzyWordMatch(q, t)));
 }
 
-
 const searchRanker = createSearchRanker({ norm, fuzzyTextMatch, taskPriorityRank });
+
+// ---------- Разрешение ссылки на человека по фрагменту имени ----------
 
 const RU_NICKNAMES = {
   'настя': 'анастасия', 'настюша': 'анастасия', 'маша': 'мария', 'машенька': 'мария',
@@ -166,7 +213,6 @@ function findPersonByFragment(fragment) {
   return best;
 }
 
-
 function personFragmentCoverage(fragment, person) {
   if (!person) return 0;
   const words = stripSearchFillers(fragment).split(/\s+/).filter(Boolean);
@@ -175,6 +221,8 @@ function personFragmentCoverage(fragment, person) {
   const matched = words.filter((q) => nameParts.some((part) => fuzzyWordMatch(q, part))).length;
   return matched / words.length;
 }
+
+// ---------- Словарь команд поиска: типы сущностей, материалы, модификаторы, даты ----------
 
 // Командный язык поиска. Спецификация может задавать коллекцию и дополнительный подтип.
 const MATERIAL_KIND_ALIASES = {
@@ -262,6 +310,11 @@ const SEARCH_TYPE_ALIASES = [
   ['one-on-one', { group: 'meetings', meetingType: '1:1' }],
   ['one to one', { group: 'meetings', meetingType: '1:1' }],
   ['один на один', { group: 'meetings', meetingType: '1:1' }],
+  // «график встреч» — разговорный синоним раздела «Встречи» (это отдельное
+  // слово, не словоформа «встречи» — стемминг ниже его не поймает).
+  ['график встреч', { group: 'meetings' }],
+  // Падежные формы («встреч», «встречам» и т.д.) распознаёт matchTypeAlias
+  // через стем — отдельно их перечислять не нужно.
   ['встречи', { group: 'meetings' }], ['встреча', { group: 'meetings' }],
   ['договоренности', { group: 'agreements' }], ['договоренность', { group: 'agreements' }],
   // Типовые материалы берутся из одного расширяемого словаря выше.
@@ -374,7 +427,6 @@ const SEARCH_MODIFIERS = [
   ['с блокерами', 'has_blockers'], ['с блокером', 'has_blockers'], ['с проблемами в check-in', 'has_blockers'], ['что мешает', 'has_blockers'],
 ].sort((a, b) => b[0].length - a[0].length);
 
-
 const SEARCH_MEETING_TYPE_ALIASES = [
   ['проектные', 'project'], ['проектная', 'project'], ['project', 'project'],
   ['ретроспектива', 'retro'], ['ретроспективы', 'retro'], ['ретро', 'retro'],
@@ -418,6 +470,8 @@ function stripProjectFromRemainder(text, project) {
   }).join(' ');
   return value.replace(/\s+/g, ' ').trim();
 }
+
+// ---------- Вложения встреч и The Labs как «ссылки»/«документы» ----------
 
 function meetingHasOutcomeRecordsSearch(meeting) {
   const hasNotes = String(meeting?.notes || '').trim().length > 0;
@@ -469,9 +523,16 @@ function embeddedLinks(user) {
       if (url && seenUrls.has(url)) return;
       if (url) seenUrls.add(url);
       links.push({
-        id: `meeting:${meeting.id}:${index}`, title: title || url, url,
-        sourceType: 'meeting', sourceMeetingType: meeting.type || '', sourceId: meeting.id, sourceTitle: meeting.title || 'Встреча',
-        sourceDate: meeting.date || '', personIds: [...(meeting.participantIds || [])], projectId: meeting.projectId || null,
+        id: `meeting:${meeting.id}:${index}`,
+        title: title || url,
+        url,
+        sourceType: 'meeting',
+        sourceMeetingType: meeting.type || '',
+        sourceId: meeting.id,
+        sourceTitle: meeting.title || 'Встреча',
+        sourceDate: meeting.date || '',
+        personIds: [...(meeting.participantIds || [])],
+        projectId: meeting.projectId || null,
       });
     });
   });
@@ -481,9 +542,15 @@ function embeddedLinks(user) {
       const url = String(doc?.url || doc?.href || '').trim();
       if (!title && !url) return;
       links.push({
-        id: `labs:${lab.id}:${index}`, title: title || url, url,
-        sourceType: 'labs', sourceId: lab.id, sourceTitle: lab.title || 'The Labs',
-        sourceDate: lab.updatedAt || lab.createdAt || '', personIds: lab.authorId ? [lab.authorId] : [], projectId: null,
+        id: `labs:${lab.id}:${index}`,
+        title: title || url,
+        url,
+        sourceType: 'labs',
+        sourceId: lab.id,
+        sourceTitle: lab.title || 'The Labs',
+        sourceDate: lab.updatedAt || lab.createdAt || '',
+        personIds: lab.authorId ? [lab.authorId] : [],
+        projectId: null,
       });
     });
   });
@@ -507,9 +574,12 @@ function materialKindMatch(kind, link) {
 }
 
 function stripPhrase(text, phrase) {
-  const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return text.replace(new RegExp(`(^|\\s)${escaped}(?=\\s|$)`, 'i'), ' ').replace(/\s+/g, ' ').trim();
+  return text.replace(new RegExp(`(^|\\s)${escapeRe(phrase)}(?=\\s|$)`, 'i'), ' ').replace(/\s+/g, ' ').trim();
 }
+
+// ---------- Разбор команды поиска ----------
+// Одна строка запроса превращается в структуру { group, modifiers, person, project, ... },
+// которую дальше фильтрует и ранжирует commandSearch.
 
 function parseSearchCommand(rawQuery, user) {
   const normalizedRaw = norm(rawQuery);
@@ -520,9 +590,8 @@ function parseSearchCommand(rawQuery, user) {
     'мой','моя','мое','моё','мои','моего','моей','моих','моему','моим','мною','меня','мне',
   ];
   let selfRequested = false;
-  for (const word of selfWords.sort((a,b) => b.length - a.length)) {
-    const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    if (new RegExp(`(^|\\s)${escaped}(?=\\s|$)`, 'i').test(remainder)) {
+  for (const word of selfWords.sort((a, b) => b.length - a.length)) {
+    if (containsPhrase(remainder, word)) {
       selfRequested = true;
       remainder = stripPhrase(remainder, word);
     }
@@ -537,23 +606,17 @@ function parseSearchCommand(rawQuery, user) {
   // «саммари со встречи» слово «встречи» не должно превращать запрос в выдачу
   // встреч: это scope для вложения. Материалы поэтому разбираем до общего
   // SEARCH_TYPE_ALIASES, где также живут встречи, проекты и другие сущности.
-  for (const [alias, spec] of [...MATERIAL_SEARCH_TYPE_ALIASES].sort((a, b) => b[0].length - a[0].length)) {
-    const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    if (new RegExp(`(^|\\s)${escaped}(?=\\s|$)`, 'i').test(remainder)) {
-      type = { alias, ...spec };
-      remainder = stripPhrase(remainder, alias);
-      break;
-    }
+  const materialMatch = matchTypeAlias(remainder, [...MATERIAL_SEARCH_TYPE_ALIASES].sort((a, b) => b[0].length - a[0].length));
+  if (materialMatch) {
+    type = { alias: materialMatch.alias, ...materialMatch.spec };
+    remainder = stripPhrase(remainder, materialMatch.matchedText);
   }
 
   if (!type) {
-    for (const [alias, spec] of SEARCH_TYPE_ALIASES) {
-      const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      if (new RegExp(`(^|\\s)${escaped}(?=\\s|$)`, 'i').test(remainder)) {
-        type = { alias, ...spec };
-        remainder = stripPhrase(remainder, alias);
-        break;
-      }
+    const typeMatch = matchTypeAlias(remainder, SEARCH_TYPE_ALIASES);
+    if (typeMatch) {
+      type = { alias: typeMatch.alias, ...typeMatch.spec };
+      remainder = stripPhrase(remainder, typeMatch.matchedText);
     }
   }
   if (!type) return null;
@@ -562,8 +625,7 @@ function parseSearchCommand(rawQuery, user) {
   // «документы с встречи» означает вложения встречи, а не глобальный раздел Документы.
   if (type.group === 'links' || type.group === 'documents') {
     for (const [alias, sourceType] of LINK_SOURCE_ALIASES) {
-      const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      if (new RegExp(`(^|\\s)${escaped}(?=\\s|$)`, 'i').test(remainder)) {
+      if (containsPhrase(remainder, alias)) {
         type.sourceType = sourceType;
         remainder = stripPhrase(remainder, alias);
         if (sourceType === 'meeting') type.group = 'links';
@@ -572,16 +634,18 @@ function parseSearchCommand(rawQuery, user) {
     }
   }
 
-
   // Материалы можно ограничивать типом встречи: «саммари с последних PR»,
   // «документы с 1:1». В таком запросе PR/1:1 — не самостоятельная выдача встреч,
-  // а источник вложений, поэтому сохраняем подтип отдельно от group.
-  if (type.group === 'links') {
+  // а источник вложений, поэтому сохраняем подтип отдельно от group. «Документы»
+  // без явного упоминания встречи («документы с последних PR») разбираются так же,
+  // как «ссылки»: тип встречи здесь однозначно указывает на вложения, а не на
+  // раздел «Документы» базы знаний.
+  if (type.group === 'links' || type.group === 'documents') {
     for (const [alias, meetingType] of SEARCH_MEETING_TYPE_ALIASES) {
-      const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      if (new RegExp(`(^|\\s)${escaped}(?=\\s|$)`, 'i').test(remainder)) {
+      if (containsPhrase(remainder, alias)) {
         type.sourceType = 'meeting';
         type.sourceMeetingType = meetingType;
+        type.group = 'links';
         remainder = stripPhrase(remainder, alias);
         break;
       }
@@ -598,8 +662,7 @@ function parseSearchCommand(rawQuery, user) {
   // Тип встречи можно указывать вместе с общим словом «встречи»: «встречи 1:1», «встречи ретро».
   if (type.group === 'meetings' && !type.meetingType) {
     for (const [alias, meetingType] of SEARCH_MEETING_TYPE_ALIASES) {
-      const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      if (new RegExp(`(^|\\s)${escaped}(?=\\s|$)`, 'i').test(remainder)) {
+      if (containsPhrase(remainder, alias)) {
         type.meetingType = meetingType;
         remainder = stripPhrase(remainder, alias);
         break;
@@ -612,8 +675,7 @@ function parseSearchCommand(rawQuery, user) {
   // «задачи по техне» и т. п.
   if (type.group === 'tasks' && !type.taskType) {
     for (const form of TECHNOLOGIZATION_FORMS) {
-      const escaped = form.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      if (new RegExp(`(^|\\s)${escaped}(?=\\s|$)`, 'i').test(remainder)) {
+      if (containsPhrase(remainder, form)) {
         type.taskType = 'development';
         remainder = stripPhrase(remainder, form);
         remainder = remainder.replace(/^(?:по|на)\s+/, '').trim();
@@ -627,8 +689,7 @@ function parseSearchCommand(rawQuery, user) {
 
   const modifiers = [];
   for (const [phrase, value] of SEARCH_MODIFIERS) {
-    const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    if (new RegExp(`(^|\\s)${escaped}(?=\\s|$)`, 'i').test(remainder)) {
+    if (containsPhrase(remainder, phrase)) {
       modifiers.push(value);
       remainder = stripPhrase(remainder, phrase);
     }
@@ -669,8 +730,18 @@ function parseSearchCommand(rawQuery, user) {
   }
 
   remainder = stripPersonFromRemainder(remainder, person);
-  return { ...type, modifiers, person, project, selfRequested, textRemainder: remainder, ...(relativeDate ? { dateRange: { start: relativeDate.start, end: relativeDate.end } } : {}) };
+  return {
+    ...type,
+    modifiers,
+    person,
+    project,
+    selfRequested,
+    textRemainder: remainder,
+    ...(relativeDate ? { dateRange: { start: relativeDate.start, end: relativeDate.end } } : {}),
+  };
 }
+
+// ---------- Фильтрация и выполнение разобранной команды ----------
 
 function peopleWithContext(people, user) {
   return people.map((p) => {
@@ -688,7 +759,10 @@ function peopleWithContext(people, user) {
 }
 
 function emptySearchGroups() {
-  return { people: [], projects: [], tasks: [], issues: [], meetings: [], journal: [], goals: [], agreements: [], links: [], documents: [], tools: [], labs: [], processes: [], vacations: [], checkins: [] };
+  return {
+    people: [], projects: [], tasks: [], issues: [], meetings: [], journal: [], goals: [],
+    agreements: [], links: [], documents: [], tools: [], labs: [], processes: [], vacations: [], checkins: [],
+  };
 }
 
 function filterByPerson(group, items, person) {
@@ -719,7 +793,6 @@ function filterByPerson(group, items, person) {
   return items;
 }
 
-
 function filterByProject(group, items, project) {
   if (!project) return items;
   const id = project.id;
@@ -732,10 +805,12 @@ function filterByProject(group, items, project) {
 function filterByModifier(group, items, modifiers) {
   if (!modifiers.length) return items;
   const today = new Date().toISOString().slice(0, 10);
-  const tomorrowDate = new Date(`${today}T00:00:00Z`); tomorrowDate.setUTCDate(tomorrowDate.getUTCDate() + 1);
+  const tomorrowDate = new Date(`${today}T00:00:00Z`);
+  tomorrowDate.setUTCDate(tomorrowDate.getUTCDate() + 1);
   const tomorrow = tomorrowDate.toISOString().slice(0, 10);
   const monthStart = `${today.slice(0, 7)}-01`;
-  const monthDate = new Date(`${monthStart}T00:00:00Z`); monthDate.setUTCMonth(monthDate.getUTCMonth() + 1);
+  const monthDate = new Date(`${monthStart}T00:00:00Z`);
+  monthDate.setUTCMonth(monthDate.getUTCMonth() + 1);
   const nextMonthStart = monthDate.toISOString().slice(0, 10);
   const periodDate = (group, x) => {
     if (group === 'tasks') return String(x.dueDate || x.updatedAt || x.createdAt || '').slice(0, 10);
@@ -751,42 +826,58 @@ function filterByModifier(group, items, modifiers) {
       return !!key && key >= monthStart && key < nextMonthStart;
     }
     if (mod === 'high') return group === 'issues' ? x.severity === 'high' : true;
+
     if (group === 'tasks') {
-      if (mod === 'done') return x.status === 'done'; if (mod === 'open' || mod === 'active') return x.status !== 'done'; if (mod === 'overdue') return x.status !== 'done' && !!x.dueDate && String(x.dueDate).slice(0, 10) < today;
-      if (['paused','blocked','in_review','in_progress','todo'].includes(mod)) return x.status === mod;
-      if (mod === 'important') return x.priority === 'high';
+      if (mod === 'done') return x.status === 'done';
+      if (mod === 'open' || mod === 'active') return x.status !== 'done';
       if (mod === 'overdue') return x.status !== 'done' && !!x.dueDate && String(x.dueDate).slice(0, 10) < today;
+      if (['paused', 'blocked', 'in_review', 'in_progress', 'todo'].includes(mod)) return x.status === mod;
+      if (mod === 'important') return x.priority === 'high';
       if (mod === 'due_today') return String(x.dueDate || '').slice(0, 10) === today;
       if (mod === 'due_tomorrow') return String(x.dueDate || '').slice(0, 10) === tomorrow;
       if (mod === 'archived') return !!x.archivedAt;
     }
     if (group === 'projects' || group === 'goals') {
-      if (mod === 'done') return x.status === 'done'; if (mod === 'open' || mod === 'active') return x.status === 'active'; if (mod === 'paused') return x.status === 'paused';
+      if (mod === 'done') return x.status === 'done';
+      if (mod === 'open' || mod === 'active') return x.status === 'active';
+      if (mod === 'paused') return x.status === 'paused';
     }
     if (group === 'issues') {
-      if (mod === 'done') return x.status === 'resolved'; if (mod === 'paused') return x.status === 'paused'; if (mod === 'open' || mod === 'active') return x.status !== 'resolved';
+      if (mod === 'done') return x.status === 'resolved';
+      if (mod === 'paused') return x.status === 'paused';
+      if (mod === 'open' || mod === 'active') return x.status !== 'resolved';
     }
     if (group === 'agreements') {
-      if (mod === 'done') return x.status === 'done'; if (mod === 'open' || mod === 'active') return x.status !== 'done';
+      if (mod === 'done') return x.status === 'done';
+      if (mod === 'open' || mod === 'active') return x.status !== 'done';
       if (mod === 'overdue') return x.status !== 'done' && !!x.dueDate && String(x.dueDate).slice(0, 10) < today;
     }
     if (group === 'meetings') {
-      const key = (x.date || '').slice(0, 10); if (mod === 'upcoming' || mod === 'active') return key >= today; if (mod === 'past') return key < today; if (mod === 'done') return key < today && meetingHasOutcomeRecordsSearch(x);
+      const key = (x.date || '').slice(0, 10);
+      if (mod === 'upcoming' || mod === 'active') return key >= today;
+      if (mod === 'past') return key < today;
+      if (mod === 'done') return key < today && meetingHasOutcomeRecordsSearch(x);
       if (mod === 'without_outcomes' || mod === 'overdue') return meetingIsPastSearch(x, today) && !meetingHasOutcomeRecordsSearch(x);
     }
     if (group === 'vacations') {
-      if (mod === 'active') return x.startDate <= today && x.endDate >= today; if (mod === 'upcoming') return x.startDate > today; if (mod === 'past' || mod === 'done') return x.endDate < today;
+      if (mod === 'active') return x.startDate <= today && x.endDate >= today;
+      if (mod === 'upcoming') return x.startDate > today;
+      if (mod === 'past' || mod === 'done') return x.endDate < today;
     }
     if (group === 'people') {
       if (mod === 'active' || mod === 'open') return x.status === 'active';
     }
     if (group === 'processes') {
-      if (mod === 'open' || mod === 'active' || mod === 'blocked' || mod === 'attention') return x.status === 'broken' || x.status === 'attention'; if (mod === 'done' || mod === 'ok') return x.status === 'ok' || !x.status; if (mod === 'broken') return x.status === 'broken';
+      if (mod === 'open' || mod === 'active' || mod === 'blocked' || mod === 'attention') return x.status === 'broken' || x.status === 'attention';
+      if (mod === 'done' || mod === 'ok') return x.status === 'ok' || !x.status;
+      if (mod === 'broken') return x.status === 'broken';
     }
     if (group === 'checkins') {
       if (mod === 'has_blockers' || mod === 'attention') return String(x.blockers || '').trim().length > 0;
       if (mod === 'current_week') {
-        const d = new Date(`${today}T00:00:00Z`); const day = d.getUTCDay() || 7; d.setUTCDate(d.getUTCDate() - day + 1);
+        const d = new Date(`${today}T00:00:00Z`);
+        const day = d.getUTCDay() || 7;
+        d.setUTCDate(d.getUTCDate() - day + 1);
         return String(x.weekStart || '') === d.toISOString().slice(0, 10);
       }
     }
@@ -801,8 +892,21 @@ function commandSearch(command, user, options = {}) {
   // не связан с сотрудником, безопаснее вернуть пустой результат, чем чужие данные.
   if (command.selfRequested && !command.person) return groups;
   const all = {
-    people: visibleItems('people', user), projects: visibleItems('projects', user), tasks: visibleItems('tasks', user, { includeArchived: true }), issues: visibleItems('issues', user), meetings: visibleItems('meetings', user),
-    journal: visibleItems('journal', user).filter((entry) => !entry.kind || entry.kind === 'note'), goals: visibleItems('goals', user), agreements: visibleItems('agreements', user), links: embeddedLinks(user), documents: visibleItems('documents', user), tools: visibleItems('tools', user), labs: visibleItems('labs', user), processes: visibleItems('processes', user), vacations: visibleItems('vacations', user), checkins: visibleItems('checkins', user),
+    people: visibleItems('people', user),
+    projects: visibleItems('projects', user),
+    tasks: visibleItems('tasks', user, { includeArchived: true }),
+    issues: visibleItems('issues', user),
+    meetings: visibleItems('meetings', user),
+    journal: visibleItems('journal', user).filter((entry) => !entry.kind || entry.kind === 'note'),
+    goals: visibleItems('goals', user),
+    agreements: visibleItems('agreements', user),
+    links: embeddedLinks(user),
+    documents: visibleItems('kbDocs', user),
+    tools: visibleItems('tools', user),
+    labs: visibleItems('labs', user),
+    processes: visibleItems('processes', user),
+    vacations: visibleItems('vacations', user),
+    checkins: visibleItems('checkins', user),
   };
   let items = all[command.group] || [];
   if (command.group === 'links' && command.sourceType) items = items.filter((x) => x.sourceType === command.sourceType);
@@ -868,6 +972,8 @@ function commandSearch(command, user, options = {}) {
   return groups;
 }
 
+// ---------- Единая точка входа: NLU и полный поиск ----------
+
 // Полный поиск одним вызовом: сначала пробуем разобрать запрос как команду,
 // иначе ищем по тексту. Вынесено из обработчика маршрута, чтобы «Умный поиск»
 // мог отдавать ровно тот же результат без второго HTTP-запроса.
@@ -928,41 +1034,82 @@ function runSearch(rawQuery, user, parsedQuery = null, options = {}) {
         entity: parsed.entity,
         filters: parsed.filters,
       },
-      command: { group: command.group, alias: command.alias, modifiers: command.modifiers, person: command.person || null, project: command.project || null, selfRequested: !!command.selfRequested, textRemainder: command.textRemainder || '', ...(command.taskType ? { taskType: command.taskType } : {}), ...(command.materialKind ? { materialKind: command.materialKind } : {}), ...(command.sourceType ? { sourceType: command.sourceType } : {}), ...(command.sourceMeetingType ? { sourceMeetingType: command.sourceMeetingType } : {}), ...(command.dateRange ? { dateRange: command.dateRange } : {}) },
+      command: {
+        group: command.group,
+        alias: command.alias,
+        modifiers: command.modifiers,
+        person: command.person || null,
+        project: command.project || null,
+        selfRequested: !!command.selfRequested,
+        textRemainder: command.textRemainder || '',
+        ...(command.taskType ? { taskType: command.taskType } : {}),
+        ...(command.materialKind ? { materialKind: command.materialKind } : {}),
+        ...(command.sourceType ? { sourceType: command.sourceType } : {}),
+        ...(command.sourceMeetingType ? { sourceMeetingType: command.sourceMeetingType } : {}),
+        ...(command.dateRange ? { dateRange: command.dateRange } : {}),
+      },
       personFocus: command.person || null,
       personFocusType: command.group,
       groups: commandSearch(command, user, options),
     };
   }
 
+  // Обычный полнотекстовый поиск без распознанной команды: каждая коллекция
+  // фильтруется своим набором полей и ранжируется тем же ranker'ом, что и команды.
   const match = (s) => norm(s).includes(q) || fuzzyTextMatch(q, s || '');
-  const people = visibleItems('people', user).filter((p) => match(p.name) || match(p.role) || match(p.tags && p.tags.join(' ')));
+  const matchedGroup = (group, items, matchFn, extraOptions = {}) =>
+    searchRanker.rankGroup(group, items.filter(matchFn), query, { user, ...extraOptions });
+
   const groups = {
-    people: peopleWithContext(searchRanker.rankGroup('people', people, query, { user }), user),
-    projects: searchRanker.rankGroup('projects', visibleItems('projects', user).filter((p) => match(p.name) || match(p.description)), query, { user }),
-    tasks: searchRanker.rankGroup('tasks', visibleItems('tasks', user, { includeArchived: true }).filter((t) => match(t.title) || match(t.description)), query, { user, taskPriorityMode: options.taskPriorityMode || 'balanced' }),
-    issues: searchRanker.rankGroup('issues', visibleItems('issues', user).filter((i) => match(i.title) || match(i.description)), query, { user }),
-    meetings: searchRanker.rankGroup('meetings', visibleItems('meetings', user).filter((m) => match(m.title) || match(m.notes)), query, { user }),
-    journal: searchRanker.rankGroup('journal', visibleItems('journal', user).filter((entry) => !entry.kind || entry.kind === 'note').filter((j) => match(j.text)), query, { user }),
-    goals: searchRanker.rankGroup('goals', visibleItems('goals', user).filter((g) => match(g.title) || match(g.description)), query, { user }),
-    agreements: searchRanker.rankGroup('agreements', visibleItems('agreements', user).filter((a) => match(a.text)), query, { user }),
-    links: searchRanker.rankGroup('links', embeddedLinks(user).filter((link) => match(link.title) || match(link.url) || match(link.sourceTitle)), query, { user }),
-    documents: searchRanker.rankGroup('documents', visibleItems('documents', user).filter((d) => match(d.title) || match(d.url)), query, { user }),
-    tools: searchRanker.rankGroup('tools', visibleItems('tools', user).filter((d) => match(d.title) || match(d.url)), query, { user }),
-    labs: searchRanker.rankGroup('labs', visibleItems('labs', user).filter((d) => match(d.title) || match(d.description)), query, { user }),
-    processes: searchRanker.rankGroup('processes', visibleItems('processes', user).filter((p) => match(p.title) || match(p.expectedBehavior) || match(p.currentBehavior) || match(p.description) || match(p.brokenNote) || (p.fixOptions || []).some((option) => match(option.text))), query, { user }),
-    vacations: searchRanker.rankGroup('vacations', visibleItems('vacations', user).filter((v) => match(v.note) || match(v.type)), query, { user }),
-    checkins: searchRanker.rankGroup('checkins', visibleItems('checkins', user).filter((c) => match(c.did) || match(c.willDo) || match(c.blockers)), query, { user }),
+    people: peopleWithContext(matchedGroup('people', visibleItems('people', user), (p) => match(p.name) || match(p.role) || match(p.tags && p.tags.join(' '))), user),
+    projects: matchedGroup('projects', visibleItems('projects', user), (p) => match(p.name) || match(p.description)),
+    tasks: matchedGroup('tasks', visibleItems('tasks', user, { includeArchived: true }), (t) => match(t.title) || match(t.description), { taskPriorityMode: options.taskPriorityMode || 'balanced' }),
+    issues: matchedGroup('issues', visibleItems('issues', user), (i) => match(i.title) || match(i.description)),
+    meetings: matchedGroup('meetings', visibleItems('meetings', user), (m) => match(m.title) || match(m.notes)),
+    journal: matchedGroup('journal', visibleItems('journal', user).filter((entry) => !entry.kind || entry.kind === 'note'), (j) => match(j.text)),
+    goals: matchedGroup('goals', visibleItems('goals', user), (g) => match(g.title) || match(g.description)),
+    agreements: matchedGroup('agreements', visibleItems('agreements', user), (a) => match(a.text)),
+    links: matchedGroup('links', embeddedLinks(user), (link) => match(link.title) || match(link.url) || match(link.sourceTitle)),
+    documents: matchedGroup('documents', visibleItems('kbDocs', user), (d) => match(d.title) || match(d.url)),
+    tools: matchedGroup('tools', visibleItems('tools', user), (d) => match(d.title) || match(d.url)),
+    labs: matchedGroup('labs', visibleItems('labs', user), (d) => match(d.title) || match(d.description)),
+    processes: matchedGroup('processes', visibleItems('processes', user), (p) => match(p.title) || match(p.expectedBehavior) || match(p.currentBehavior) || match(p.description) || match(p.brokenNote) || (p.fixOptions || []).some((option) => match(option.text))),
+    vacations: matchedGroup('vacations', visibleItems('vacations', user), (v) => match(v.note) || match(v.type)),
+    checkins: matchedGroup('checkins', visibleItems('checkins', user), (c) => match(c.did) || match(c.willDo) || match(c.blockers)),
   };
   return { query, personFocus: null, personFocusType: null, groups };
 }
 
+// ---------- Статистика непонятых запросов ----------
+
+// Запрос считаем «непонятым», когда он непустой, но команду распознать не
+// удалось (runSearch/smart-search в этом случае не кладут в результат
+// command) — тогда поиск тихо падает в обычный полнотекстовый режим. Копим
+// такие запросы, чтобы расширять словарь по реальным формулировкам, а не
+// гадать. Сбой самого лога не должен портить ответ поиска.
+function logSearchMissIfUnrecognized(result, user) {
+  if (!result || !result.query || result.command) return;
+  try {
+    db.searchMisses.log(result.query, { personId: user && user.personId });
+  } catch (_) {
+    // Статистика необязательна — поиск важнее лога.
+  }
+}
+
+// ---------- HTTP-маршрут ----------
+
 app.get('/api/search', (req, res) => {
   let settings = {};
   if (normalizeUserSettings) {
-    try { settings = normalizeUserSettings(db.auth.preferences.get(req.auth.user.id)); } catch (_) {}
+    try {
+      settings = normalizeUserSettings(db.auth.preferences.get(req.auth.user.id));
+    } catch (_) {
+      // Настройки не критичны для поиска — при сбое просто используем стратегию по умолчанию.
+    }
   }
-  res.json(runSearch(req.query.q, req.auth.user, null, { taskPriorityMode: settings.taskPriorityMode || 'balanced' }));
+  const result = runSearch(req.query.q, req.auth.user, null, { taskPriorityMode: settings.taskPriorityMode || 'balanced' });
+  logSearchMissIfUnrecognized(result, req.auth.user);
+  res.json(result);
 });
 
 // Разбор запросов живёт в одном месте: «Умный поиск» (server/domain/smart-search.js)
@@ -970,6 +1117,7 @@ app.get('/api/search', (req, res) => {
 return {
   norm, stemRu, fuzzyTextMatch, fuzzyWordMatch, stripSearchFillers, stripSearchIntentPrefix,
   parseQuery, parseSearchCommand, commandSearch, emptySearchGroups, runSearch, parseRelativeDatePhrase,
+  logSearchMissIfUnrecognized,
   findPersonByFragment, rankPeopleByFragment, findProjectByFragment, peopleWithContext,
 };
 

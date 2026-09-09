@@ -60,14 +60,29 @@ Views.calendar = async function () {
 };
 
 
+function calendarAbsencePersonFieldHtml(canChoosePerson, people, ownPerson) {
+  if (canChoosePerson) {
+    const options = people.map((person) => {
+      const selected = person.id === Auth.user?.personId ? 'selected' : '';
+      return `<option value="${person.id}" ${selected}>${escapeHtml(person.name)}</option>`;
+    }).join('');
+    return `<select id="cal-absence-person"><option value="">—</option>${options}</select>`;
+  }
+  const ownName = escapeHtml(ownPerson?.name || Auth.user?.displayName || '');
+  const ownId = escapeHtml(Auth.user?.personId || '');
+  return `<input id="cal-absence-person-label" value="${ownName}" disabled />
+    <input id="cal-absence-person" type="hidden" value="${ownId}" />`;
+}
+
 function openCalendarAbsenceModal() {
   const canChoosePerson = Auth.canManage('vacations');
   const ownPerson = store.person(Auth.user?.personId);
   const people = store.team();
   const today = todayStr();
+  const personFieldHtml = calendarAbsencePersonFieldHtml(canChoosePerson, people, ownPerson);
   Modal.open(`<h2>Добавить отсутствие</h2>
     <div class="ui-field field"><label class="ui-field-label field-label" for="cal-absence-person">Сотрудник</label>
-      ${canChoosePerson ? `<select id="cal-absence-person"><option value="">—</option>${people.map((person) => `<option value="${person.id}" ${person.id === Auth.user?.personId ? 'selected' : ''}>${escapeHtml(person.name)}</option>`).join('')}</select>` : `<input id="cal-absence-person-label" value="${escapeHtml(ownPerson?.name || Auth.user?.displayName || '')}" disabled /><input id="cal-absence-person" type="hidden" value="${escapeHtml(Auth.user?.personId || '')}" />`}
+      ${personFieldHtml}
     </div>
     <div class="ui-field field"><label class="ui-field-label field-label" for="cal-absence-type">Тип</label><select id="cal-absence-type">
       <option value="vacation">Отпуск</option><option value="sick">Больничный</option><option value="dayoff">Отгул</option>
@@ -111,6 +126,11 @@ function meetingLabelWithType(mt) {
   const typeLabel = MEETING_TYPE_LABEL[mt.type];
   const title = meetingDisplayTitle(mt);
   return typeLabel ? `${title} — ${typeLabel}` : title;
+}
+
+const VACATION_TYPE_LABEL = { vacation: 'отпуск', sick: 'больничный', dayoff: 'отгул' };
+function vacationTypeLabel(type) {
+  return VACATION_TYPE_LABEL[type] || 'отгул';
 }
 
 function calToolbarHtml() {
@@ -228,8 +248,7 @@ async function renderMonthCalendar() {
       lanes[lane].push([startCol, endCol]);
 
       const person = store.person(v.personId);
-      const type = v.type === 'vacation' ? 'отпуск' : v.type === 'sick' ? 'больничный' : 'отгул';
-      const label = `${person ? person.name : 'Сотрудник'} — ${type}`;
+      const label = `${person ? person.name : 'Сотрудник'} — ${vacationTypeLabel(v.type)}`;
       const go = person ? () => Router.go(personPath(person)) : () => Router.go('/calendar');
       const idx = registerAction(go);
       const startsBefore = v.startDate < firstKey;
@@ -555,13 +574,12 @@ async function renderYearCalendar() {
     if (!filters[v.type]) return;
     const mi = parseInt((v.startDate || '').slice(5, 7), 10) - 1;
     const person = store.person(v.personId);
-    const typeLabel = v.type === 'vacation' ? 'отпуск' : v.type === 'sick' ? 'больничный' : 'отгул';
     pushItem(mi, {
       sort: v.startDate,
       cls: 'ev-absence',
       emoji: CAL_EMOJI[v.type] || CAL_EMOJI.vacation,
       dateLabel: calYearDate(v.startDate),
-      text: `${person ? person.name : 'Сотрудник'} — ${typeLabel} (${calYearDate(v.startDate)} – ${calYearDate(v.endDate)})`,
+      text: `${person ? person.name : 'Сотрудник'} — ${vacationTypeLabel(v.type)} (${calYearDate(v.startDate)} – ${calYearDate(v.endDate)})`,
       go: person ? () => Router.go(personPath(person)) : () => Router.go('/calendar'),
     });
   });

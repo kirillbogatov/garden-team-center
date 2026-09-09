@@ -50,7 +50,9 @@ const Modal = {
       if (e.target === overlay) Modal.requestClose();
     });
     // Любая правка в диалоге включает защиту от закрытия «мимо» кнопки «Сохранить».
-    const markDirty = () => { Modal._dirty = true; };
+    const markDirty = () => {
+      Modal._dirty = true;
+    };
     panel.addEventListener('input', markDirty);
     panel.addEventListener('change', markDirty);
     document.addEventListener('keydown', Modal._keyHandler);
@@ -66,7 +68,10 @@ const Modal = {
     initialFocus.focus({ preventScroll: true });
   },
   requestClose() {
-    if (!Modal._dirty) { Modal.close(); return; }
+    if (!Modal._dirty) {
+      Modal.close();
+      return;
+    }
     Modal._showUnsavedGuard();
   },
   _showUnsavedGuard() {
@@ -91,17 +96,34 @@ const Modal = {
     if (back && document.contains(back) && typeof back.focus === 'function') back.focus();
   },
   _keyHandler(e) {
-    if (e.key === 'Escape') { e.preventDefault(); Modal.requestClose(); return; }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      Modal.requestClose();
+      return;
+    }
     if (e.key !== 'Tab') return;
     const panel = Modal.panel();
     if (!panel) return;
     const items = focusableWithin(panel);
-    if (!items.length) { e.preventDefault(); panel.focus(); return; }
+    if (!items.length) {
+      e.preventDefault();
+      panel.focus();
+      return;
+    }
     const first = items[0];
     const last = items[items.length - 1];
-    if (!panel.contains(document.activeElement)) { e.preventDefault(); first.focus(); return; }
-    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    if (!panel.contains(document.activeElement)) {
+      e.preventDefault();
+      first.focus();
+      return;
+    }
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
   },
 };
 
@@ -114,8 +136,14 @@ function confirmAction(message, confirmLabel) {
          <button class="ui-button ui-button--danger btn btn-danger-primary" id="cf-ok">${escapeHtml(confirmLabel || 'Удалить')}</button>
        </div>`
     );
-    document.getElementById('cf-cancel').onclick = () => { Modal.close(); resolve(false); };
-    document.getElementById('cf-ok').onclick = () => { Modal.close(); resolve(true); };
+    document.getElementById('cf-cancel').onclick = () => {
+      Modal.close();
+      resolve(false);
+    };
+    document.getElementById('cf-ok').onclick = () => {
+      Modal.close();
+      resolve(true);
+    };
   });
 }
 

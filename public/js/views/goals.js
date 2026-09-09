@@ -2,28 +2,37 @@
 
 // Прогресс цели по задачам, у которых цель указана напрямую.
 Views.goals = async function () {
-  setTopbar(`<h1>Цели</h1>${Auth.canCreate('goals') ? `<div class="actions"><button class="ui-button ui-button--primary btn btn-primary" data-command="openGoalModal">+ Добавить цель</button></div>` : ''}`);
+  const addButton = Auth.canCreate('goals')
+    ? `<div class="actions"><button class="ui-button ui-button--primary btn btn-primary" data-command="openGoalModal">+ Добавить цель</button></div>`
+    : '';
+  setTopbar(`<h1>Цели</h1>${addButton}`);
   const view = document.getElementById('view');
   view.innerHTML = `<div class="tiny">Загрузка…</div>`;
   const [goals, tasks] = await Promise.all([Resources.goals.list(), Resources.tasks.list({ includeArchived: 1 })]);
 
-  if (!goals.length) { view.innerHTML = emptyState('Целей пока нет', 'Сформулируйте первую долгосрочную цель', 'goals'); return; }
+  if (!goals.length) {
+    view.innerHTML = emptyState('Целей пока нет', 'Сформулируйте первую долгосрочную цель', 'goals');
+    return;
+  }
 
-  view.innerHTML = `<div class="view-narrow">${goals.map((g) => {
-    const progress = goalProgress(g, tasks);
-    return `<div class="ui-surface card clickable goal-card" style="margin-bottom:12px" data-route="${goalPath(g)}">
-      <div class="flex justify-between items-center" style="margin-bottom:8px">
-        <div class="entity-card-title">${escapeHtml(g.title)}</div>
-        <span class="ui-tag badge">${escapeHtml(g.timeframe || '')}</span>
-      </div>
-      <div class="tiny" style="margin-bottom:10px">${escapeHtml(g.description || '')}</div>
-      <div class="goal-growth-line">
-        <div class="goal-growth-copy"><span class="tiny">Прогресс</span><strong>${progress}%</strong></div>
-        ${goalTreeHtml(progress, 'compact', g.id)}
-      </div>
-    </div>`;
-  }).join('')}</div>`;
+  const cards = goals.map((g) => goalCardHtml(g, tasks)).join('');
+  view.innerHTML = `<div class="view-narrow">${cards}</div>`;
 };
+
+function goalCardHtml(g, tasks) {
+  const progress = goalProgress(g, tasks);
+  return `<div class="ui-surface card clickable goal-card" style="margin-bottom:12px" data-route="${goalPath(g)}">
+    <div class="flex justify-between items-center" style="margin-bottom:8px">
+      <div class="entity-card-title">${escapeHtml(g.title)}</div>
+      <span class="ui-tag badge">${escapeHtml(g.timeframe || '')}</span>
+    </div>
+    <div class="tiny" style="margin-bottom:10px">${escapeHtml(g.description || '')}</div>
+    <div class="goal-growth-line">
+      <div class="goal-growth-copy"><span class="tiny">Прогресс</span><strong>${progress}%</strong></div>
+      ${goalTreeHtml(progress, 'compact', g.id)}
+    </div>
+  </div>`;
+}
 
 Views._goalTab = Views._goalTab || 'tasks';
 
@@ -40,8 +49,10 @@ Views.goalDetail = async function (id) {
   const addTaskIdx = registerAction(() => FeatureLoader.run('openTaskModal', null, { prefill: { goalId: g.id }, onSaved: () => Views.goalDetail(g.id) }));
   const addIssueIdx = registerAction(() => FeatureLoader.run('openIssueModal', null, { onSaved: (issue) => linkIssueToGoal(issue.id) }));
 
-  setTopbar(`<h1>${escapeHtml(g.title)}</h1>
-    ${Auth.canEditItem('goals', g) ? `<div class="actions"><button class="ui-button btn" data-action-id="${editGoalIdx}">${icon('edit',14)} Редактировать</button></div>` : ''}`);
+  const editButton = Auth.canEditItem('goals', g)
+    ? `<div class="actions"><button class="ui-button btn" data-action-id="${editGoalIdx}">${icon('edit',14)} Редактировать</button></div>`
+    : '';
+  setTopbar(`<h1>${escapeHtml(g.title)}</h1>${editButton}`);
 
   const goalTabs = [
     { key: 'tasks', label: `Задачи (${data.tasks.length})` },
@@ -51,38 +62,64 @@ Views.goalDetail = async function (id) {
 
   function goalTabBody(key) {
     if (key === 'tasks') {
+      const rows = data.tasks.length
+        ? data.tasks.map(goalTaskRowHtml).join('')
+        : `<div class="tiny">Задачи не привязаны</div>`;
       return `<div class="flex items-center" style="margin-bottom:10px">
           <button class="ui-button ui-button--sm btn btn-sm" style="margin-left:auto" data-action-id="${addTaskIdx}">+ Добавить задачу</button>
         </div>
-        ${data.tasks.length ? data.tasks.map((t) => {
-          const idx = registerAction(() => FeatureLoader.run('openTaskModal', t.id));
-          const assignees = (t.assigneeIds || []).map((personId) => store.person(personId)).filter(Boolean);
-          const overdue = t.dueDate && t.status !== 'done' && t.dueDate.slice(0, 10) < todayStr();
-          return `<div class="ui-row ui-row--task list-row task-list-row" data-action-id="${idx}">
-            ${taskStatusBadge(t.status, t.id)}
-            <span class="tl-title" title="${escapeHtml(t.title)}">${escapeHtml(t.title)}</span>
-            <div class="tl-right">
-              <div class="task-tags-cell">${taskLabelsHtml(t)}</div>
-              <div class="task-due-cell">${t.dueDate ? `<span class="tiny" style="${overdue ? 'color:var(--red)' : ''}">${t.status === 'done' ? deadlineDateLabel(t.dueDate) : dueLabel(t.dueDate)}</span>` : ''}</div>
-              <div class="task-assignee-cell">${assignees.length ? `<div class="flex gap-4">${assignees.map((a) => personAvatarLinkHtml(a)).join('')}</div>` : avatarHtml(null)}</div>
-            </div>
-          </div>`;
-        }).join('') : `<div class="tiny">Задачи не привязаны</div>`}`;
+        ${rows}`;
     }
+    const rows = data.issues.length
+      ? data.issues.map(goalIssueRowHtml).join('')
+      : `<div class="tiny">Проблемы не привязаны</div>`;
     return `<div class="flex items-center" style="margin-bottom:10px">
         <button class="ui-button ui-button--sm btn btn-sm" style="margin-left:auto" data-action-id="${addIssueIdx}">+ Добавить проблему</button>
       </div>
-      ${data.issues.length ? data.issues.map((i) => {
-        const idx = registerAction(() => FeatureLoader.run('openIssueModal', i.id));
-        return `<div class="ui-row list-row" data-action-id="${idx}">${issueStatusBadge(i.status, i.id)}<span class="title">${escapeHtml(i.title)}</span></div>`;
-      }).join('') : `<div class="tiny">Проблемы не привязаны</div>`}`;
+      ${rows}`;
   }
+
+  // Строка задачи в списке цели: та же task-list-row разметка, что и в других
+  // местах приложения (проекты, обзор) — единый визуальный язык для строк задач.
+  function goalTaskRowHtml(t) {
+    const idx = registerAction(() => FeatureLoader.run('openTaskModal', t.id));
+    const assignees = (t.assigneeIds || []).map((personId) => store.person(personId)).filter(Boolean);
+    const overdue = t.dueDate && t.status !== 'done' && t.dueDate.slice(0, 10) < todayStr();
+    const dueHtml = t.dueDate
+      ? `<span class="tiny" style="${overdue ? 'color:var(--red)' : ''}">${t.status === 'done' ? deadlineDateLabel(t.dueDate) : dueLabel(t.dueDate)}</span>`
+      : '';
+    const assigneeHtml = assignees.length
+      ? `<div class="flex gap-4">${assignees.map((a) => personAvatarLinkHtml(a)).join('')}</div>`
+      : avatarHtml(null);
+    return `<div class="ui-row ui-row--task list-row task-list-row" data-action-id="${idx}">
+      ${taskStatusBadge(t.status, t.id)}
+      <span class="tl-title" title="${escapeHtml(t.title)}">${escapeHtml(t.title)}</span>
+      <div class="tl-right">
+        <div class="task-tags-cell">${taskLabelsHtml(t)}</div>
+        <div class="task-due-cell">${dueHtml}</div>
+        <div class="task-assignee-cell">${assigneeHtml}</div>
+      </div>
+    </div>`;
+  }
+
+  function goalIssueRowHtml(i) {
+    const idx = registerAction(() => FeatureLoader.run('openIssueModal', i.id));
+    return `<div class="ui-row list-row" data-action-id="${idx}">${issueStatusBadge(i.status, i.id)}<span class="title">${escapeHtml(i.title)}</span></div>`;
+  }
+
+  const projectsHtml = data.projects.length
+    ? `<div class="flex gap-8" style="flex-wrap:wrap">${data.projects.map(projectChip).join('')}</div>`
+    : `<div class="tiny">Проекты не привязаны</div>`;
+  const tabsHtml = goalTabs.map((t) => {
+    const active = Views._goalTab === t.key;
+    return `<div class="ui-tab tab ${active ? 'active' : ''}" data-view-state="_goalTab" data-view-value="${t.key}" data-view-render="goalDetail" data-view-render-arg="${id}">${t.label}</div>`;
+  }).join('');
 
   view.innerHTML = `
     <div class="view-narrow">
       <div class="flex items-center gap-10" style="margin-bottom:6px">
         <span class="ui-tag badge">${escapeHtml(g.timeframe || '')}</span>
-        <span class="ui-tag badge">${g.status === 'active' ? 'В работе' : g.status === 'done' ? 'Достигнута' : 'Отложена'}</span>
+        <span class="ui-tag badge">${GOAL_STATUS_LABEL[g.status] || GOAL_STATUS_LABEL.active}</span>
       </div>
       <p class="muted">${escapeHtml(g.description || '')}</p>
       <div class="goal-growth-detail">
@@ -91,9 +128,9 @@ Views.goalDetail = async function (id) {
       </div>
 
       <h2 class="section-title">${icon('projects',15)} Проекты (${data.projects.length})</h2>
-      ${data.projects.length ? `<div class="flex gap-8" style="flex-wrap:wrap">${data.projects.map(projectChip).join('')}</div>` : `<div class="tiny">Проекты не привязаны</div>`}
+      ${projectsHtml}
 
-      <div class="ui-tab tabs goal-tabs" style="margin-top:28px">${goalTabs.map((t) => `<div class="ui-tab tab ${Views._goalTab === t.key ? 'active' : ''}" data-view-state="_goalTab" data-view-value="${t.key}" data-view-render="goalDetail" data-view-render-arg="${id}">${t.label}</div>`).join('')}</div>
+      <div class="ui-tab tabs goal-tabs" style="margin-top:28px">${tabsHtml}</div>
       <div class="goal-tab-body">${goalTabBody(Views._goalTab)}</div>
     </div>
   `;

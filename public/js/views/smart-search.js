@@ -347,179 +347,205 @@ function smartHighlightedQueryHtml(value) {
   return out + escapeHtml(text.slice(pos));
 }
 
+// Проектный слот должен срабатывать сразу после самого маркера, даже когда
+// пользователь ещё не начал вводить название проекта: «… проект»,
+// «… по проекту», «… в проекте», «… на проекте». Возвращает null, когда
+// совпадений нет — тогда вызывающая сторона идёт дальше по остальным префиксам.
+function smartSuggestionsForProjectSlot(value, slot) {
+  const projectHead = value.slice(0, slot.markerEnd);
+  const insideCommand = Boolean(smartMatchPrefix(value, SMART_CREATE_PREFIXES));
+  const projects = smartFilterByTail(store?.projects || [], slot.tail, (project) => project.name);
+  if (!projects.length) return null;
+  return projects.map((project) => ({
+    label: project.name,
+    hint: project.status === 'active' ? 'Активный проект' : 'Проект',
+    icon: 'projects',
+    insert: `${projectHead} ${project.name} `,
+    submit: !insideCommand,
+  }));
+}
+
+function smartSuggestionsForPersonPrefix(value, prefix) {
+  const head = value.slice(0, prefix.length);
+  const rest = value.slice(prefix.length).trimStart();
+  const team = smartTeamSuggestion(head, rest);
+  const people = smartFilterByTail(smartSuggestionPeople(), rest, (person) => person.name).map((person) => ({
+    label: person.name,
+    hint: person.role || 'Сотрудник',
+    person,
+    insert: `${head} ${person.name}`,
+    submit: true,
+  }));
+  return [...(team ? [team] : []), ...people].slice(0, SMART_SUGGEST_LIMIT);
+}
+
+function smartSuggestionsForProjectPrefix(value, prefix) {
+  const head = value.slice(0, prefix.length);
+  const rest = value.slice(prefix.length).trimStart();
+  return smartFilterByTail(store?.projects || [], rest, (project) => project.name).map((project) => ({
+    label: project.name,
+    hint: project.status === 'active' ? 'Активный проект' : 'Проект',
+    icon: 'projects',
+    insert: `${head} проекте ${project.name}`,
+    submit: true,
+  }));
+}
+
+// Слоты внутри команды важнее общих префиксов: «поставь задачу для Ма…» — это
+// подсказка по сотрудникам, а не список типов записей. Возвращает null, когда
+// в этом слоте нет совпадений — тогда вызывающая сторона идёт дальше.
+function smartSuggestionsForSlot(value, slot) {
+  const insideCommand = Boolean(smartMatchPrefix(value, SMART_CREATE_PREFIXES));
+  const head = value.slice(0, slot.markerEnd);
+  if (slot.kind === 'person') {
+    const people = smartFilterByTail(smartSuggestionPeople(), slot.tail, (person) => person.name);
+    if (!people.length) return null;
+    return people.map((person) => ({
+      label: person.name,
+      hint: person.role || 'Сотрудник',
+      person,
+      insert: `${head} ${person.name} `,
+      submit: !insideCommand,
+    }));
+  }
+  const projects = smartFilterByTail(store?.projects || [], slot.tail, (project) => project.name);
+  if (!projects.length) return null;
+  return projects.map((project) => ({
+    label: project.name,
+    hint: project.status === 'active' ? 'Активный проект' : 'Проект',
+    icon: 'projects',
+    insert: `${head} ${project.name} `,
+    submit: !insideCommand,
+  }));
+}
+
+function smartSuggestionsForCreate(value, prefix) {
+  const head = value.slice(0, prefix.length);
+  const rest = value.slice(prefix.length).trimStart();
+  const typed = smartNorm(rest);
+  const createTypes = smartNorm(prefix).startsWith('запланир') ? SMART_SCHEDULE_TYPES : SMART_CREATE_TYPES;
+  // Для «запланируй» доступны только 1:1, PR и встреча. Для остальных
+  // глаголов показываем полный набор создаваемых сущностей.
+  const matched = createTypes.filter((type) => smartNorm(type.insert).startsWith(typed) || typed.startsWith(smartNorm(type.insert)));
+  if (typed && matched.some((type) => typed.startsWith(smartNorm(type.insert)))) return [];
+  return matched.slice(0, SMART_SUGGEST_LIMIT).map((type) => ({
+    label: type.label,
+    hint: type.hint,
+    icon: 'plus',
+    insert: `${head} ${type.insert}`,
+    submit: false,
+  }));
+}
+
+function smartSuggestionsForOpen(value, prefix) {
+  const head = value.slice(0, prefix.length);
+  const rest = value.slice(prefix.length).trimStart();
+  const sections = smartFilterByTail(SMART_SECTION_TARGETS, rest, (item) => item.label).map((item) => ({
+    label: item.label,
+    hint: 'раздел',
+    icon: 'chevronRight',
+    insert: `${head} ${item.insert}`,
+    submit: true,
+  }));
+  const people = smartFilterByTail(smartSuggestionPeople(), rest, (person) => person.name)
+    .slice(0, 3)
+    .map((person) => ({ label: person.name, hint: 'профиль сотрудника', person, insert: `${head} ${person.name}`, submit: true }));
+  const projects = smartFilterByTail(store?.projects || [], rest, (project) => project.name)
+    .slice(0, 3)
+    .map((project) => ({ label: project.name, hint: 'проект', icon: 'projects', insert: `${head} ${project.name}`, submit: true }));
+  return [...sections, ...people, ...projects].slice(0, SMART_SUGGEST_LIMIT);
+}
+
+function smartSuggestionsForMine(value, prefix) {
+  const head = value.slice(0, prefix.length);
+  const rest = value.slice(prefix.length).trimStart();
+  // Даже после полного названия типа оставляем одну точную подсказку. Это даёт
+  // понятный Enter/click target в палитре поиска: «Покажи мои задачи» не должен
+  // внезапно терять предложение ровно на последней букве.
+  const exactTarget = SMART_MINE_TARGETS.find((item) => smartNorm(item.insert) === smartNorm(rest));
+  if (exactTarget) {
+    return [{
+      label: exactTarget.label,
+      hint: 'только моё',
+      icon: 'search',
+      insert: `${head} ${exactTarget.insert}`,
+      submit: true,
+    }];
+  }
+  return smartFilterByTail(SMART_MINE_TARGETS, rest, (item) => item.label).map((item) => ({
+    label: item.label,
+    hint: 'только моё',
+    icon: 'search',
+    insert: `${head} ${item.insert} `,
+    submit: false,
+  }));
+}
+
+function smartSuggestionsForShow(value, prefix) {
+  const head = value.slice(0, prefix.length);
+  const rest = value.slice(prefix.length).trimStart();
+  const targets = smartFilterByTail(SMART_SHOW_TARGETS, rest, (item) => item.label).map((item) => ({
+    label: item.label,
+    hint: 'тип элементов',
+    icon: 'search',
+    insert: `${head} ${item.insert}`,
+    submit: true,
+  }));
+  const people = smartFilterByTail(smartSuggestionPeople(), rest, (person) => person.name).map((person) => ({
+    label: person.name,
+    hint: person.role || 'Сотрудник',
+    person,
+    insert: `${head} задачи ${person.name}`,
+    submit: true,
+  }));
+  const projects = smartFilterByTail(store?.projects || [], rest, (project) => project.name).map((project) => ({
+    label: project.name,
+    hint: 'Проект',
+    icon: 'projects',
+    insert: `${head} задачи по проекту ${project.name}`,
+    submit: true,
+  }));
+  return [...targets, ...people, ...projects].slice(0, SMART_SUGGEST_LIMIT);
+}
+
 function smartSuggestionsFor(rawValue) {
   const value = String(rawValue || '');
   if (!value.trim()) return [];
   const atSuggestions = smartAtSuggestions(value);
   if (atSuggestions) return atSuggestions;
 
-  // Проектный слот должен срабатывать сразу после самого маркера, даже когда
-  // пользователь ещё не начал вводить название проекта: «… проект»,
-  // «… по проекту», «… в проекте», «… на проекте». Это отдельный ранний
-  // проход — он не даёт более общим intent-префиксам перехватить запрос раньше.
+  // Проектный слот проверяем отдельным ранним проходом — он не даёт более
+  // общим intent-префиксам перехватить запрос раньше.
   const immediateProjectSlot = smartSlotAt(value);
   if (immediateProjectSlot?.kind === 'project') {
-    const projectHead = value.slice(0, immediateProjectSlot.markerEnd);
-    const insideCommand = Boolean(smartMatchPrefix(value, SMART_CREATE_PREFIXES));
-    const projects = smartFilterByTail(store?.projects || [], immediateProjectSlot.tail, (project) => project.name);
-    if (projects.length) {
-      return projects.map((project) => ({
-        label: project.name,
-        hint: project.status === 'active' ? 'Активный проект' : 'Проект',
-        icon: 'projects',
-        insert: `${projectHead} ${project.name} `,
-        submit: !insideCommand,
-      }));
-    }
+    const suggestions = smartSuggestionsForProjectSlot(value, immediateProjectSlot);
+    if (suggestions) return suggestions;
   }
-  const head = (prefix) => value.slice(0, prefix.length);
-  const tail = (prefix) => value.slice(prefix.length).trimStart();
 
   const personPrefix = smartMatchPrefix(value, SMART_PERSON_PREFIXES);
-  if (personPrefix) {
-    const rest = tail(personPrefix);
-    const team = smartTeamSuggestion(`${head(personPrefix)}`, rest);
-    const people = smartFilterByTail(smartSuggestionPeople(), rest, (person) => person.name).map((person) => ({
-      label: person.name,
-      hint: person.role || 'Сотрудник',
-      person,
-      insert: `${head(personPrefix)} ${person.name}`,
-      submit: true,
-    }));
-    return [...(team ? [team] : []), ...people].slice(0, SMART_SUGGEST_LIMIT);
-  }
+  if (personPrefix) return smartSuggestionsForPersonPrefix(value, personPrefix);
 
   const projectPrefix = smartMatchPrefix(value, SMART_PROJECT_PREFIXES);
-  if (projectPrefix) {
-    const rest = tail(projectPrefix);
-    return smartFilterByTail(store?.projects || [], rest, (project) => project.name).map((project) => ({
-      label: project.name,
-      hint: project.status === 'active' ? 'Активный проект' : 'Проект',
-      icon: 'projects',
-      insert: `${head(projectPrefix)} проекте ${project.name}`,
-      submit: true,
-    }));
-  }
+  if (projectPrefix) return smartSuggestionsForProjectPrefix(value, projectPrefix);
 
-  // Слоты внутри команды важнее общих префиксов: «поставь задачу для Ма…» — это
-  // подсказка по сотрудникам, а не список типов записей.
   const slot = smartSlotAt(value);
   if (slot) {
-    const insideCommand = Boolean(smartMatchPrefix(value, SMART_CREATE_PREFIXES));
-    const head = value.slice(0, slot.markerEnd);
-    if (slot.kind === 'person') {
-      const people = smartFilterByTail(smartSuggestionPeople(), slot.tail, (person) => person.name);
-      if (people.length) {
-        return people.map((person) => ({
-          label: person.name,
-          hint: person.role || 'Сотрудник',
-          person,
-          insert: `${head} ${person.name} `,
-          submit: !insideCommand,
-        }));
-      }
-    } else {
-      const projects = smartFilterByTail(store?.projects || [], slot.tail, (project) => project.name);
-      if (projects.length) {
-        return projects.map((project) => ({
-          label: project.name,
-          hint: project.status === 'active' ? 'Активный проект' : 'Проект',
-          icon: 'projects',
-          insert: `${head} ${project.name} `,
-          submit: !insideCommand,
-        }));
-      }
-    }
+    const suggestions = smartSuggestionsForSlot(value, slot);
+    if (suggestions) return suggestions;
   }
 
   const createPrefix = smartMatchPrefix(value, SMART_CREATE_PREFIXES);
-  if (createPrefix) {
-    const rest = tail(createPrefix);
-    const typed = smartNorm(rest);
-    const createTypes = smartNorm(createPrefix).startsWith('запланир') ? SMART_SCHEDULE_TYPES : SMART_CREATE_TYPES;
-    // Для «запланируй» доступны только 1:1, PR и встреча. Для остальных
-    // глаголов показываем полный набор создаваемых сущностей.
-    const matched = createTypes.filter((type) => smartNorm(type.insert).startsWith(typed) || typed.startsWith(smartNorm(type.insert)));
-    if (typed && matched.some((type) => typed.startsWith(smartNorm(type.insert)))) return [];
-    return matched.slice(0, SMART_SUGGEST_LIMIT).map((type) => ({
-      label: type.label,
-      hint: type.hint,
-      icon: 'plus',
-      insert: `${head(createPrefix)} ${type.insert}`,
-      submit: false,
-    }));
-  }
+  if (createPrefix) return smartSuggestionsForCreate(value, createPrefix);
 
   const openPrefix = smartMatchPrefix(value, SMART_OPEN_PREFIXES);
-  if (openPrefix) {
-    const rest = tail(openPrefix);
-    const sections = smartFilterByTail(SMART_SECTION_TARGETS, rest, (item) => item.label).map((item) => ({
-      label: item.label,
-      hint: 'раздел',
-      icon: 'chevronRight',
-      insert: `${head(openPrefix)} ${item.insert}`,
-      submit: true,
-    }));
-    const people = smartFilterByTail(smartSuggestionPeople(), rest, (person) => person.name)
-      .slice(0, 3)
-      .map((person) => ({ label: person.name, hint: 'профиль сотрудника', person, insert: `${head(openPrefix)} ${person.name}`, submit: true }));
-    const projects = smartFilterByTail(store?.projects || [], rest, (project) => project.name)
-      .slice(0, 3)
-      .map((project) => ({ label: project.name, hint: 'проект', icon: 'projects', insert: `${head(openPrefix)} ${project.name}`, submit: true }));
-    return [...sections, ...people, ...projects].slice(0, SMART_SUGGEST_LIMIT);
-  }
+  if (openPrefix) return smartSuggestionsForOpen(value, openPrefix);
 
   const minePrefix = smartMatchPrefix(value, SMART_MINE_PREFIXES);
-  if (minePrefix) {
-    const rest = tail(minePrefix);
-    // Даже после полного названия типа оставляем одну точную подсказку. Это даёт
-    // понятный Enter/click target в палитре поиска: «Покажи мои задачи» не должен
-    // внезапно терять предложение ровно на последней букве.
-    const exactTarget = SMART_MINE_TARGETS.find((item) => smartNorm(item.insert) === smartNorm(rest));
-    if (exactTarget) {
-      return [{
-        label: exactTarget.label,
-        hint: 'только моё',
-        icon: 'search',
-        insert: `${head(minePrefix)} ${exactTarget.insert}`,
-        submit: true,
-      }];
-    }
-    return smartFilterByTail(SMART_MINE_TARGETS, rest, (item) => item.label).map((item) => ({
-      label: item.label,
-      hint: 'только моё',
-      icon: 'search',
-      insert: `${head(minePrefix)} ${item.insert} `,
-      submit: false,
-    }));
-  }
+  if (minePrefix) return smartSuggestionsForMine(value, minePrefix);
 
   const showPrefix = smartMatchPrefix(value, SMART_SHOW_PREFIXES);
-  if (showPrefix) {
-    const rest = tail(showPrefix);
-    const targets = smartFilterByTail(SMART_SHOW_TARGETS, rest, (item) => item.label).map((item) => ({
-      label: item.label,
-      hint: 'тип элементов',
-      icon: 'search',
-      insert: `${head(showPrefix)} ${item.insert}`,
-      submit: true,
-    }));
-    const people = smartFilterByTail(smartSuggestionPeople(), rest, (person) => person.name).map((person) => ({
-      label: person.name,
-      hint: person.role || 'Сотрудник',
-      person,
-      insert: `${head(showPrefix)} задачи ${person.name}`,
-      submit: true,
-    }));
-    const projects = smartFilterByTail(store?.projects || [], rest, (project) => project.name).map((project) => ({
-      label: project.name,
-      hint: 'Проект',
-      icon: 'projects',
-      insert: `${head(showPrefix)} задачи по проекту ${project.name}`,
-      submit: true,
-    }));
-    return [...targets, ...people, ...projects].slice(0, SMART_SUGGEST_LIMIT);
-  }
+  if (showPrefix) return smartSuggestionsForShow(value, showPrefix);
+
   return [];
 }
 
@@ -1100,7 +1126,6 @@ async function smartSearchAsk(query, options = {}) {
       await smartSearchRunCreate(result.create);
       return;
     }
-    smartSearchRender();
     smartSearchRender();
   } catch (error) {
     console.error(error);

@@ -1,3 +1,5 @@
+'use strict';
+
 module.exports = function createRecurringMeetings({ db, isAdmin, isActiveTeamMember, nextMeetingKey }) {
   function addMonthsSafe(dateValue, months) {
     const d = new Date(dateValue);
@@ -27,49 +29,97 @@ module.exports = function createRecurringMeetings({ db, isAdmin, isActiveTeamMem
     return 0;
   }
 
+  function dateOnly(value) {
+    return String(value || '').slice(0, 10);
+  }
+
+  // Meetings of `type` where `person` is a participant. Read twice in
+  // syncRecurringMeetingsForPerson: once before the participantIds repair
+  // loop, once after, so the second read picks up the repaired rows.
+  function meetingsForPersonAndType(person, type) {
+    return db.meetings.all().filter((m) => m.type === type && (m.participantIds || []).includes(person.id));
+  }
+
+  function removeFutureAutoMeetings(person, today, meetings = db.meetings.all()) {
+    for (const meeting of meetings) {
+      const isFutureAuto = meeting.autoRecurring
+        && meeting.recurringPersonId === person.id
+        && dateOnly(meeting.date) >= today;
+      if (isFutureAuto) db.meetings.remove(meeting.id);
+    }
+  }
+
+  // An auto-recurring 1:1/PR meeting should only ever have `person` as its
+  // sole participant — repair any that drifted (e.g. a manual edit added a
+  // co-participant) before recomputing future/past state below.
+  function repairAutoMeetingParticipants(person, meetings) {
+    for (const meeting of meetings) {
+      if (meeting.autoRecurring && meeting.recurringPersonId === person.id) {
+        const ids = Array.isArray(meeting.participantIds) ? meeting.participantIds : [];
+        if (ids.length !== 1 || ids[0] !== person.id) db.meetings.update(meeting.id, { participantIds: [person.id] });
+      }
+    }
+  }
+
   function syncRecurringMeetingsForPerson(personId, actorUser) {
     const person = db.people.get(personId);
     if (!person || person.type !== 'team') return;
     const now = new Date();
     const today = now.toISOString().slice(0, 10);
+
     if (!isActiveTeamMember(person)) {
-      for (const meeting of db.meetings.all()) {
-        if (meeting.autoRecurring && meeting.recurringPersonId === person.id && String(meeting.date || '').slice(0, 10) >= today) db.meetings.remove(meeting.id);
-      }
+      removeFutureAutoMeetings(person, today);
       return;
     }
+
     for (const type of ['1:1', 'pr']) {
       const months = recurringMonthsFor(person, type);
-      let meetings = db.meetings.all().filter((m) => m.type === type && (m.participantIds || []).includes(person.id));
-      for (const meeting of meetings) {
-        if (meeting.autoRecurring && meeting.recurringPersonId === person.id) {
-          const ids = Array.isArray(meeting.participantIds) ? meeting.participantIds : [];
-          if (ids.length !== 1 || ids[0] !== person.id) db.meetings.update(meeting.id, { participantIds: [person.id] });
-        }
-      }
-      meetings = db.meetings.all().filter((m) => m.type === type && (m.participantIds || []).includes(person.id));
+      repairAutoMeetingParticipants(person, meetingsForPersonAndType(person, type));
+      const meetings = meetingsForPersonAndType(person, type);
+
       if (months === 0) {
-        for (const meeting of meetings) {
-          if (meeting.autoRecurring && meeting.recurringPersonId === person.id && String(meeting.date || '').slice(0, 10) >= today) db.meetings.remove(meeting.id);
-        }
+        removeFutureAutoMeetings(person, today, meetings);
         continue;
       }
-      const future = meetings.filter((m) => String(m.date || '').slice(0, 10) >= today).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+
+      const future = meetings
+        .filter((m) => dateOnly(m.date) >= today)
+        .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
       const futureManual = future.filter((m) => !m.autoRecurring);
       const futureAutos = future.filter((m) => m.autoRecurring && m.recurringPersonId === person.id);
+
       if (future.length) {
+        // Only one auto-scheduled meeting should be pending: if a manual
+        // meeting already covers the future, drop every auto one; otherwise
+        // keep just the earliest auto one.
         const keepAuto = futureManual.length ? null : futureAutos[0];
-        for (const extra of futureAutos) if (!keepAuto || extra.id !== keepAuto.id) db.meetings.remove(extra.id);
+        for (const extra of futureAutos) {
+          if (!keepAuto || extra.id !== keepAuto.id) db.meetings.remove(extra.id);
+        }
         continue;
       }
-      const past = meetings.filter((m) => String(m.date || '').slice(0, 10) < today).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+
+      const past = meetings
+        .filter((m) => dateOnly(m.date) < today)
+        .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
       const anchor = past[0]?.date || person.createdAt || now.toISOString();
       const targetDate = nextRecurringDate(anchor, months);
       const title = type === '1:1' ? `1:1 с ${person.name}` : `PR: ${person.name}`;
+
       db.meetings.create({
-        type, title, date: targetDate,
-        participantIds: [person.id], projectId: null, prepNotes: '', notes: '', nextSteps: '', documentLinks: [], actionItems: [],
-        autoRecurring: true, recurringPersonId: person.id, recurringEveryMonths: months,
+        type,
+        title,
+        date: targetDate,
+        participantIds: [person.id],
+        projectId: null,
+        prepNotes: '',
+        notes: '',
+        nextSteps: '',
+        documentLinks: [],
+        actionItems: [],
+        autoRecurring: true,
+        recurringPersonId: person.id,
+        recurringEveryMonths: months,
         createdByUserId: actorUser?.id || db.auth.users.all().find((u) => isAdmin(u))?.id || null,
         meetingKey: typeof nextMeetingKey === 'function' ? nextMeetingKey() : undefined,
       });
@@ -88,8 +138,17 @@ module.exports = function createRecurringMeetings({ db, isAdmin, isActiveTeamMem
   }
 
   function ensureRecurringMeetingSchedules() {
-    for (const person of db.people.all().filter((person) => person.type === 'team')) syncRecurringMeetingsForPerson(person.id, null);
+    for (const person of db.people.all().filter((person) => person.type === 'team')) {
+      syncRecurringMeetingsForPerson(person.id, null);
+    }
   }
 
-  return { addMonthsSafe, nextRecurringDate, recurringMonthsFor, syncRecurringMeetingsForPerson, syncRecurringMeetingsForMeeting, ensureRecurringMeetingSchedules };
+  return {
+    addMonthsSafe,
+    nextRecurringDate,
+    recurringMonthsFor,
+    syncRecurringMeetingsForPerson,
+    syncRecurringMeetingsForMeeting,
+    ensureRecurringMeetingSchedules,
+  };
 };

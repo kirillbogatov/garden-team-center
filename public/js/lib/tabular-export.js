@@ -88,18 +88,28 @@ const TabularExport = (() => {
   function crc32(bytes) {
     const table = getCrcTable();
     let crc = 0xFFFFFFFF;
-    for (let i = 0; i < bytes.length; i += 1) crc = table[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+    for (let i = 0; i < bytes.length; i += 1) {
+      crc = table[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+    }
     return (crc ^ 0xFFFFFFFF) >>> 0;
   }
 
-  function set16(view, offset, value) { view.setUint16(offset, value, true); }
-  function set32(view, offset, value) { view.setUint32(offset, value >>> 0, true); }
+  function set16(view, offset, value) {
+    view.setUint16(offset, value, true);
+  }
+
+  function set32(view, offset, value) {
+    view.setUint32(offset, value >>> 0, true);
+  }
 
   function concatBytes(parts) {
     const total = parts.reduce((sum, part) => sum + part.length, 0);
     const out = new Uint8Array(total);
     let offset = 0;
-    for (const part of parts) { out.set(part, offset); offset += part.length; }
+    for (const part of parts) {
+      out.set(part, offset);
+      offset += part.length;
+    }
     return out;
   }
 

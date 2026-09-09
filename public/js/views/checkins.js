@@ -181,6 +181,10 @@ function openCheckinsWeekPicker() {
   input.addEventListener('keydown', (event) => { if (event.key === 'Enter') go(); });
 }
 
+// Подписи трёх колонок Check-in переиспользуются и в таблице по неделям,
+// и в истории по сотруднику, и в aria-label каждого поля.
+const CHECKIN_FIELD_LABEL = { did: 'Что делал', willDo: 'Что буду делать', blockers: 'Что мешает' };
+
 function checkinCellHtml(checkin, person, kind, weekStart = Views._checkinsWeek) {
   const text = checkin ? (checkin[kind] || '') : '';
   const spinOff = kind === 'willDo'
@@ -188,9 +192,12 @@ function checkinCellHtml(checkin, person, kind, weekStart = Views._checkinsWeek)
     : kind === 'blockers'
       ? { label: 'Создать проблему из этой записи', icon: 'issues', command: 'spinOffIssueFromCheckin' }
       : null;
+  const spinOffHtml = spinOff && checkin?.id && text.trim()
+    ? `<button type="button" class="checkins-spinoff-btn" data-command-stop="1" data-command="${spinOff.command}" data-command-arg="${checkin.id}" title="${escapeHtml(spinOff.label)}" aria-label="${escapeHtml(spinOff.label)}">${icon(spinOff.icon, 13)}</button>`
+    : '';
   return `<div class="checkins-cell checkins-cell-text checkins-cell-editable" role="cell">
-    <textarea class="checkins-inline-editor" rows="1" data-checkin-inline="1" data-checkin-id="${checkin?.id || ''}" data-person-id="${person.id}" data-week-start="${weekStart}" data-kind="${kind}" aria-label="${kind === 'did' ? 'Что делал' : kind === 'willDo' ? 'Что буду делать' : 'Что мешает'}" placeholder="—">${escapeHtml(text)}</textarea>
-    ${spinOff && checkin?.id && text.trim() ? `<button type="button" class="checkins-spinoff-btn" data-command-stop="1" data-command="${spinOff.command}" data-command-arg="${checkin.id}" title="${escapeHtml(spinOff.label)}" aria-label="${escapeHtml(spinOff.label)}">${icon(spinOff.icon, 13)}</button>` : ''}
+    <textarea class="checkins-inline-editor" rows="1" data-checkin-inline="1" data-checkin-id="${checkin?.id || ''}" data-person-id="${person.id}" data-week-start="${weekStart}" data-kind="${kind}" aria-label="${CHECKIN_FIELD_LABEL[kind]}" placeholder="—">${escapeHtml(text)}</textarea>
+    ${spinOffHtml}
   </div>`;
 }
 
@@ -216,6 +223,16 @@ function checkinsWeekHtml(checkins, team) {
   </div>`;
 }
 
+function checkinsHistoryRowHtml(c, person) {
+  const checkin = c.id ? c : null;
+  return `<div class="checkins-history-table-row" role="row">
+      <div class="checkins-history-table-cell checkins-history-period" role="cell"><span>${fmtDate(c.weekStart)}</span><span>${fmtDate(checkinWeekEnd(c.weekStart), { withYear: true })}</span></div>
+      <div class="checkins-history-table-cell" role="cell">${checkinCellHtml(checkin, person, 'did', c.weekStart)}</div>
+      <div class="checkins-history-table-cell" role="cell">${checkinCellHtml(checkin, person, 'willDo', c.weekStart)}</div>
+      <div class="checkins-history-table-cell" role="cell">${checkinCellHtml(checkin, person, 'blockers', c.weekStart)}</div>
+    </div>`;
+}
+
 function checkinsPersonHtml(checkins, team) {
   const personId = Views._checkinsPerson;
   const person = store.person(personId);
@@ -223,12 +240,7 @@ function checkinsPersonHtml(checkins, team) {
   const mine = checkins.filter((c) => c.personId === personId).sort((a, b) => String(b.weekStart).localeCompare(String(a.weekStart)));
   const currentWeek = Views._checkinsWeek || localDateKey(mondayOf(new Date()));
   if (person && !mine.some((c) => c.weekStart === currentWeek)) mine.unshift({ id: '', personId, weekStart: currentWeek, did: '', willDo: '', blockers: '' });
-  const rowsHtml = mine.length ? mine.map((c) => `<div class="checkins-history-table-row" role="row">
-      <div class="checkins-history-table-cell checkins-history-period" role="cell"><span>${fmtDate(c.weekStart)}</span><span>${fmtDate(checkinWeekEnd(c.weekStart), { withYear: true })}</span></div>
-      <div class="checkins-history-table-cell" role="cell">${checkinCellHtml(c.id ? c : null, person, 'did', c.weekStart)}</div>
-      <div class="checkins-history-table-cell" role="cell">${checkinCellHtml(c.id ? c : null, person, 'willDo', c.weekStart)}</div>
-      <div class="checkins-history-table-cell" role="cell">${checkinCellHtml(c.id ? c : null, person, 'blockers', c.weekStart)}</div>
-    </div>`).join('') : '';
+  const rowsHtml = mine.length ? mine.map((c) => checkinsHistoryRowHtml(c, person)).join('') : '';
   return `<div class="checkins-person-panel">${selectHtml}<div class="checkins-history-table" role="table" aria-label="История Check-in по сотруднику">
     <div class="checkins-history-table-row checkins-history-table-head" role="row">
       <div class="checkins-history-table-cell" role="columnheader">Период</div>
@@ -336,13 +348,20 @@ async function deleteCheckin(id) {
   Views.checkins();
 }
 
+// Заголовок новой сущности — первая строка исходного текста, обрезанная до
+// разумной длины заголовка; если запись пуста, подставляем нейтральное имя.
+function checkinSpinOffTitle(text, fallback) {
+  const firstLine = text.split(/\r?\n/)[0].trim();
+  if (firstLine.length > 120) return `${firstLine.slice(0, 117)}…`;
+  return firstLine || fallback;
+}
+
 // «Что буду делать» → Задача, «Что мешает» → Проблема. Однонаправленная
 // обратная ссылка sourceCheckinId связывает созданную сущность с исходным Check-in.
 async function spinOffTaskFromCheckin(checkinId) {
   const c = _lastCheckins.find((x) => x.id === checkinId);
   if (!c || !c.willDo) return;
-  const firstLine = c.willDo.split(/\r?\n/)[0].trim();
-  const title = firstLine.length > 120 ? `${firstLine.slice(0, 117)}…` : (firstLine || 'Задача из Check-in');
+  const title = checkinSpinOffTitle(c.willDo, 'Задача из Check-in');
   await FeatureLoader.run('openTaskModal', null, {
     prefill: { title, description: c.willDo, assigneeIds: c.personId ? [c.personId] : [], sourceCheckinId: c.id },
   });
@@ -351,8 +370,7 @@ async function spinOffTaskFromCheckin(checkinId) {
 async function spinOffIssueFromCheckin(checkinId) {
   const c = _lastCheckins.find((x) => x.id === checkinId);
   if (!c || !c.blockers) return;
-  const firstLine = c.blockers.split(/\r?\n/)[0].trim();
-  const title = firstLine.length > 120 ? `${firstLine.slice(0, 117)}…` : (firstLine || 'Проблема из Check-in');
+  const title = checkinSpinOffTitle(c.blockers, 'Проблема из Check-in');
   await FeatureLoader.run('openIssueModal', null, {
     prefill: { title, description: c.blockers, relatedPersonIds: c.personId ? [c.personId] : [], sourceCheckinId: c.id },
   });

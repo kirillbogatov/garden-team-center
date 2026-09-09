@@ -7,13 +7,18 @@ Views.knowledgeBase = async function () {
   setTopbar(`<h1>База знаний</h1><div class="actions"><button class="ui-button btn" data-command="openKbFolderModal">+ Создать папку</button><button class="ui-button ui-button--primary btn btn-primary" data-command="openKbNewDocumentModal">+ Добавить документ</button></div>`);
   const view = document.getElementById('view');
   view.innerHTML = `<div class="tiny">Загрузка…</div>`;
-  const [folders, kbDocs, legacyDocuments] = await Promise.all([Resources.kbFolders.list(), Resources.kbDocs.list(), Resources.documents.list().catch(() => [])]);
-  const legacyLinks = legacyDocuments.map((d) => ({ ...d, _legacyDocument: true, docType: 'link', folderId: null }));
-  const docs = [...kbDocs, ...legacyLinks];
+  const [folders, docs] = await Promise.all([Resources.kbFolders.list(), Resources.kbDocs.list()]);
   kbFolderNameMap = Object.fromEntries(folders.map((f) => [f.id, f.title]));
   const selected = Views._kbFolder;
   const filtered = selected === 'all' ? docs : docs.filter((d) => d.folderId === selected);
   const selectedFolder = folders.find((f) => f.id === selected);
+
+  const docRowsHtml = filtered.length
+    ? filtered.slice().sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)).map(kbDocRowHtml).join('')
+    : `<div class="zen-empty">В этой папке пока нет документов</div>`;
+  const folderEditButton = selectedFolder
+    ? `<button class="ui-button ui-button--sm btn btn-sm" data-command="openKbFolderModal" data-command-arg="${selectedFolder.id}">${icon('edit', 13)} Редактировать папку</button>`
+    : '';
 
   view.innerHTML = `<div class="kb-layout">
     <aside class="kb-tree-panel">
@@ -22,31 +27,34 @@ Views.knowledgeBase = async function () {
     </aside>
     <section class="kb-main">
       <div class="kb-section-head">
-        <div><h2>${escapeHtml(selectedFolder?.title || 'Все документы')}</h2><div class="tiny">${filtered.length} ${pluralRu(filtered.length,'документ','документа','документов')}</div></div>
-        ${selectedFolder ? `<button class="ui-button ui-button--sm btn btn-sm" data-command="openKbFolderModal" data-command-arg="${selectedFolder.id}">${icon('edit',13)} Редактировать папку</button>` : ''}
+        <div><h2>${escapeHtml(selectedFolder?.title || 'Все документы')}</h2><div class="tiny">${filtered.length} ${pluralRu(filtered.length, 'документ', 'документа', 'документов')}</div></div>
+        ${folderEditButton}
       </div>
       <div class="kb-doc-list">
-        ${filtered.length ? filtered.sort((a,b)=>new Date(b.updatedAt)-new Date(a.updatedAt)).map(kbDocRowHtml).join('') : `<div class="zen-empty">В этой папке пока нет документов</div>`}
+        ${docRowsHtml}
       </div>
     </section>
   </div>`;
 };
 
 function kbFolderTreeHtml(folders, docs, parentId, depth) {
-  return folders.filter((f) => (f.parentId || null) === (parentId || null)).sort((a,b)=>a.title.localeCompare(b.title,'ru')).map((f) => {
-    const children = kbFolderTreeHtml(folders, docs, f.id, depth + 1);
+  const children = folders
+    .filter((f) => (f.parentId || null) === (parentId || null))
+    .sort((a, b) => a.title.localeCompare(b.title, 'ru'));
+  return children.map((f) => {
+    const childrenHtml = kbFolderTreeHtml(folders, docs, f.id, depth + 1);
     const count = docs.filter((d) => d.folderId === f.id).length;
     return `<div class="kb-tree-node">
       <button class="ui-row ui-row--tree kb-tree-row ${Views._kbFolder === f.id ? 'active' : ''}" style="--kb-depth:${depth}" data-view-state="_kbFolder" data-view-value="${f.id}" data-view-render="knowledgeBase">
-        <span class="kb-folder-mark">${icon('projects',13)}</span><span class="kb-tree-title">${escapeHtml(f.title)}</span><span>${count || ''}</span>
-      </button>${children}
+        <span class="kb-folder-mark">${icon('projects', 13)}</span><span class="kb-tree-title">${escapeHtml(f.title)}</span><span>${count || ''}</span>
+      </button>${childrenHtml}
     </div>`;
   }).join('');
 }
 
 function kbDocRowHtml(d) {
   const folder = d.folderId;
-  const isLink = d.docType === 'link' || d._legacyDocument;
+  const isLink = d.docType === 'link';
   const meta = isLink ? 'Ссылка' : `Изменён ${fmtRelative(d.updatedAt)}`;
   const copy = `<div class="kb-doc-copy"><div class="kb-doc-title">${escapeHtml(d.title)}</div><div class="tiny">${meta}</div></div>`;
   const folderHtml = folder ? `<span class="tiny">${escapeHtml(kbFolderNameMap[folder] || '')}</span>` : '';
@@ -55,7 +63,7 @@ function kbDocRowHtml(d) {
     return `<div class="kb-doc-row clickable" data-command="openKnowledgeLink" data-command-arg="${escapeHtml(encodeURIComponent(url))}">
       ${copy}${folderHtml}
       <span class="kb-doc-row-actions">
-        <button type="button" class="kb-doc-action" title="Редактировать ссылку" aria-label="Редактировать ссылку" data-command="openKbLinkEditModal" data-command-arg="${escapeHtml(d.id)}" data-command-arg2="${d._legacyDocument ? 'legacy' : 'kb'}" data-command-stop="1">${icon('edit',13)}</button>
+        <button type="button" class="kb-doc-action" title="Редактировать ссылку" aria-label="Редактировать ссылку" data-command="openKbLinkEditModal" data-command-arg="${escapeHtml(d.id)}" data-command-stop="1">${icon('edit',13)}</button>
         <span class="kb-doc-external" aria-hidden="true">${icon('external',13)}</span>
       </span>
     </div>`;
@@ -86,17 +94,25 @@ async function openKbFolderModal(id) {
     <div class="ui-modal-actions modal-actions">${current ? `<button class="ui-button ui-button--danger btn btn-danger btn-push-left" id="kbf-delete">${icon('trash',13)} Удалить</button>` : ''}<button class="ui-button btn" data-modal-close>Отмена</button><button class="ui-button ui-button--primary btn btn-primary" id="kbf-save">Сохранить</button></div>`);
   if (current) document.getElementById('kbf-delete').onclick = async () => {
     const docs = await Resources.kbDocs.list();
-    const hasChildren = folders.some((f)=>f.parentId===current.id);
-    const hasDocs = docs.some((d)=>d.folderId===current.id);
+    const hasChildren = folders.some((f) => f.parentId === current.id);
+    const hasDocs = docs.some((d) => d.folderId === current.id);
     if (hasChildren || hasDocs) { toast('Сначала перенесите документы и вложенные папки'); return; }
     if (!(await confirmAction('Удалить пустую папку?'))) return;
-    await Resources.kbFolders.remove(current.id); Modal.close(); Views._kbFolder='all'; Views.knowledgeBase();
+    await Resources.kbFolders.remove(current.id);
+    Modal.close();
+    Views._kbFolder = 'all';
+    Views.knowledgeBase();
   };
   document.getElementById('kbf-save').onclick = async () => {
-    const payload={title:document.getElementById('kbf-title').value.trim(),parentId:document.getElementById('kbf-parent').value||null};
-    if(!payload.title){toast('Укажите название папки');return;}
-    if(current) await Resources.kbFolders.update(current.id,payload); else await Resources.kbFolders.create(payload);
-    Modal.close(); Views.knowledgeBase();
+    const payload = {
+      title: document.getElementById('kbf-title').value.trim(),
+      parentId: document.getElementById('kbf-parent').value || null,
+    };
+    if (!payload.title) { toast('Укажите название папки'); return; }
+    if (current) await Resources.kbFolders.update(current.id, payload);
+    else await Resources.kbFolders.create(payload);
+    Modal.close();
+    Views.knowledgeBase();
   };
 }
 
@@ -106,21 +122,17 @@ function openKnowledgeLink(encodedUrl) {
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 
-async function openKbLinkEditModal(id, source = 'kb') {
-  const isLegacy = source === 'legacy';
-  const resource = isLegacy ? Resources.documents : Resources.kbDocs;
-  const [item, folders] = await Promise.all([resource.get(id), Resources.kbFolders.list()]);
+async function openKbLinkEditModal(id) {
+  const [item, folders] = await Promise.all([Resources.kbDocs.get(id), Resources.kbFolders.list()]);
   Modal.open(`<h2>Редактировать ссылку</h2>
     <div class="ui-field field"><label class="ui-field-label field-label" for="kbe-title">Название</label><input id="kbe-title" value="${escapeHtml(item.title || '')}" autofocus /></div>
     <div class="ui-field field"><label class="ui-field-label field-label" for="kbe-url">Ссылка</label><input id="kbe-url" type="url" inputmode="url" value="${escapeHtml(item.url || '')}" placeholder="https://…" /></div>
-    <div class="ui-field field"><label class="ui-field-label field-label" for="kbe-folder">Папка</label><select id="kbe-folder"><option value="">Без папки</option>${folders.map((f)=>`<option value="${f.id}" ${!isLegacy && item.folderId===f.id?'selected':''}>${escapeHtml(f.title)}</option>`).join('')}</select></div>
+    <div class="ui-field field"><label class="ui-field-label field-label" for="kbe-folder">Папка</label><select id="kbe-folder"><option value="">Без папки</option>${folders.map((f)=>`<option value="${f.id}" ${item.folderId===f.id?'selected':''}>${escapeHtml(f.title)}</option>`).join('')}</select></div>
     <div class="ui-modal-actions modal-actions"><button class="ui-button ui-button--danger btn btn-danger btn-push-left" id="kbe-delete">${icon('trash',13)} Удалить</button><button class="ui-button btn" data-modal-close>Отмена</button><button class="ui-button ui-button--primary btn btn-primary" id="kbe-save">Сохранить</button></div>`);
   document.getElementById('kbe-delete').onclick = async () => {
     if (!(await confirmAction('Удалить ссылку из базы знаний?'))) return;
-    await resource.remove(item.id);
-    Modal.close();
-    toast('Ссылка удалена');
-    Views.knowledgeBase();
+    await Resources.kbDocs.remove(item.id);
+    Modal.close(); toast('Ссылка удалена'); Views.knowledgeBase();
   };
   document.getElementById('kbe-save').onclick = async () => {
     const title = document.getElementById('kbe-title').value.trim();
@@ -128,20 +140,8 @@ async function openKbLinkEditModal(id, source = 'kb') {
     const folderId = document.getElementById('kbe-folder').value || null;
     if (!title) { toast('Укажите название'); return; }
     if (!/^https?:\/\//i.test(url)) { toast('Укажите корректную ссылку'); return; }
-    if (isLegacy && folderId) {
-      // Старые ссылки из бывшего раздела «Документы» не знают о папках базы знаний.
-      // При первом перемещении мигрируем запись в kbDocs и удаляем старую, чтобы
-      // дальше она полноценно поддерживала папки, редактирование и удаление.
-      await Resources.kbDocs.create({ title, url, folderId, docType: 'link', contentHtml: '', markdown: '' });
-      await resource.remove(item.id);
-    } else if (isLegacy) {
-      await resource.update(item.id, { ...item, title, url });
-    } else {
-      await resource.update(item.id, { ...item, title, url, folderId, docType: 'link' });
-    }
-    Modal.close();
-    toast('Сохранено');
-    Views.knowledgeBase();
+    await Resources.kbDocs.update(item.id, { ...item, title, url, folderId, docType: 'link' });
+    Modal.close(); toast('Сохранено'); Views.knowledgeBase();
   };
 }
 
@@ -164,20 +164,21 @@ async function openKbNewDocumentModal() {
     if (isLink) requestAnimationFrame(() => urlInput.focus());
   };
   typeSelect.onchange = syncType;
-  primaryButton.onclick=async()=>{
-    const title=document.getElementById('kbd-title').value.trim();
-    if(!title){toast('Укажите название');return;}
-    const folderId=document.getElementById('kbd-folder').value||null;
-    if(typeSelect.value === 'link'){
-      const url=urlInput.value.trim();
-      if(!/^https?:\/\//i.test(url)){toast('Укажите корректную ссылку');return;}
-      await Resources.kbDocs.create({title,folderId,docType:'link',url,contentHtml:'',markdown:''});
+  primaryButton.onclick = async () => {
+    const title = document.getElementById('kbd-title').value.trim();
+    if (!title) { toast('Укажите название'); return; }
+    const folderId = document.getElementById('kbd-folder').value || null;
+    if (typeSelect.value === 'link') {
+      const url = urlInput.value.trim();
+      if (!/^https?:\/\//i.test(url)) { toast('Укажите корректную ссылку'); return; }
+      await Resources.kbDocs.create({ title, folderId, docType: 'link', url, contentHtml: '', markdown: '' });
       Modal.close();
       Views.knowledgeBase();
       return;
     }
-    const doc=await Resources.kbDocs.create({title,folderId,docType:'article',contentHtml:'<p><br></p>',markdown:''});
-    Modal.close(); Router.go(`/knowledge-base/${encodeURIComponent(doc.slug||doc.id)}`);
+    const doc = await Resources.kbDocs.create({ title, folderId, docType: 'article', contentHtml: '<p><br></p>', markdown: '' });
+    Modal.close();
+    Router.go(`/knowledge-base/${encodeURIComponent(doc.slug || doc.id)}`);
   };
 }
 
@@ -233,66 +234,30 @@ Views.knowledgeDocument = async function (ref) {
     <article id="kb-editor" class="kb-editor" contenteditable="true" data-placeholder="Начните писать…">${initialHtml}</article>
   </div>`;
 
-  const editor=document.getElementById('kb-editor');
-  const titleInput=document.getElementById('kb-title');
-  const folderSelect=document.getElementById('kb-folder');
-  const draftKey=knowledgeDraftKey(d.id);
-  const publishedState={
-    title:(d.title||'').trim(),
-    folderId:d.folderId||'',
-    contentHtml:sanitizeKnowledgeHtml(initialHtml)
+  const editor = document.getElementById('kb-editor');
+  const titleInput = document.getElementById('kb-title');
+  const folderSelect = document.getElementById('kb-folder');
+  const draftKey = knowledgeDraftKey(d.id);
+  const publishedState = {
+    title: (d.title || '').trim(),
+    folderId: d.folderId || '',
+    contentHtml: sanitizeKnowledgeHtml(initialHtml),
   };
-  const snapshot=()=>({
-    title:titleInput.value.trim(),
-    folderId:folderSelect.value||'',
-    contentHtml:sanitizeKnowledgeHtml(editor.innerHTML)
+  const snapshot = () => ({
+    title: titleInput.value.trim(),
+    folderId: folderSelect.value || '',
+    contentHtml: sanitizeKnowledgeHtml(editor.innerHTML),
   });
-  const persistDraft=()=>{
-    const state=snapshot();
-    if(knowledgeDraftStatesEqual(state,publishedState)){ knowledgeClearDraft(draftKey); return; }
-    knowledgeWriteDraft(draftKey,{...state,updatedAt:Date.now()});
+  const persistDraft = () => {
+    const state = snapshot();
+    if (knowledgeDraftStatesEqual(state, publishedState)) { knowledgeClearDraft(draftKey); return; }
+    knowledgeWriteDraft(draftKey, { ...state, updatedAt: Date.now() });
   };
-  const scheduleDraftSave=knowledgeDebounce(persistDraft,700);
+  const scheduleDraftSave = knowledgeDebounce(persistDraft, 700);
 
   initKnowledgeImageResizing(editor);
-  const storedDraft=knowledgeReadDraft(draftKey);
-  if(storedDraft && !knowledgeDraftStatesEqual(storedDraft,publishedState)){
-    requestAnimationFrame(()=>{
-      promptKnowledgeDraftRestore(storedDraft,()=>{
-        titleInput.value=storedDraft.title||titleInput.value;
-        folderSelect.value=storedDraft.folderId||'';
-        editor.innerHTML=storedDraft.contentHtml||editor.innerHTML;
-        initKnowledgeImageResizing(editor);
-        toast('Неопубликованный черновик восстановлен');
-      },()=>knowledgeClearDraft(draftKey));
-    });
-  } else if (storedDraft) {
-    knowledgeClearDraft(draftKey);
-  }
-
-  document.querySelectorAll('[data-cmd]').forEach((b)=>b.onmousedown=(e)=>{e.preventDefault();document.execCommand(b.dataset.cmd,false,null);editor.focus();scheduleDraftSave();});
-  document.getElementById('kb-block-style').onchange=(e)=>{document.execCommand('formatBlock',false,e.target.value);editor.focus();scheduleDraftSave();};
-  document.getElementById('kb-link').onmousedown=(e)=>{e.preventDefault();const url=prompt('Ссылка');if(url){document.execCommand('createLink',false,url);scheduleDraftSave();}editor.focus();};
-  document.getElementById('kb-code').onmousedown=(e)=>{e.preventDefault();insertKnowledgeCodeBlock(editor);scheduleDraftSave();};
-  document.getElementById('kb-image').onclick=()=>document.getElementById('kb-image-file').click();
-  document.getElementById('kb-image-file').onchange=async(e)=>{const file=e.target.files[0];if(!file)return;await insertKnowledgeImage(editor,file);e.target.value='';scheduleDraftSave();};
-  document.getElementById('kb-table').onmousedown=(e)=>{e.preventDefault();openKnowledgeTableActions(editor);scheduleDraftSave();};
-  document.getElementById('kb-import').onclick=()=>document.getElementById('kb-import-file').click();
-  document.getElementById('kb-import-file').onchange=async(e)=>{const file=e.target.files[0];if(!file)return;editor.innerHTML=markdownToKnowledgeHtml(await file.text());initKnowledgeImageResizing(editor);scheduleDraftSave();toast('Markdown импортирован. Черновик сохранится автоматически.');};
-  document.getElementById('kb-export').onclick=()=>exportKnowledgeMarkdown(titleInput.value.trim()||d.title, knowledgeHtmlToMarkdown(editor.innerHTML));
-  document.getElementById('kb-delete').onclick=async()=>{if(!(await confirmAction('Удалить документ из базы знаний?')))return;knowledgeClearDraft(draftKey);await Resources.kbDocs.remove(d.id);Router.go('/knowledge-base');};
-  document.getElementById('kb-save').onclick=async()=>{
-    const title=titleInput.value.trim(); if(!title){toast('Укажите название');return;}
-    const contentHtml=sanitizeKnowledgeHtml(editor.innerHTML);
-    const folderId=folderSelect.value||null;
-    await Resources.kbDocs.update(d.id,{title,folderId,contentHtml,markdown:knowledgeHtmlToMarkdown(contentHtml)});
-    knowledgeClearDraft(draftKey);
-    publishedState.title = title;
-    publishedState.folderId = folderId || '';
-    publishedState.contentHtml = contentHtml;
-    toast('Документ сохранён');
-    Views._kbFolder = folderId || 'all';
-  };
+  restoreKnowledgeDraftIfNeeded({ draftKey, publishedState, titleInput, folderSelect, editor });
+  wireKnowledgeEditorToolbar({ editor, titleInput, folderSelect, d, draftKey, publishedState, scheduleDraftSave });
 
   titleInput.addEventListener('input', scheduleDraftSave);
   titleInput.addEventListener('blur', persistDraft);
@@ -300,9 +265,98 @@ Views.knowledgeDocument = async function (ref) {
   folderSelect.addEventListener('blur', persistDraft);
   editor.addEventListener('input', scheduleDraftSave);
   editor.addEventListener('blur', persistDraft);
-  const observer=new MutationObserver(()=>scheduleDraftSave());
-  observer.observe(editor,{subtree:true,childList:true,characterData:true});
+  const observer = new MutationObserver(() => scheduleDraftSave());
+  observer.observe(editor, { subtree: true, childList: true, characterData: true });
 };
+
+// Черновик документа хранится локально (localStorage) и предлагается к
+// восстановлению, только если он реально отличается от опубликованной версии —
+// иначе при каждом открытии документа всплывал бы бесполезный тост.
+function restoreKnowledgeDraftIfNeeded({ draftKey, publishedState, titleInput, folderSelect, editor }) {
+  const storedDraft = knowledgeReadDraft(draftKey);
+  if (!storedDraft) return;
+  if (knowledgeDraftStatesEqual(storedDraft, publishedState)) { knowledgeClearDraft(draftKey); return; }
+  requestAnimationFrame(() => {
+    promptKnowledgeDraftRestore(storedDraft, () => {
+      titleInput.value = storedDraft.title || titleInput.value;
+      folderSelect.value = storedDraft.folderId || '';
+      editor.innerHTML = storedDraft.contentHtml || editor.innerHTML;
+      initKnowledgeImageResizing(editor);
+      toast('Неопубликованный черновик восстановлен');
+    }, () => knowledgeClearDraft(draftKey));
+  });
+}
+
+// Кнопки панели инструментов редактора: форматирование через execCommand,
+// вставка изображений/таблиц/кода и импорт/экспорт/удаление документа.
+function wireKnowledgeEditorToolbar({ editor, titleInput, folderSelect, d, draftKey, publishedState, scheduleDraftSave }) {
+  document.querySelectorAll('[data-cmd]').forEach((b) => {
+    b.onmousedown = (e) => {
+      e.preventDefault();
+      document.execCommand(b.dataset.cmd, false, null);
+      editor.focus();
+      scheduleDraftSave();
+    };
+  });
+  document.getElementById('kb-block-style').onchange = (e) => {
+    document.execCommand('formatBlock', false, e.target.value);
+    editor.focus();
+    scheduleDraftSave();
+  };
+  document.getElementById('kb-link').onmousedown = (e) => {
+    e.preventDefault();
+    const url = prompt('Ссылка');
+    if (url) { document.execCommand('createLink', false, url); scheduleDraftSave(); }
+    editor.focus();
+  };
+  document.getElementById('kb-code').onmousedown = (e) => {
+    e.preventDefault();
+    insertKnowledgeCodeBlock(editor);
+    scheduleDraftSave();
+  };
+  document.getElementById('kb-image').onclick = () => document.getElementById('kb-image-file').click();
+  document.getElementById('kb-image-file').onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    await insertKnowledgeImage(editor, file);
+    e.target.value = '';
+    scheduleDraftSave();
+  };
+  document.getElementById('kb-table').onmousedown = (e) => {
+    e.preventDefault();
+    openKnowledgeTableActions(editor);
+    scheduleDraftSave();
+  };
+  document.getElementById('kb-import').onclick = () => document.getElementById('kb-import-file').click();
+  document.getElementById('kb-import-file').onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    editor.innerHTML = markdownToKnowledgeHtml(await file.text());
+    initKnowledgeImageResizing(editor);
+    scheduleDraftSave();
+    toast('Markdown импортирован. Черновик сохранится автоматически.');
+  };
+  document.getElementById('kb-export').onclick = () => exportKnowledgeMarkdown(titleInput.value.trim() || d.title, knowledgeHtmlToMarkdown(editor.innerHTML));
+  document.getElementById('kb-delete').onclick = async () => {
+    if (!(await confirmAction('Удалить документ из базы знаний?'))) return;
+    knowledgeClearDraft(draftKey);
+    await Resources.kbDocs.remove(d.id);
+    Router.go('/knowledge-base');
+  };
+  document.getElementById('kb-save').onclick = async () => {
+    const title = titleInput.value.trim();
+    if (!title) { toast('Укажите название'); return; }
+    const contentHtml = sanitizeKnowledgeHtml(editor.innerHTML);
+    const folderId = folderSelect.value || null;
+    await Resources.kbDocs.update(d.id, { title, folderId, contentHtml, markdown: knowledgeHtmlToMarkdown(contentHtml) });
+    knowledgeClearDraft(draftKey);
+    publishedState.title = title;
+    publishedState.folderId = folderId || '';
+    publishedState.contentHtml = contentHtml;
+    toast('Документ сохранён');
+    Views._kbFolder = folderId || 'all';
+  };
+}
 
 function knowledgeDraftKey(id){
   return `garden:kb-draft:${id}`;
@@ -362,30 +416,56 @@ function promptKnowledgeDraftRestore(draft, onRestore, onDiscard){
   document.getElementById('kb-draft-restore').onclick=()=>{ Modal.close(); onRestore?.(); };
 }
 
-function insertKnowledgeTable(editor){
-  const rows=Math.min(12,Math.max(1,Number(prompt('Строк (включая заголовок)','3'))||3));
-  const cols=Math.min(8,Math.max(1,Number(prompt('Столбцов','3'))||3));
-  let html='<table><thead><tr>'+Array.from({length:cols},(_,i)=>`<th>Столбец ${i+1}</th>`).join('')+'</tr></thead><tbody>';
-  for(let r=1;r<rows;r++)html+='<tr>'+Array.from({length:cols},()=>'<td><br></td>').join('')+'</tr>';
-  html+='</tbody></table><p><br></p>';
-  editor.focus();document.execCommand('insertHTML',false,html);
+function insertKnowledgeTable(editor) {
+  const rows = Math.min(12, Math.max(1, Number(prompt('Строк (включая заголовок)', '3')) || 3));
+  const cols = Math.min(8, Math.max(1, Number(prompt('Столбцов', '3')) || 3));
+  const headCells = Array.from({ length: cols }, (_, i) => `<th>Столбец ${i + 1}</th>`).join('');
+  const bodyRow = '<tr>' + Array.from({ length: cols }, () => '<td><br></td>').join('') + '</tr>';
+  const bodyRows = Array.from({ length: rows - 1 }, () => bodyRow).join('');
+  const html = `<table><thead><tr>${headCells}</tr></thead><tbody>${bodyRows}</tbody></table><p><br></p>`;
+  editor.focus();
+  document.execCommand('insertHTML', false, html);
 }
 
-function knowledgeCurrentCell(editor){
-  const sel=window.getSelection();
-  if(!sel||!sel.rangeCount)return null;
-  let node=sel.anchorNode;
-  if(node?.nodeType===3)node=node.parentElement;
-  const cell=node?.closest?.('td,th');
-  return cell&&editor.contains(cell)?cell:null;
+function knowledgeCurrentCell(editor) {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return null;
+  let node = sel.anchorNode;
+  if (node?.nodeType === 3) node = node.parentElement;
+  const cell = node?.closest?.('td,th');
+  return cell && editor.contains(cell) ? cell : null;
 }
 
-function openKnowledgeTableActions(editor){
-  const cell=knowledgeCurrentCell(editor);
-  if(!cell){insertKnowledgeTable(editor);return;}
-  const table=cell.closest('table');
-  const row=cell.parentElement;
-  const col=[...row.children].indexOf(cell);
+// Добавление строки поддерживает вставку и в <thead>, и в <tbody> — новая
+// строка заголовка становится первой строкой тела, а не остаётся в шапке.
+function knowledgeAddTableRow(table, sourceRow) {
+  const newRow = document.createElement('tr');
+  const isHeadRow = sourceRow.parentElement.tagName === 'THEAD';
+  [...sourceRow.children].forEach(() => {
+    const cell = document.createElement(isHeadRow ? 'th' : 'td');
+    cell.innerHTML = '<br>';
+    newRow.appendChild(cell);
+  });
+  if (isHeadRow) (table.tBodies[0] || table.appendChild(document.createElement('tbody'))).prepend(newRow);
+  else sourceRow.after(newRow);
+}
+
+function knowledgeAddTableColumn(table, col) {
+  [...table.rows].forEach((r) => {
+    const cells = [...r.cells];
+    const ref = cells[Math.min(col, cells.length - 1)];
+    const cell = document.createElement(ref?.tagName === 'TH' ? 'th' : 'td');
+    cell.innerHTML = '<br>';
+    if (ref) ref.after(cell); else r.appendChild(cell);
+  });
+}
+
+function openKnowledgeTableActions(editor) {
+  const cell = knowledgeCurrentCell(editor);
+  if (!cell) { insertKnowledgeTable(editor); return; }
+  const table = cell.closest('table');
+  const row = cell.parentElement;
+  const col = [...row.children].indexOf(cell);
   Modal.open(`<h2>Таблица</h2>
     <div class="kb-table-actions">
       <button class="ui-button btn" id="kbt-add-row">Добавить строку</button>
@@ -396,35 +476,36 @@ function openKnowledgeTableActions(editor){
       <button class="ui-button btn" id="kbt-merge-down">Объединить снизу</button>
     </div>
     <div class="ui-modal-actions modal-actions"><button class="ui-button ui-button--danger btn btn-danger btn-push-left" id="kbt-delete">Удалить таблицу</button><button class="ui-button btn" data-modal-close>Готово</button></div>`);
-  document.getElementById('kbt-add-row').onclick=()=>{
-    const source=row;
-    const newRow=document.createElement('tr');
-    const cells=[...source.children];
-    cells.forEach((c)=>{const n=document.createElement(source.parentElement.tagName==='THEAD'?'th':'td');n.innerHTML='<br>';newRow.appendChild(n);});
-    if(source.parentElement.tagName==='THEAD') (table.tBodies[0]||table.appendChild(document.createElement('tbody'))).prepend(newRow); else source.after(newRow);
-    Modal.close();editor.focus();
+  document.getElementById('kbt-add-row').onclick = () => {
+    knowledgeAddTableRow(table, row);
+    Modal.close();
+    editor.focus();
   };
-  document.getElementById('kbt-del-row').onclick=()=>{
-    const total=[...table.querySelectorAll('tr')].length;
-    if(total<=1){table.remove();} else row.remove();
-    Modal.close();editor.focus();
+  document.getElementById('kbt-del-row').onclick = () => {
+    const total = [...table.querySelectorAll('tr')].length;
+    if (total <= 1) table.remove(); else row.remove();
+    Modal.close();
+    editor.focus();
   };
-  document.getElementById('kbt-add-col').onclick=()=>{
-    [...table.rows].forEach((r)=>{const cells=[...r.cells];const ref=cells[Math.min(col,cells.length-1)];const n=document.createElement(ref?.tagName==='TH'?'th':'td');n.innerHTML='<br>';if(ref)ref.after(n);else r.appendChild(n);});
-    Modal.close();editor.focus();
+  document.getElementById('kbt-add-col').onclick = () => {
+    knowledgeAddTableColumn(table, col);
+    Modal.close();
+    editor.focus();
   };
-  document.getElementById('kbt-del-col').onclick=()=>{
-    const max=Math.max(0,...[...table.rows].map(r=>r.cells.length));
-    if(max<=1){table.remove();} else [...table.rows].forEach((r)=>{if(r.cells[col])r.deleteCell(col);});
-    Modal.close();editor.focus();
+  document.getElementById('kbt-del-col').onclick = () => {
+    const max = Math.max(0, ...[...table.rows].map((r) => r.cells.length));
+    if (max <= 1) table.remove();
+    else [...table.rows].forEach((r) => { if (r.cells[col]) r.deleteCell(col); });
+    Modal.close();
+    editor.focus();
   };
-  document.getElementById('kbt-merge-right').onclick=()=>{
+  document.getElementById('kbt-merge-right').onclick = () => {
     if (knowledgeMergeCellRight(cell)) { Modal.close(); editor.focus(); }
   };
-  document.getElementById('kbt-merge-down').onclick=()=>{
+  document.getElementById('kbt-merge-down').onclick = () => {
     if (knowledgeMergeCellDown(cell)) { Modal.close(); editor.focus(); }
   };
-  document.getElementById('kbt-delete').onclick=()=>{table.remove();Modal.close();editor.focus();};
+  document.getElementById('kbt-delete').onclick = () => { table.remove(); Modal.close(); editor.focus(); };
 }
 
 function knowledgeMergeCellContent(target, source) {
@@ -503,89 +584,224 @@ function knowledgeMergeCellDown(cell) {
   return true;
 }
 
-function insertKnowledgeCodeBlock(editor){
+function insertKnowledgeCodeBlock(editor) {
   editor.focus();
-  const sel=window.getSelection();
-  const selected=sel&&sel.rangeCount?sel.toString():'';
-  const code=escapeHtml(selected||'код');
-  document.execCommand('insertHTML',false,`<pre><code>${code}</code></pre><p><br></p>`);
+  const sel = window.getSelection();
+  const selected = sel && sel.rangeCount ? sel.toString() : '';
+  const code = escapeHtml(selected || 'код');
+  document.execCommand('insertHTML', false, `<pre><code>${code}</code></pre><p><br></p>`);
 }
 
-function insertKnowledgeImage(editor,file){
-  if(!file.type.startsWith('image/')){toast('Выберите изображение');return Promise.resolve();}
-  if(file.size>8*1024*1024){toast('Изображение должно быть меньше 8 МБ');return Promise.resolve();}
-  return new Promise((resolve,reject)=>{
-    const reader=new FileReader();
-    reader.onload=()=>{editor.focus();document.execCommand('insertHTML',false,`<figure class="kb-image-figure" data-kb-width="100"><img src="${escapeHtml(reader.result)}" alt="${escapeHtml(file.name.replace(/\.[^.]+$/,''))}"><figcaption><br></figcaption></figure><p><br></p>`);initKnowledgeImageResizing(editor);resolve();};
-    reader.onerror=reject;reader.readAsDataURL(file);
+function insertKnowledgeImage(editor, file) {
+  if (!file.type.startsWith('image/')) { toast('Выберите изображение'); return Promise.resolve(); }
+  if (file.size > 8 * 1024 * 1024) { toast('Изображение должно быть меньше 8 МБ'); return Promise.resolve(); }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      editor.focus();
+      const alt = escapeHtml(file.name.replace(/\.[^.]+$/, ''));
+      const html = `<figure class="kb-image-figure" data-kb-width="100"><img src="${escapeHtml(reader.result)}" alt="${alt}"><figcaption><br></figcaption></figure><p><br></p>`;
+      document.execCommand('insertHTML', false, html);
+      initKnowledgeImageResizing(editor);
+      resolve();
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
   });
 }
 
-function initKnowledgeImageResizing(editor){
-  if(!editor)return;
-  editor.querySelectorAll('figure').forEach((figure)=>{
-    const img=figure.querySelector(':scope > img');
-    if(!img)return;
+// Каждая вставленная картинка становится ресайзящейся: клик выделяет фигуру,
+// а ResizeObserver отслеживает перетаскивание рамки браузером (resize: both в
+// CSS) и записывает итоговую ширину в data-kb-width, которая переживает
+// сохранение/сериализацию в Markdown и обратно.
+function initKnowledgeImageResizing(editor) {
+  if (!editor) return;
+  editor.querySelectorAll('figure').forEach((figure) => {
+    const img = figure.querySelector(':scope > img');
+    if (!img) return;
     figure.classList.add('kb-image-figure');
-    const stored=Math.max(20,Math.min(100,Number(figure.dataset.kbWidth)||100));
-    figure.dataset.kbWidth=String(Math.round(stored));
-    figure.style.width=`${stored}%`;
-    if(figure.dataset.kbResizeBound==='1')return;
-    figure.dataset.kbResizeBound='1';
-    figure.addEventListener('click',(e)=>{
+    const stored = Math.max(20, Math.min(100, Number(figure.dataset.kbWidth) || 100));
+    figure.dataset.kbWidth = String(Math.round(stored));
+    figure.style.width = `${stored}%`;
+    if (figure.dataset.kbResizeBound === '1') return;
+    figure.dataset.kbResizeBound = '1';
+    figure.addEventListener('click', (e) => {
       e.stopPropagation();
-      editor.querySelectorAll('.kb-image-figure.is-selected').forEach((el)=>{if(el!==figure)el.classList.remove('is-selected');});
+      editor.querySelectorAll('.kb-image-figure.is-selected').forEach((el) => { if (el !== figure) el.classList.remove('is-selected'); });
       figure.classList.add('is-selected');
     });
-    const observer=new ResizeObserver(()=>{
-      if(!figure.isConnected||!figure.classList.contains('is-selected'))return;
-      const max=editor.clientWidth||1;
-      const pct=Math.max(20,Math.min(100,(figure.getBoundingClientRect().width/max)*100));
-      figure.dataset.kbWidth=String(Math.round(pct));
+    const observer = new ResizeObserver(() => {
+      if (!figure.isConnected || !figure.classList.contains('is-selected')) return;
+      const max = editor.clientWidth || 1;
+      const pct = Math.max(20, Math.min(100, (figure.getBoundingClientRect().width / max) * 100));
+      figure.dataset.kbWidth = String(Math.round(pct));
     });
     observer.observe(figure);
   });
-  if(editor.dataset.kbImageDismissBound!=='1'){
-    editor.dataset.kbImageDismissBound='1';
-    editor.addEventListener('click',(e)=>{
-      if(!e.target.closest('.kb-image-figure'))editor.querySelectorAll('.kb-image-figure.is-selected').forEach((el)=>el.classList.remove('is-selected'));
+  if (editor.dataset.kbImageDismissBound !== '1') {
+    editor.dataset.kbImageDismissBound = '1';
+    editor.addEventListener('click', (e) => {
+      if (!e.target.closest('.kb-image-figure')) editor.querySelectorAll('.kb-image-figure.is-selected').forEach((el) => el.classList.remove('is-selected'));
     });
   }
 }
 
-function sanitizeKnowledgeHtml(html){
-  const doc=new DOMParser().parseFromString(`<div>${html||''}</div>`,'text/html');const root=doc.body.firstElementChild;
-  root.querySelectorAll('script,style,iframe,object,embed,form,input,button').forEach((el)=>el.remove());
-  root.querySelectorAll('.kb-image-figure').forEach((el)=>{el.classList.remove('is-selected');el.removeAttribute('data-kb-resize-bound');el.style.removeProperty('width');});
-  root.querySelectorAll('*').forEach((el)=>{[...el.attributes].forEach((a)=>{if(/^on/i.test(a.name)||a.name==='style')el.removeAttribute(a.name);if(a.name==='href'&&!/^https?:|^mailto:|^#/i.test(a.value))el.removeAttribute(a.name);if(a.name==='src'&&!/^https?:|^data:image\//i.test(a.value))el.removeAttribute(a.name);});});
+// Санитизация перед сохранением/показом: убираем исполняемые/встраиваемые
+// теги целиком, снимаем UI-состояние ресайза картинок и вырезаем опасные
+// атрибуты (on*, style, а также href/src с недоверенной схемой).
+function sanitizeKnowledgeHtml(html) {
+  const doc = new DOMParser().parseFromString(`<div>${html || ''}</div>`, 'text/html');
+  const root = doc.body.firstElementChild;
+  root.querySelectorAll('script,style,iframe,object,embed,form,input,button').forEach((el) => el.remove());
+  root.querySelectorAll('.kb-image-figure').forEach((el) => {
+    el.classList.remove('is-selected');
+    el.removeAttribute('data-kb-resize-bound');
+    el.style.removeProperty('width');
+  });
+  root.querySelectorAll('*').forEach((el) => {
+    [...el.attributes].forEach((a) => {
+      if (/^on/i.test(a.name) || a.name === 'style') el.removeAttribute(a.name);
+      if (a.name === 'href' && !/^https?:|^mailto:|^#/i.test(a.value)) el.removeAttribute(a.name);
+      if (a.name === 'src' && !/^https?:|^data:image\//i.test(a.value)) el.removeAttribute(a.name);
+    });
+  });
   return root.innerHTML;
 }
 
-function markdownToKnowledgeHtml(md){
-  const lines=String(md||'').replace(/\r/g,'').split('\n');let out='';
-  const inline=(v)=>escapeHtml(v)
-    .replace(/!\[([^\]]*)\]\((data:image\/[^)]+|https?:\/\/[^)]+)\)/g,'<img src="$2" alt="$1">')
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>')
-    .replace(/`([^`]+)`/g,'<code>$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
-    .replace(/\*([^*]+)\*/g,'<em>$1</em>');
-  for(let i=0;i<lines.length;){const line=lines[i];
-    if(/^```/.test(line)){const lang=line.slice(3).trim();i++;const code=[];while(i<lines.length&&!/^```/.test(lines[i]))code.push(lines[i++]);if(i<lines.length)i++;out+=`<pre><code${lang?` data-language="${escapeHtml(lang)}"`:''}>${escapeHtml(code.join('\n'))}</code></pre>`;continue;}
-    if(/^\|.*\|\s*$/.test(line)&&i+1<lines.length&&/^\|?[\s:|-]+\|/.test(lines[i+1])){const rows=[];while(i<lines.length&&/^\|.*\|\s*$/.test(lines[i])){rows.push(lines[i].replace(/^\||\|$/g,'').split('|').map(x=>x.trim()));i++;if(rows.length===1&&i<lines.length&&/^\|?[\s:|-]+\|/.test(lines[i]))i++;}const head=rows.shift()||[];out+='<table><thead><tr>'+head.map(x=>`<th>${inline(x)}</th>`).join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+r.map(x=>`<td>${inline(x)}</td>`).join('')+'</tr>').join('')+'</tbody></table>';continue;}
-    const image=line.match(/^!\[([^\]]*)\]\((data:image\/[^)]+|https?:\/\/[^)]+)\)\s*$/);if(image){out+=`<figure><img src="${image[2]}" alt="${escapeHtml(image[1])}"></figure>`;i++;continue;}
-    const h=line.match(/^(#{1,3})\s+(.+)$/);if(h){out+=`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`;i++;continue;}
-    if(!line.trim()){out+='<p><br></p>';i++;continue;}out+=`<p>${inline(line)}</p>`;i++;}
+// Инлайн-разметка внутри строки: картинки/ссылки/код/жирный/курсив.
+// Порядок замен важен — картинка `![]()` должна обработаться раньше
+// обычной ссылки `[]()`, иначе `!` перед ней сломает совпадение.
+function knowledgeInlineMarkdown(v) {
+  return escapeHtml(v)
+    .replace(/!\[([^\]]*)\]\((data:image\/[^)]+|https?:\/\/[^)]+)\)/g, '<img src="$2" alt="$1">')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>');
+}
+
+// Построчный разбор блоков Markdown: тройные кавычки — код, `|...|` со
+// строкой-разделителем следом — таблица, `![]()`/`#`/пустая строка — картинка,
+// заголовок, пустой абзац; всё остальное — обычный абзац с инлайн-разметкой.
+function markdownToKnowledgeHtml(md) {
+  const lines = String(md || '').replace(/\r/g, '').split('\n');
+  let out = '';
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+
+    if (/^```/.test(line)) {
+      const lang = line.slice(3).trim();
+      i++;
+      const code = [];
+      while (i < lines.length && !/^```/.test(lines[i])) code.push(lines[i++]);
+      if (i < lines.length) i++;
+      const langAttr = lang ? ` data-language="${escapeHtml(lang)}"` : '';
+      out += `<pre><code${langAttr}>${escapeHtml(code.join('\n'))}</code></pre>`;
+      continue;
+    }
+
+    if (/^\|.*\|\s*$/.test(line) && i + 1 < lines.length && /^\|?[\s:|-]+\|/.test(lines[i + 1])) {
+      const rows = [];
+      while (i < lines.length && /^\|.*\|\s*$/.test(lines[i])) {
+        rows.push(lines[i].replace(/^\||\|$/g, '').split('|').map((x) => x.trim()));
+        i++;
+        // Строка-разделитель (`|---|---|`) сразу после заголовка — это
+        // разметка таблицы, а не строка данных, пропускаем её.
+        if (rows.length === 1 && i < lines.length && /^\|?[\s:|-]+\|/.test(lines[i])) i++;
+      }
+      const head = rows.shift() || [];
+      const headHtml = head.map((x) => `<th>${knowledgeInlineMarkdown(x)}</th>`).join('');
+      const bodyHtml = rows.map((r) => '<tr>' + r.map((x) => `<td>${knowledgeInlineMarkdown(x)}</td>`).join('') + '</tr>').join('');
+      out += `<table><thead><tr>${headHtml}</tr></thead><tbody>${bodyHtml}</tbody></table>`;
+      continue;
+    }
+
+    const image = line.match(/^!\[([^\]]*)\]\((data:image\/[^)]+|https?:\/\/[^)]+)\)\s*$/);
+    if (image) {
+      out += `<figure><img src="${image[2]}" alt="${escapeHtml(image[1])}"></figure>`;
+      i++;
+      continue;
+    }
+
+    const h = line.match(/^(#{1,3})\s+(.+)$/);
+    if (h) {
+      out += `<h${h[1].length}>${knowledgeInlineMarkdown(h[2])}</h${h[1].length}>`;
+      i++;
+      continue;
+    }
+
+    if (!line.trim()) { out += '<p><br></p>'; i++; continue; }
+    out += `<p>${knowledgeInlineMarkdown(line)}</p>`;
+    i++;
+  }
   return out;
 }
 
-function knowledgeHtmlToMarkdown(html){
-  const doc=new DOMParser().parseFromString(`<div>${sanitizeKnowledgeHtml(html)}</div>`,'text/html');const root=doc.body.firstElementChild;
-  const inline=(node)=>{if(node.nodeType===3)return node.nodeValue||'';if(node.nodeType!==1)return'';const tag=node.tagName.toLowerCase();let text=[...node.childNodes].map(inline).join('');if(tag==='a')return`[${text}](${node.getAttribute('href')||''})`;if(tag==='img')return`![${node.getAttribute('alt')||''}](${node.getAttribute('src')||''})`;if(tag==='strong'||tag==='b')return`**${text}**`;if(tag==='em'||tag==='i')return`*${text}*`;if(tag==='code'&&node.parentElement?.tagName!=='PRE')return'`'+text+'`';if(tag==='br')return'\n';return text;};
-  const blocks=[];[...root.children].forEach((el)=>{const tag=el.tagName.toLowerCase();if(/^h[1-3]$/.test(tag))blocks.push('#'.repeat(Number(tag[1]))+' '+inline(el));else if(tag==='pre'){const code=el.querySelector('code');const lang=code?.dataset?.language||'';blocks.push('```'+lang+'\n'+(code?.textContent||el.textContent||'')+'\n```');}else if(tag==='figure'){const img=el.querySelector('img');if(img)blocks.push(`![${img.getAttribute('alt')||''}](${img.getAttribute('src')||''})`);}else if(tag==='table'){const rows=[...el.querySelectorAll('tr')].map(tr=>[...tr.children].map(c=>inline(c).replace(/\|/g,'\\|').trim()));if(rows.length){blocks.push('| '+rows[0].join(' | ')+' |');blocks.push('| '+rows[0].map(()=> '---').join(' | ')+' |');rows.slice(1).forEach(r=>blocks.push('| '+r.join(' | ')+' |'));}}else blocks.push(inline(el));});return blocks.join('\n\n').replace(/\n{3,}/g,'\n\n').trim();
+// Обратное преобразование: DOM-узел в инлайн-Markdown. Рекурсивно обходит
+// дочерние узлы, оборачивая распознанные теги в соответствующий синтаксис;
+// незнакомые теги просто отдают текст своих детей без потери содержимого.
+function knowledgeInlineToMarkdown(node) {
+  if (node.nodeType === 3) return node.nodeValue || '';
+  if (node.nodeType !== 1) return '';
+  const tag = node.tagName.toLowerCase();
+  const text = [...node.childNodes].map(knowledgeInlineToMarkdown).join('');
+  if (tag === 'a') return `[${text}](${node.getAttribute('href') || ''})`;
+  if (tag === 'img') return `![${node.getAttribute('alt') || ''}](${node.getAttribute('src') || ''})`;
+  if (tag === 'strong' || tag === 'b') return `**${text}**`;
+  if (tag === 'em' || tag === 'i') return `*${text}*`;
+  if (tag === 'code' && node.parentElement?.tagName !== 'PRE') return '`' + text + '`';
+  if (tag === 'br') return '\n';
+  return text;
 }
 
-function exportKnowledgeMarkdown(title, markdown){
-  const blob=new Blob([markdown],{type:'text/markdown;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=(title||'document').replace(/[\\/:*?"<>|]+/g,'-')+'.md';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),500);
+// Таблица сериализуется в GFM-Markdown: строка заголовка, строка-разделитель
+// из дефисов, затем строки данных — символ `|` внутри ячеек экранируется.
+function knowledgeTableToMarkdownBlock(tableEl) {
+  const rows = [...tableEl.querySelectorAll('tr')].map((tr) =>
+    [...tr.children].map((c) => knowledgeInlineToMarkdown(c).replace(/\|/g, '\\|').trim())
+  );
+  if (!rows.length) return null;
+  const lines = [`| ${rows[0].join(' | ')} |`, `| ${rows[0].map(() => '---').join(' | ')} |`];
+  rows.slice(1).forEach((r) => lines.push(`| ${r.join(' | ')} |`));
+  return lines.join('\n');
+}
+
+function knowledgeBlockToMarkdown(el) {
+  const tag = el.tagName.toLowerCase();
+  if (/^h[1-3]$/.test(tag)) return '#'.repeat(Number(tag[1])) + ' ' + knowledgeInlineToMarkdown(el);
+  if (tag === 'pre') {
+    const code = el.querySelector('code');
+    const lang = code?.dataset?.language || '';
+    return '```' + lang + '\n' + (code?.textContent || el.textContent || '') + '\n```';
+  }
+  if (tag === 'figure') {
+    const img = el.querySelector('img');
+    return img ? `![${img.getAttribute('alt') || ''}](${img.getAttribute('src') || ''})` : null;
+  }
+  if (tag === 'table') return knowledgeTableToMarkdownBlock(el);
+  return knowledgeInlineToMarkdown(el);
+}
+
+function knowledgeHtmlToMarkdown(html) {
+  const doc = new DOMParser().parseFromString(`<div>${sanitizeKnowledgeHtml(html)}</div>`, 'text/html');
+  const root = doc.body.firstElementChild;
+  const blocks = [...root.children]
+    .map(knowledgeBlockToMarkdown)
+    .filter((block) => block !== null);
+  return blocks.join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function exportKnowledgeMarkdown(title, markdown) {
+  const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (title || 'document').replace(/[\\/:*?"<>|]+/g, '-') + '.md';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 500);
 }
 
 // Public feature commands used by the declarative command layer.

@@ -9,16 +9,19 @@ const EntityForm = {
     const label = escapeHtml(def.label || def.key);
     const raw = value ?? def.default ?? '';
     let control = '';
+
     if (def.render) {
       control = def.render({ id, value: raw, mode, context, disabled });
     } else if (def.type === 'textarea') {
       control = `<textarea id="${id}" rows="${def.rows || 3}" placeholder="${escapeHtml(def.placeholder || '')}" ${disabled}>${escapeHtml(raw)}</textarea>`;
     } else if (def.type === 'select') {
       const options = typeof def.options === 'function' ? def.options(context) : (def.options || []);
-      control = `<select id="${id}" ${disabled}>${def.emptyLabel !== undefined ? `<option value="">${escapeHtml(def.emptyLabel)}</option>` : ''}${options.map((option) => {
+      const optionsHtml = options.map((option) => {
         const item = typeof option === 'string' ? { value: option, label: option } : option;
         return `<option value="${escapeHtml(item.value)}" ${String(item.value) === String(raw) ? 'selected' : ''}>${escapeHtml(item.label)}</option>`;
-      }).join('')}</select>`;
+      }).join('');
+      const emptyOption = def.emptyLabel !== undefined ? `<option value="">${escapeHtml(def.emptyLabel)}</option>` : '';
+      control = `<select id="${id}" ${disabled}>${emptyOption}${optionsHtml}</select>`;
     } else if (def.type === 'checkbox') {
       control = `<label class="check-row"><input id="${id}" type="checkbox" ${raw ? 'checked' : ''} ${disabled}/><span>${escapeHtml(def.checkboxLabel || def.label || '')}</span></label>`;
     } else if (def.type === 'people') {
@@ -26,24 +29,29 @@ const EntityForm = {
     } else if (def.type === 'multicheck') {
       const items = typeof def.options === 'function' ? def.options(context) : (def.options || []);
       const selected = Array.isArray(raw) ? raw : [];
-      control = `<div id="${id}" class="entity-form-multicheck">${items.map((option) => {
+      const rowsHtml = items.map((option) => {
         const item = typeof option === 'string' ? { value: option, label: option } : option;
         return `<label class="check-row"><input type="checkbox" value="${escapeHtml(item.value)}" ${selected.includes(item.value) ? 'checked' : ''} ${disabled}/><span>${escapeHtml(item.label)}</span></label>`;
-      }).join('')}</div>`;
+      }).join('');
+      control = `<div id="${id}" class="entity-form-multicheck">${rowsHtml}</div>`;
     } else {
       control = `<input id="${id}" type="${def.type || 'text'}" value="${escapeHtml(raw)}" placeholder="${escapeHtml(def.placeholder || '')}" ${disabled}/>`;
     }
-    return `<div class="ui-field field entity-form-field entity-form-field-${escapeHtml(def.type || 'text')}"><label class="ui-field-label field-label" for="${id}">${label}</label>${control}${def.hint ? `<div class="ui-field-hint field-hint">${escapeHtml(def.hint)}</div>` : ''}</div>`;
+
+    const hint = def.hint ? `<div class="ui-field-hint field-hint">${escapeHtml(def.hint)}</div>` : '';
+    return `<div class="ui-field field entity-form-field entity-form-field-${escapeHtml(def.type || 'text')}"><label class="ui-field-label field-label" for="${id}">${label}</label>${control}${hint}</div>`;
   },
 
   read(schema, initial, mode, instance) {
     const output = {};
     for (const def of schema) {
       if (def.when && !def.when({ mode, value: initial })) continue;
+
       if (def.read) {
         output[def.key] = def.read({ mode, initial, instance });
         continue;
       }
+
       if (def.type === 'people') {
         const selected = instance?.controls?.get(def.key)?.getSelected?.() || [];
         let value = def.multi === false ? (selected[0] || null) : selected;
@@ -51,6 +59,7 @@ const EntityForm = {
         output[def.key] = value;
         continue;
       }
+
       if (def.type === 'multicheck') {
         const root = document.getElementById(`ef-${def.key}`);
         let value = Array.from(root?.querySelectorAll('input[type="checkbox"]:checked') || []).map((el) => el.value);
@@ -58,6 +67,7 @@ const EntityForm = {
         output[def.key] = value;
         continue;
       }
+
       const el = document.getElementById(`ef-${def.key}`);
       if (!el) continue;
       let value = def.type === 'checkbox' ? el.checked : el.value;
@@ -78,7 +88,20 @@ const EntityForm = {
       return true;
     });
     const rows = schema.map((def) => EntityForm.fieldHtml({ ...def, disabled: def.disabled || (() => !editable) }, value[def.key], mode, value));
-    Modal.open(`<h2>${escapeHtml(options.title || '')}</h2><div class="entity-form-fields">${rows.join('')}</div><div class="ui-modal-actions modal-actions">${mode === 'edit' && editable && options.onDelete ? `<button class="ui-button ui-button--danger btn btn-danger btn-push-left" id="entity-form-delete">${icon('trash',14)} Удалить</button>` : ''}<button class="ui-button btn" id="entity-form-cancel">${editable ? 'Отмена' : 'Закрыть'}</button>${editable ? `<button class="ui-button ui-button--primary btn btn-primary" id="entity-form-save">${escapeHtml(options.saveLabel || 'Сохранить')}</button>` : ''}</div>`);
+
+    const deleteButton = mode === 'edit' && editable && options.onDelete
+      ? `<button class="ui-button ui-button--danger btn btn-danger btn-push-left" id="entity-form-delete">${icon('trash', 14)} Удалить</button>`
+      : '';
+    const saveButton = editable
+      ? `<button class="ui-button ui-button--primary btn btn-primary" id="entity-form-save">${escapeHtml(options.saveLabel || 'Сохранить')}</button>`
+      : '';
+    Modal.open(`<h2>${escapeHtml(options.title || '')}</h2>
+      <div class="entity-form-fields">${rows.join('')}</div>
+      <div class="ui-modal-actions modal-actions">
+        ${deleteButton}
+        <button class="ui-button btn" id="entity-form-cancel">${editable ? 'Отмена' : 'Закрыть'}</button>
+        ${saveButton}
+      </div>`);
 
     const instance = { controls: new Map(), value, mode, schema };
     EntityForm._instances.set(Modal.root, instance);
@@ -97,13 +120,19 @@ const EntityForm = {
 
     document.getElementById('entity-form-cancel').addEventListener('click', () => Modal.close());
     if (!editable) return instance;
+
     document.getElementById('entity-form-save').addEventListener('click', async () => {
       const payload = EntityForm.read(schema, value, mode, instance);
       const error = options.validate?.(payload, { mode, initial: value });
-      if (error) { toast(error); return; }
+      if (error) {
+        toast(error);
+        return;
+      }
       await options.onSave(payload, { mode, initial: value, instance });
     });
-    if (mode === 'edit' && options.onDelete) document.getElementById('entity-form-delete').addEventListener('click', () => options.onDelete(value));
+    if (mode === 'edit' && options.onDelete) {
+      document.getElementById('entity-form-delete').addEventListener('click', () => options.onDelete(value));
+    }
     options.onReady?.(instance);
     return instance;
   },

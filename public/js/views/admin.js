@@ -25,21 +25,15 @@ function adminRoles(user) {
   return Array.isArray(user?.roles) && user.roles.length ? user.roles : [user?.role || 'member'];
 }
 
-Views.admin = async function () {
-  if (!Auth.isAdmin()) return Router.go('/overview');
-  setTopbar(`<h1>Учётные записи</h1><div class="actions"><button class="ui-button btn" data-route="/admin/roles">Права ролей</button><button class="ui-button ui-button--primary btn btn-primary" data-command="openAdminUserModal">+ Добавить пользователя</button></div>`);
-  const view = document.getElementById('view');
-  view.innerHTML = `<div class="tiny">Загрузка…</div>`;
-  const [users, people] = await Promise.all([api.get('/api/admin/users'), Resources.people.list()]);
-  const peopleById = Object.fromEntries(people.map((p) => [p.id, p]));
-  view.innerHTML = `<div class="view-narrow admin-users-view">
-    <div class="admin-intro">Роли задают отдельно область видимости и уровень управления для каждого раздела. По умолчанию тимлид видит и управляет всеми данными, а сотрудник видит свои и чужие записи, но управляет только своими. Индивидуальные права могут дополнительно расширить доступ конкретной учётной записи.</div>
-    <div class="admin-users-list">
-      ${users.map((u) => `<div class="admin-user-row ${u.active ? '' : 'is-disabled'}">
-        <div class="admin-user-avatar">${escapeHtml((u.displayName || u.username).trim().charAt(0).toUpperCase())}</div>
+function adminUserRowHtml(u, peopleById) {
+  const initial = escapeHtml((u.displayName || u.username).trim().charAt(0).toUpperCase());
+  const personSuffix = u.personId && peopleById[u.personId] ? ' · ' + escapeHtml(peopleById[u.personId].name) : '';
+  const tempPasswordSuffix = u.mustChangePassword ? ' · временный пароль' : '';
+  return `<div class="admin-user-row ${u.active ? '' : 'is-disabled'}">
+        <div class="admin-user-avatar">${initial}</div>
         <div class="admin-user-main">
           <div class="admin-user-name">${escapeHtml(u.displayName)}</div>
-          <div class="admin-user-meta">@${escapeHtml(u.username)} · ${escapeHtml(Auth.rolesLabel(u))}${u.personId && peopleById[u.personId] ? ' · ' + escapeHtml(peopleById[u.personId].name) : ''}${u.mustChangePassword ? ' · временный пароль' : ''}</div>
+          <div class="admin-user-meta">@${escapeHtml(u.username)} · ${escapeHtml(Auth.rolesLabel(u))}${personSuffix}${tempPasswordSuffix}</div>
         </div>
         <div class="admin-user-last">${escapeHtml(adminDate(u.lastLoginAt))}</div>
         <div class="admin-user-state">${u.active ? 'Активен' : 'Отключён'}</div>
@@ -47,10 +41,42 @@ Views.admin = async function () {
           <button class="ui-button ui-button--sm btn btn-sm" data-command="openAdminPermissionsModal" data-command-arg="${u.id}">Права</button>
           <button class="ui-button ui-button--sm btn btn-sm" data-command="openAdminUserModal" data-command-arg="${u.id}">Изменить</button>
         </div>
-      </div>`).join('') || emptyState('Нет учётных записей', '', 'team')}
+      </div>`;
+}
+
+Views.admin = async function () {
+  if (!Auth.isAdmin()) return Router.go('/overview');
+  setTopbar(`<h1>Учётные записи</h1><div class="actions"><button class="ui-button btn" data-route="/admin/roles">Права ролей</button><button class="ui-button ui-button--primary btn btn-primary" data-command="openAdminUserModal">+ Добавить пользователя</button></div>`);
+  const view = document.getElementById('view');
+  view.innerHTML = `<div class="tiny">Загрузка…</div>`;
+  const [users, people] = await Promise.all([api.get('/api/admin/users'), Resources.people.list()]);
+  const peopleById = Object.fromEntries(people.map((p) => [p.id, p]));
+  const rowsHtml = users.map((u) => adminUserRowHtml(u, peopleById)).join('') || emptyState('Нет учётных записей', '', 'team');
+  view.innerHTML = `<div class="view-narrow admin-users-view">
+    <div class="admin-intro">Роли задают отдельно область видимости и уровень управления для каждого раздела. По умолчанию тимлид видит и управляет всеми данными, а сотрудник видит свои и чужие записи, но управляет только своими. Индивидуальные права могут дополнительно расширить доступ конкретной учётной записи.</div>
+    <div class="admin-users-list">
+      ${rowsHtml}
     </div>
   </div>`;
 };
+
+const ADMIN_ROLE_OPTIONS = [['member', 'Сотрудник'], ['teamlead', 'Тимлид'], ['admin', 'Администратор']];
+
+function adminRoleCheckboxesHtml(user, selectedRoles) {
+  return ADMIN_ROLE_OPTIONS.map(([id, label]) => {
+    const checked = selectedRoles.has(id) || (!user && id === 'member');
+    return `<label class="admin-role-option"><input type="checkbox" data-admin-role="${id}" ${checked ? 'checked' : ''}><span>${label}</span></label>`;
+  }).join('');
+}
+
+function adminPersonOptionsHtml(people, user, linkedActive) {
+  const options = people.filter((p) => p.type === 'team').map((p) => {
+    const selected = user?.personId === p.id ? 'selected' : '';
+    const alreadyLinked = linkedActive.has(p.id);
+    return `<option value="${p.id}" ${selected} ${alreadyLinked ? 'disabled' : ''}>${escapeHtml(p.name)}${alreadyLinked ? ' · уже связан' : ''}</option>`;
+  }).join('');
+  return `<option value="">Без профиля</option>${options}`;
+}
 
 async function openAdminUserModal(userId) {
   const [users, people] = await Promise.all([userId ? api.get('/api/admin/users') : Promise.resolve([]), Resources.people.list()]);
@@ -63,11 +89,11 @@ async function openAdminUserModal(userId) {
     <div class="ui-field field">
       <span class="ui-field-label field-label">Роли</span>
       <div class="admin-role-list">
-        ${[['member','Сотрудник'],['teamlead','Тимлид'],['admin','Администратор']].map(([id,label]) => `<label class="admin-role-option"><input type="checkbox" data-admin-role="${id}" ${selectedRoles.has(id) || (!user && id === 'member') ? 'checked' : ''}><span>${label}</span></label>`).join('')}
+        ${adminRoleCheckboxesHtml(user, selectedRoles)}
       </div>
       <div class="ui-field-hint field-hint">Можно выбрать несколько ролей одновременно. Администратор всегда получает полный доступ.</div>
     </div>
-    <div class="ui-field field"><label class="ui-field-label field-label" for="admin-user-person">Профиль сотрудника</label><select id="admin-user-person"><option value="">Без профиля</option>${people.filter((p) => p.type === 'team').map((p) => `<option value="${p.id}" ${user?.personId === p.id ? 'selected' : ''} ${linkedActive.has(p.id) ? 'disabled' : ''}>${escapeHtml(p.name)}${linkedActive.has(p.id) ? ' · уже связан' : ''}</option>`).join('')}</select><div class="ui-field-hint field-hint">Если нет роли администратора, профиль сотрудника обязателен.</div></div>
+    <div class="ui-field field"><label class="ui-field-label field-label" for="admin-user-person">Профиль сотрудника</label><select id="admin-user-person">${adminPersonOptionsHtml(people, user, linkedActive)}</select><div class="ui-field-hint field-hint">Если нет роли администратора, профиль сотрудника обязателен.</div></div>
     ${user ? `<label class="admin-toggle"><input type="checkbox" id="admin-user-active" ${user.active ? 'checked' : ''} /><span>Доступ разрешён</span></label>` : ''}
     <div class="auth-error" id="admin-user-error"></div>
     <div class="ui-modal-actions modal-actions admin-modal-actions">
@@ -150,6 +176,30 @@ function adminAccessLevelFromControls(available, own, foreign) {
   return own === 'edit' ? 'own_manage' : 'own_read';
 }
 
+// Строка матрицы доступа для одного раздела: доступность, уровень для своих
+// и для чужих записей — три независимых выпадающих списка на одну область.
+function adminAccessAreaRowHtml(area, policyForRole, isAdminRole) {
+  const controls = adminAccessControls(isAdminRole ? 'all_manage' : (policyForRole || 'none'));
+  const disabled = isAdminRole ? 'disabled' : '';
+  const ownForeignDisabled = controls.available ? '' : 'disabled';
+  return `<tr data-admin-access-area="${escapeHtml(area.id)}">
+              <td class="admin-role-access-area">${escapeHtml(area.label)}</td>
+              <td><select data-admin-access-field="available" ${disabled}>
+                <option value="1" ${controls.available ? 'selected' : ''}>Доступен</option>
+                <option value="0" ${!controls.available ? 'selected' : ''}>Недоступен</option>
+              </select></td>
+              <td><select data-admin-access-field="own" ${disabled} ${ownForeignDisabled}>
+                <option value="read" ${controls.own === 'read' ? 'selected' : ''}>Только просмотр</option>
+                <option value="edit" ${controls.own === 'edit' ? 'selected' : ''}>Редактирование</option>
+              </select></td>
+              <td><select data-admin-access-field="foreign" ${disabled} ${ownForeignDisabled}>
+                <option value="none" ${controls.foreign === 'none' ? 'selected' : ''}>Недоступно</option>
+                <option value="read" ${controls.foreign === 'read' ? 'selected' : ''}>Только просмотр</option>
+                <option value="edit" ${controls.foreign === 'edit' ? 'selected' : ''}>Редактирование</option>
+              </select></td>
+            </tr>`;
+}
+
 Views.adminRoleAccess = async function () {
   if (!Auth.isAdmin()) return Router.go('/overview');
   setTopbar(`<h1>Права ролей</h1><div class="actions"><button class="ui-button btn" data-route="/admin">Назад</button><button class="ui-button ui-button--primary btn btn-primary" id="admin-role-access-save">Сохранить</button></div>`, {
@@ -188,26 +238,7 @@ Views.adminRoleAccess = async function () {
       <table class="admin-role-access-table">
         <thead><tr><th>Раздел</th><th>Доступ к разделу</th><th>Свои записи</th><th>Чужие записи</th></tr></thead>
         <tbody>
-          ${schema.areas.map((area) => {
-            const controls = adminAccessControls(isAdminRole ? 'all_manage' : (policy[area.id] || 'none'));
-            const disabled = isAdminRole ? 'disabled' : '';
-            return `<tr data-admin-access-area="${escapeHtml(area.id)}">
-              <td class="admin-role-access-area">${escapeHtml(area.label)}</td>
-              <td><select data-admin-access-field="available" ${disabled}>
-                <option value="1" ${controls.available ? 'selected' : ''}>Доступен</option>
-                <option value="0" ${!controls.available ? 'selected' : ''}>Недоступен</option>
-              </select></td>
-              <td><select data-admin-access-field="own" ${disabled} ${controls.available ? '' : 'disabled'}>
-                <option value="read" ${controls.own === 'read' ? 'selected' : ''}>Только просмотр</option>
-                <option value="edit" ${controls.own === 'edit' ? 'selected' : ''}>Редактирование</option>
-              </select></td>
-              <td><select data-admin-access-field="foreign" ${disabled} ${controls.available ? '' : 'disabled'}>
-                <option value="none" ${controls.foreign === 'none' ? 'selected' : ''}>Недоступно</option>
-                <option value="read" ${controls.foreign === 'read' ? 'selected' : ''}>Только просмотр</option>
-                <option value="edit" ${controls.foreign === 'edit' ? 'selected' : ''}>Редактирование</option>
-              </select></td>
-            </tr>`;
-          }).join('')}
+          ${schema.areas.map((area) => adminAccessAreaRowHtml(area, policy[area.id], isAdminRole)).join('')}
         </tbody>
       </table>
     </div>

@@ -251,29 +251,18 @@ module.exports = {
       "id": "prj_mt4eapktgtg7lv",
       "createdAt": "2026-08-22T13:09:36.893Z",
       "updatedAt": "2026-08-22T13:09:36.939Z",
-      "name": "AI Tools: Wiki",
+      "name": "AI Tools",
       "description": "Сервис представляет собой read-only читалку вики поверх git. Администратор подключает GitLab-репозиторий по ссылке, приложение находит в нём папку forge-wiki/ и показывает её как обычную вики: оглавление, разделы, красиво отрендеренный markdown. Контент не редактируется в приложении — он приходит из репозитория и обновляется сам, когда там появляются новые коммиты.\r\n\r\nКак работает система:\r\n1. Есть набор документов (бриф, описание проекта и др.).\r\n2. AI анализирует их.\r\n3. Формируются стандартные функциональные требования.\r\n4. После проверки требований AI генерирует код.\r\n5. Wiki красиво отображает документацию и связывает документы между собой.\r\n6. Документ нельзя редактировать, но можно оставлять комментарии, лайки и апрувы.\r\n\r\nЧто именно нужно будет сделать:\r\n- Развернуть проект локально.\r\n- Изучить Wiki и существующую документацию.\r\n- Разобраться в текущем пайплайне (какой этап за чем идет)\r\n- Проверить, как работает текущий рендер Markdown.\r\n- Найти проблемы и неудобства.\r\n- Подготовить список улучшений с оценкой сложности.\r\n- При возможности реализовать небольшие улучшения c помощью вайбкодинга.",
       "status": "active",
       "color": "#EB5757",
       "memberIds": [
         "ppl_mt4eapkte7yadq",
-        "ppl_mt4eapkt60st2u"
-      ],
-      "slug": "ai-tools-wiki"
-    },
-    {
-      "id": "prj_mt4eapkt00dluz",
-      "createdAt": "2026-08-22T13:09:36.893Z",
-      "updatedAt": "2026-08-22T13:09:36.939Z",
-      "name": "AI Tools: Watcher",
-      "description": "",
-      "status": "active",
-      "color": "#9B74E9",
-      "memberIds": [
+        "ppl_mt4eapkt60st2u",
         "ppl_mt4eapktxoevr6",
         "ppl_mt4eapkt52phy0"
       ],
-      "slug": "ai-tools-watcher"
+      "slug": "ai-tools",
+      "taskCode": "AITO"
     }
   ],
   "labs": [],
@@ -440,7 +429,7 @@ module.exports = {
       "updatedAt": "2026-08-22T13:09:36.936Z",
       "title": "Тестирование сервиса, внесение правок",
       "description": "",
-      "projectId": "prj_mt4eapkt00dluz",
+      "projectId": "prj_mt4eapktgtg7lv",
       "assigneeIds": [
         "ppl_mt4eapkt52phy0"
       ],
@@ -970,12 +959,12 @@ module.exports = {
       "createdAt": "2026-08-14T09:00:00.000Z",
       "updatedAt": "2026-08-22T13:09:36.936Z",
       "kind": "note",
-      "text": "Старт работ (проект: @[AI Tools: Watcher](project:prj_mt4eapkt00dluz))",
+      "text": "Старт работ (проект: @[AI Tools](project:prj_mt4eapktgtg7lv))",
       "mentions": [
         {
-          "label": "AI Tools: Watcher",
+          "label": "AI Tools",
           "type": "project",
-          "id": "prj_mt4eapkt00dluz"
+          "id": "prj_mt4eapktgtg7lv"
         }
       ]
     },
@@ -984,10 +973,10 @@ module.exports = {
       "createdAt": "2026-08-10T09:00:00.000Z",
       "updatedAt": "2026-08-22T13:09:36.936Z",
       "kind": "note",
-      "text": "Старт работ (проект: @[AI Tools: Wiki](project:prj_mt4eapktgtg7lv))",
+      "text": "Старт работ (проект: @[AI Tools](project:prj_mt4eapktgtg7lv))",
       "mentions": [
         {
-          "label": "AI Tools: Wiki",
+          "label": "AI Tools",
           "type": "project",
           "id": "prj_mt4eapktgtg7lv"
         }
@@ -1021,48 +1010,6 @@ module.exports = {
     }
   ],
   "agreements": [],
-  "documents": [
-    {
-      "id": "doc_mt4eapkvrt9ve4",
-      "createdAt": "2026-08-22T13:09:36.895Z",
-      "updatedAt": "2026-08-22T13:09:36.937Z",
-      "title": "Скоринг команды",
-      "url": "https://drive.google.com/drive/u/0/folders/1EYRBLUb_eDC3dxUVNnQ06IK6lJ_FMWsY",
-      "scope": "general",
-      "projectId": null,
-      "tags": []
-    },
-    {
-      "id": "doc_mt4eapkv05cai9",
-      "createdAt": "2026-08-22T13:09:36.895Z",
-      "updatedAt": "2026-08-22T13:09:36.937Z",
-      "title": "План дообучения до AI Engineer",
-      "url": "https://docs.google.com/spreadsheets/d/13r1wTkC01Wg4GRZsMe5CVBAZ7enE89gNDY4wDMAZO_U/edit?gid=343549564#gid=343549564",
-      "scope": "general",
-      "projectId": null,
-      "tags": []
-    },
-    {
-      "id": "doc_mt4eapkvyhqmxb",
-      "createdAt": "2026-08-22T13:09:36.895Z",
-      "updatedAt": "2026-08-22T13:09:36.937Z",
-      "title": "Roadmap 2026-2027",
-      "url": "https://docs.google.com/spreadsheets/d/1Wr_jAHaE9uXNu5P440girOj4pRRbg4uCdMNrkHcyD2Q/edit?gid=190392822#gid=190392822",
-      "scope": "general",
-      "projectId": null,
-      "tags": []
-    },
-    {
-      "id": "doc_mt4eapkviz2lr7",
-      "createdAt": "2026-08-22T13:09:36.895Z",
-      "updatedAt": "2026-08-22T13:09:36.937Z",
-      "title": "План загрузки 2026",
-      "url": "https://docs.google.com/spreadsheets/d/1IDCwR5E4aEw7QQK4gu6Z6rDx27e-9jqwyTkqFxFwpcs/edit?gid=781963546#gid=781963546",
-      "scope": "general",
-      "projectId": null,
-      "tags": []
-    }
-  ],
   "tools": [],
   "processes": [],
   "vacations": [
@@ -1258,7 +1205,52 @@ module.exports = {
     }
   ],
   "kbFolders": [],
-  "kbDocs": [],
+  "kbDocs": [
+    {
+      "id": "doc_mt4eapkvrt9ve4",
+      "title": "Скоринг команды",
+      "url": "https://drive.google.com/drive/u/0/folders/1EYRBLUb_eDC3dxUVNnQ06IK6lJ_FMWsY",
+      "docType": "link",
+      "folderId": null,
+      "contentHtml": "",
+      "markdown": "",
+      "createdAt": "2026-08-22T13:09:36.895Z",
+      "updatedAt": "2026-08-22T13:09:36.937Z"
+    },
+    {
+      "id": "doc_mt4eapkv05cai9",
+      "title": "План дообучения до AI Engineer",
+      "url": "https://docs.google.com/spreadsheets/d/13r1wTkC01Wg4GRZsMe5CVBAZ7enE89gNDY4wDMAZO_U/edit?gid=343549564#gid=343549564",
+      "docType": "link",
+      "folderId": null,
+      "contentHtml": "",
+      "markdown": "",
+      "createdAt": "2026-08-22T13:09:36.895Z",
+      "updatedAt": "2026-08-22T13:09:36.937Z"
+    },
+    {
+      "id": "doc_mt4eapkvyhqmxb",
+      "title": "Roadmap 2026-2027",
+      "url": "https://docs.google.com/spreadsheets/d/1Wr_jAHaE9uXNu5P440girOj4pRRbg4uCdMNrkHcyD2Q/edit?gid=190392822#gid=190392822",
+      "docType": "link",
+      "folderId": null,
+      "contentHtml": "",
+      "markdown": "",
+      "createdAt": "2026-08-22T13:09:36.895Z",
+      "updatedAt": "2026-08-22T13:09:36.937Z"
+    },
+    {
+      "id": "doc_mt4eapkviz2lr7",
+      "title": "План загрузки 2026",
+      "url": "https://docs.google.com/spreadsheets/d/1IDCwR5E4aEw7QQK4gu6Z6rDx27e-9jqwyTkqFxFwpcs/edit?gid=781963546#gid=781963546",
+      "docType": "link",
+      "folderId": null,
+      "contentHtml": "",
+      "markdown": "",
+      "createdAt": "2026-08-22T13:09:36.895Z",
+      "updatedAt": "2026-08-22T13:09:36.937Z"
+    }
+  ],
   "docFolders": [],
   "toolFolders": []
 };

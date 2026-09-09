@@ -1,7 +1,7 @@
 // Domain/service facade. Views use semantic resource objects rather than URLs.
 const Resources = Object.fromEntries([
-  'tasks','labs','projects','goals','issues','meetings','people','agreements','journal',
-  'documents','tools','processes','vacations','kbFolders','kbDocs','docFolders','toolFolders','checkins','technologyEvents'
+  'tasks', 'labs', 'projects', 'goals', 'issues', 'meetings', 'people', 'agreements', 'journal',
+  'tools', 'processes', 'vacations', 'kbFolders', 'kbDocs', 'docFolders', 'toolFolders', 'checkins', 'technologyEvents',
 ].map((name) => [name, api.resource(`/api/${name}`)]));
 
 const Comments = {
@@ -16,7 +16,7 @@ const LabService = {
     const lab = await Resources.labs.get(ref);
     const [allLabs, comments] = await Promise.all([Resources.labs.list(), Comments.list('lab', lab.id)]);
     const ideas = Relations.labIdeas(lab, allLabs)
-      .sort((a,b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
+      .sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
     return { lab, ideas, comments };
   },
 };
@@ -24,14 +24,15 @@ const LabService = {
 const TaskService = {
   async detail(id, taskRecord) {
     const taskPromise = taskRecord ? Promise.resolve(taskRecord) : Resources.tasks.get(id);
-    const [task, goals, issues, personalNotes, comments] = await Promise.all([
+    const [task, goals, issues, personalNotes, comments, discussion] = await Promise.all([
       taskPromise,
       Resources.goals.list(),
       Resources.issues.list(),
       api.get(`/api/tasks/${encodeURIComponent(id)}/personal-notes`),
       Comments.list('task', id).catch(() => []),
+      Comments.list('task-discussion', id).catch(() => []),
     ]);
-    return { task, goals, issues, personalNotes, comments };
+    return { task, goals, issues, personalNotes, comments, discussion };
   },
   archive: (id) => Resources.tasks.update(id, { archivedAt: new Date().toISOString() }),
   restore: (id) => Resources.tasks.update(id, { archivedAt: null }),

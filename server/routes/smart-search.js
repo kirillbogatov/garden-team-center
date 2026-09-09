@@ -20,13 +20,18 @@ module.exports = function registerSmartSearchRoutes(app, { db, visibleItems, sea
     const query = (req.query.q || '').toString();
     const personId = (req.query.personId || '').toString() || null;
     const settings = userSettings(req.auth.user);
-    res.json(engine.smartSearch(query, req.auth.user, {
+    const result = engine.smartSearch(query, req.auth.user, {
       personId,
       hints: settings.smartSearchPersonHints || {},
       // Сценарий «Чем заняться сегодня» ранжирует задачи по стратегии из настроек —
       // той же, что выбирает порядок в виджетах Обзора.
       taskPriorityMode: settings.taskPriorityMode,
-    }));
+    });
+    // «Умный поиск» здесь — не структурированная команда, а обычный fallback-поиск
+    // (kind: 'search' без распознанного command) — та же статистика непонятых
+    // запросов, что и у обычного поиска, тем же логгером, чтобы не разъезжаться.
+    if (result && result.kind === 'search') search.logSearchMissIfUnrecognized(result.search, req.auth.user);
+    res.json(result);
   });
 
   return engine;

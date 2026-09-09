@@ -118,7 +118,10 @@ function initPeoplePicker(container, list, selectedIds, opts) {
   let candidates = [];
 
   function closeMenu() {
-    if (menuEl) { menuEl.remove(); menuEl = null; }
+    if (menuEl) {
+      menuEl.remove();
+      menuEl = null;
+    }
     window.removeEventListener('resize', positionMenu);
     document.removeEventListener('scroll', positionMenu, true);
   }
@@ -192,7 +195,8 @@ function initPeoplePicker(container, list, selectedIds, opts) {
     inputEl.value = '';
     renderChips();
     closeMenu();
-    if (multi) inputEl.focus(); else inputEl.blur();
+    if (multi) inputEl.focus();
+    else inputEl.blur();
     if (opts.onChange) opts.onChange(selected.slice());
   }
 
@@ -207,7 +211,12 @@ function initPeoplePicker(container, list, selectedIds, opts) {
     const selectableTeam = list.filter((person) => person.type !== 'team' || isActiveTeamPerson(person));
     const allSelected = selectableTeam.length > 0 && selectableTeam.every((person) => selected.includes(person.id));
     const allMatches = allowSelectAll && !allSelected && (!q || 'вся команда'.includes(q) || 'команда'.startsWith(q) || 'все'.startsWith(q));
-    candidates = allMatches ? [{ id: '__all__', name: 'Вся команда', role: 'Добавить всех активных сотрудников', _selectAll: true }, ...peopleCandidates].slice(0, 9) : peopleCandidates.slice(0, 8);
+    if (allMatches) {
+      const selectAllOption = { id: '__all__', name: 'Вся команда', role: 'Добавить всех активных сотрудников', _selectAll: true };
+      candidates = [selectAllOption, ...peopleCandidates].slice(0, 9);
+    } else {
+      candidates = peopleCandidates.slice(0, 8);
+    }
     activeIndex = 0;
     renderMenu();
   }
@@ -227,11 +236,35 @@ function initPeoplePicker(container, list, selectedIds, opts) {
     }
   });
   inputEl.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowDown') { if (candidates.length) { e.preventDefault(); activeIndex = (activeIndex + 1) % candidates.length; renderMenu(); } }
-    else if (e.key === 'ArrowUp') { if (candidates.length) { e.preventDefault(); activeIndex = (activeIndex - 1 + candidates.length) % candidates.length; renderMenu(); } }
-    else if (e.key === 'Enter') { if (candidates.length) { e.preventDefault(); choose(candidates[activeIndex]); } }
-    else if (e.key === 'Backspace' && !inputEl.value && selected.length) { if (selectedAllShortcut) { selected = []; selectedAllShortcut = false; } else selected.pop(); renderChips(); updateCandidates(); if (opts.onChange) opts.onChange(selected.slice()); }
-    else if (e.key === 'Escape') { e.stopPropagation(); closeMenu(); }
+    if (e.key === 'ArrowDown') {
+      if (!candidates.length) return;
+      e.preventDefault();
+      activeIndex = (activeIndex + 1) % candidates.length;
+      renderMenu();
+    } else if (e.key === 'ArrowUp') {
+      if (!candidates.length) return;
+      e.preventDefault();
+      activeIndex = (activeIndex - 1 + candidates.length) % candidates.length;
+      renderMenu();
+    } else if (e.key === 'Enter') {
+      if (!candidates.length) return;
+      e.preventDefault();
+      choose(candidates[activeIndex]);
+    } else if (e.key === 'Backspace' && !inputEl.value && selected.length) {
+      // Быстрый способ убрать последнего выбранного человека, не наводясь на его чип.
+      if (selectedAllShortcut) {
+        selected = [];
+        selectedAllShortcut = false;
+      } else {
+        selected.pop();
+      }
+      renderChips();
+      updateCandidates();
+      if (opts.onChange) opts.onChange(selected.slice());
+    } else if (e.key === 'Escape') {
+      e.stopPropagation();
+      closeMenu();
+    }
   });
   inputEl.addEventListener('blur', () => setTimeout(closeMenu, 180));
 

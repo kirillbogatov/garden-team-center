@@ -7,6 +7,178 @@ Views._taskWorkMode = localStorage.getItem('garden:taskWorkMode') === 'developme
 Views._taskProjectFilter = 'all';
 Views._taskViewMode = 'list';
 Views._taskFiltersCollapsed = localStorage.getItem('garden:taskFiltersCollapsed') === '1';
+Views._taskQuery = Views._taskQuery || '';
+Views._taskSearchOpen = Views._taskSearchOpen || false;
+
+// Внутри группы/колонки задачи сортируются по приоритету (та же логика, что
+// в «Обзоре»), а не лежат в порядке создания, как раньше — иначе старая
+// задача без дедлайна перекрывала горящую свежую. Стратегия всегда берётся
+// из Настроек — здесь раньше был переключатель для ручного выбора другой
+// стратегии, но его убрали, чтобы освободить место на панели фильтров под
+// поиск по задачам.
+function sortTasksForDisplay(taskList) {
+  const mode = GardenSettings.value?.taskPriorityMode || 'balanced';
+  const today = todayStr();
+  return [...taskList].sort((a, b) => compareTasksByPriority(a, b, mode, today));
+}
+
+// Общий текстовый поиск по названию задачи — используется и при первичном
+// рендере страницы, и в живом фильтре инлайн-поиска (та же схема, что
+// filterJournalEntries в Журнале).
+function filterTasksByQuery(taskList, query) {
+  const q = (query || '').trim().toLocaleLowerCase('ru');
+  if (!q) return taskList;
+  return taskList.filter((t) => (t.title || '').toLocaleLowerCase('ru').includes(q));
+}
+
+function taskListTopbarHtml(mineOnly, filtersCollapsed) {
+  const taskWorkModeControlHtml = `<div class="task-header-work-mode" aria-label="Тип задач">
+    <div class="ui-segmented seg-toggle task-work-mode-toggle">
+      <button type="button" class="ui-segmented-item seg-btn ${Views._taskWorkMode === 'projects' ? 'active' : ''}" data-task-work-mode="projects" aria-pressed="${Views._taskWorkMode === 'projects'}">Проекты</button>
+      <button type="button" class="ui-segmented-item seg-btn ${Views._taskWorkMode === 'development' ? 'active' : ''}" data-task-work-mode="development" aria-pressed="${Views._taskWorkMode === 'development'}">Развитие</button>
+    </div>
+  </div>`;
+  return `<h1>${mineOnly ? 'Мои задачи' : 'Задачи'}</h1>
+    <div class="actions task-header-actions">
+      ${taskWorkModeControlHtml}
+      <div class="ui-segmented seg-toggle task-view-toggle" aria-label="Представление задач">
+        <button class="ui-segmented-item seg-btn ${Views._taskViewMode === 'list' ? 'active' : ''}" id="task-view-list" title="Список">${icon('list', 14)}</button>
+        <button class="ui-segmented-item seg-btn ${Views._taskViewMode === 'kanban' ? 'active' : ''}" id="task-view-kanban" title="Канбан">${icon('columns', 14)}</button>
+      </div>
+      <button type="button" class="ui-button ui-button--sm btn btn-sm task-filter-toggle" id="task-filter-toggle" aria-expanded="${filtersCollapsed ? 'false' : 'true'}" title="${filtersCollapsed ? 'Показать фильтры' : 'Скрыть фильтры'}">
+        <span class="task-filter-toggle-chevron ${filtersCollapsed ? '' : 'open'}">${icon('chevronRight', 12)}</span>
+        <span>Фильтры</span>
+      </button>
+      ${Auth.canCreate('tasks') ? `<button class="ui-button ui-button--primary btn btn-primary" id="task-create-button">+ Добавить задачу</button>` : ''}
+    </div>`;
+}
+
+function taskFilterToolbarHtml(isKanban, filtersCollapsed, taskPersonFilter) {
+  const statusFilterHtml = !isKanban ? `<select id="task-status-filter" class="task-filter-select task-filter-status" aria-label="Фильтр по статусу">
+      <option value="all" ${Views._taskStatusFilter === 'all' ? 'selected' : ''}>Все задачи</option>
+      ${TASK_STATUS_ORDER.map((st) => `<option value="${st}" ${Views._taskStatusFilter === st ? 'selected' : ''}>${TASK_STATUS_LABEL[st]}</option>`).join('')}
+      <option value="archived" ${Views._taskStatusFilter === 'archived' ? 'selected' : ''}>Архив</option>
+    </select>` : '';
+  // Поиск по названию задачи занимает место бывшего переключателя сортировки:
+  // свёрнут — просто иконка, разворачивается в текстовое поле по клику.
+  const searchHtml = Views._taskSearchOpen
+    ? `<input id="task-search-input" type="search" class="task-search-input" placeholder="Поиск задач" value="${escapeHtml(Views._taskQuery || '')}" aria-label="Поиск задач" />
+       <button type="button" class="ui-icon-button" id="task-search-close" title="Закрыть поиск" aria-label="Закрыть поиск">${icon('close', 14)}</button>`
+    : `<button type="button" class="ui-icon-button" id="task-search-toggle" title="Поиск задач" aria-label="Поиск задач">${icon('search', 16)}</button>`;
+
+  return `<div class="task-sticky-toolbar ${filtersCollapsed ? 'is-collapsed' : ''}" aria-hidden="${filtersCollapsed ? 'true' : 'false'}" ${filtersCollapsed ? 'inert' : ''}>
+    <div class="task-toolbar-inner">
+      <div class="task-filter-controls">
+      ${statusFilterHtml}
+      ${!isKanban ? `<select id="task-group-filter" class="task-filter-select task-filter-group" aria-label="Группировка задач">
+        <option value="status" ${Views._taskGroupBy === 'status' ? 'selected' : ''}>По статусам</option>
+        <option value="person" ${Views._taskGroupBy === 'person' ? 'selected' : ''}>По сотрудникам</option>
+        <option value="project" ${Views._taskGroupBy === 'project' ? 'selected' : ''}>По проектам</option>
+      </select>` : ''}
+      ${Views._taskWorkMode === 'projects' ? `<select id="task-project-filter" class="task-filter-select task-filter-project" aria-label="Фильтр по проекту">
+        <option value="all" ${Views._taskProjectFilter === 'all' ? 'selected' : ''}>Все проекты</option>
+        ${store.projects.map((p) => `<option value="project:${p.id}" ${Views._taskProjectFilter === 'project:' + p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}
+      </select>` : ''}
+      <select id="task-person-filter" class="task-filter-select task-filter-person" aria-label="Фильтр по сотруднику">
+        <option value="all" ${taskPersonFilter === 'all' ? 'selected' : ''}>Все сотрудники</option>
+        ${store.team().map((p) => `<option value="${p.id}" ${taskPersonFilter === p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}
+      </select>
+      <div class="task-search-slot">${searchHtml}</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// Группировка меняет только представление списка; остальные контролы остаются фильтрами.
+function taskGroupsFor(rawListTasks) {
+  // Сортируем один раз до разбивки на группы: filter() ниже сохраняет
+  // относительный порядок, так что каждая группа получается уже отсортированной.
+  const listTasks = sortTasksForDisplay(rawListTasks);
+  let groups;
+  if (Views._taskGroupBy === 'person') {
+    groups = store.team().map((person) => ({
+      key: `person:${person.id}`,
+      label: person.name,
+      tasks: listTasks.filter((t) => (t.assigneeIds || []).includes(person.id)),
+    }));
+    const unassigned = listTasks.filter((t) => !(t.assigneeIds || []).length);
+    if (unassigned.length) groups.push({ key: 'person:unassigned', label: 'Без сотрудника', tasks: unassigned });
+  } else if (Views._taskGroupBy === 'project') {
+    groups = store.projects.map((project) => ({
+      key: `project:${project.id}`,
+      label: project.name,
+      tasks: listTasks.filter((t) => t.projectId === project.id),
+    }));
+    const withoutProject = listTasks.filter((t) => !t.projectId);
+    if (withoutProject.length) groups.push({ key: 'project:none', label: 'Без проекта', tasks: withoutProject });
+  } else {
+    groups = TASK_STATUS_ORDER.map((status) => ({
+      key: status,
+      label: TASK_STATUS_LABEL[status],
+      color: TASK_STATUS_COLOR[status],
+      tasks: listTasks.filter((t) => t.status === status),
+    }));
+  }
+  return groups.filter((g) => g.tasks.length);
+}
+
+// Столбец под срок должен быть одной ширины у всех строк на странице сразу
+// (не у каждой группы своя) — иначе лейбл проекта у задачи без срока стоит
+// заметно ближе к аватарке, чем у соседней задачи со сроком, и колонки
+// внутри списка не выровнены по вертикали. Меряем по уже отрисованным
+// строкам: если срока нет ни у одной видимой задачи — столбец схлопывается
+// совсем (CSS в style.css переключается по классу has-task-due-dates); если
+// есть — ширина берётся по самому длинному из реально показанных текстов, а
+// не с запасом «на вырост».
+function syncTaskDueColumnWidth(container) {
+  // Пока не добавлен has-task-due-dates, .task-due-cell скрыт (display:none) —
+  // сначала включаем класс, чтобы ячейки реально отрисовались, и только потом
+  // меряем. И меряем через getBoundingClientRect(), а не scrollWidth/
+  // offsetWidth: у самого текста — inline <span> (класс .tiny), а у строчных
+  // (inline) элементов offsetWidth/scrollWidth всегда возвращают 0 в браузере,
+  // это их родовая особенность, а не что-то специфичное для скрытых ячеек.
+  // getBoundingClientRect() у inline-элементов работает как положено.
+  container.classList.add('has-task-due-dates');
+  const dueSpans = container.querySelectorAll('.task-due-cell span');
+  let maxWidth = 0;
+  dueSpans.forEach((span) => { maxWidth = Math.max(maxWidth, span.getBoundingClientRect().width); });
+  container.classList.toggle('has-task-due-dates', dueSpans.length > 0);
+  if (dueSpans.length) container.style.setProperty('--task-due-col-width', `${Math.ceil(maxWidth)}px`);
+}
+
+function taskListContentHtml(tasks, archiveMode, allTasksCount, groups) {
+  if (!tasks.length) {
+    return archiveMode
+      ? emptyState('Архив пуст', 'Архивные задачи появятся здесь', 'tasks')
+      : allTasksCount
+        ? emptyState('Ничего не найдено', 'Попробуйте изменить фильтры', 'tasks')
+        : emptyState('Задач пока нет', 'Создайте первую задачу', 'tasks');
+  }
+  if (Views._taskViewMode === 'kanban') {
+    const kanbanTasks = sortTasksForDisplay(tasks);
+    return `<div class="task-kanban-wrap"><div class="kanban task-kanban">${TASK_STATUS_ORDER.map((status) => {
+      const columnTasks = kanbanTasks.filter((t) => t.status === status);
+      return `<section class="kanban-col task-kanban-col" data-status="${status}">
+        <div class="kanban-col-title"><span>${TASK_STATUS_LABEL[status]}</span></div>
+        <div class="task-kanban-stack" data-status="${status}">${columnTasks.length ? columnTasks.map(taskKanbanCardHtml).join('') : `<div class="kanban-empty">Нет задач</div>`}</div>
+      </section>`;
+    }).join('')}</div></div>`;
+  }
+  const separated = true;
+  const groupSectionsHtml = groups.map((g) => {
+    const hasSavedCollapseState = Object.prototype.hasOwnProperty.call(Views._taskCollapsed, g.key);
+    const defaultCollapsed = Views._taskGroupBy === 'status' && g.key === 'done' && !archiveMode;
+    const collapsed = hasSavedCollapseState ? !!Views._taskCollapsed[g.key] : defaultCollapsed;
+    const rows = g.tasks.map(taskListRowHtml);
+    return `<section class="task-group-section ${separated ? 'separated' : ''} ${collapsed ? 'is-collapsed' : ''}" data-task-group="${escapeHtml(g.key)}">
+        <div class="ui-disclosure group-header clickable" data-command="toggleTaskGroup" data-command-arg="${g.key}" data-command-self="1" aria-expanded="${collapsed ? 'false' : 'true'}">
+          <span class="group-chevron" style="${collapsed ? '' : 'transform:rotate(90deg)'}">${icon('chevronRight', 10)}</span><span class="task-group-title">${escapeHtml(g.label)}</span>
+        </div>
+        <div class="task-group-body-shell ${collapsed ? 'is-collapsed' : ''}"><div class="task-group-body">${rows.join('') || `<div class="tiny task-group-empty">Пусто</div>`}</div></div>
+      </section>`;
+  }).join('');
+  return `<div class="view-narrow task-groups ${separated ? 'task-groups-separated' : ''}">${groupSectionsHtml}</div>`;
+}
 
 Views.tasks = async function () {
   const createRequested = Router.queryParam('create') === '1';
@@ -32,25 +204,7 @@ Views.tasks = async function () {
     : (requestedPerson ? requestedPerson.id : Views._taskPersonFilter);
   const isKanban = Views._taskViewMode === 'kanban';
   const filtersCollapsed = !!Views._taskFiltersCollapsed;
-  const taskWorkModeControlHtml = `<div class="task-header-work-mode" aria-label="Тип задач">
-    <div class="ui-segmented seg-toggle task-work-mode-toggle">
-      <button type="button" class="ui-segmented-item seg-btn ${Views._taskWorkMode === 'projects' ? 'active' : ''}" data-task-work-mode="projects" aria-pressed="${Views._taskWorkMode === 'projects'}">Проекты</button>
-      <button type="button" class="ui-segmented-item seg-btn ${Views._taskWorkMode === 'development' ? 'active' : ''}" data-task-work-mode="development" aria-pressed="${Views._taskWorkMode === 'development'}">Развитие</button>
-    </div>
-  </div>`;
-  setTopbar(`<h1>${mineOnly ? 'Мои задачи' : 'Задачи'}</h1>
-    <div class="actions task-header-actions">
-      ${taskWorkModeControlHtml}
-      <div class="ui-segmented seg-toggle task-view-toggle" aria-label="Представление задач">
-        <button class="ui-segmented-item seg-btn ${Views._taskViewMode === 'list' ? 'active' : ''}" id="task-view-list" title="Список">${icon('list', 14)}</button>
-        <button class="ui-segmented-item seg-btn ${Views._taskViewMode === 'kanban' ? 'active' : ''}" id="task-view-kanban" title="Канбан">${icon('columns', 14)}</button>
-      </div>
-      <button type="button" class="ui-button ui-button--sm btn btn-sm task-filter-toggle" id="task-filter-toggle" aria-expanded="${filtersCollapsed ? 'false' : 'true'}" title="${filtersCollapsed ? 'Показать фильтры' : 'Скрыть фильтры'}">
-        <span class="task-filter-toggle-chevron ${filtersCollapsed ? '' : 'open'}">${icon('chevronRight', 12)}</span>
-        <span>Фильтры</span>
-      </button>
-      ${Auth.canCreate('tasks') ? `<button class="ui-button ui-button--primary btn btn-primary" id="task-create-button">+ Добавить задачу</button>` : ''}
-    </div>`);
+  setTopbar(taskListTopbarHtml(mineOnly, filtersCollapsed));
   const taskCreateButton = document.getElementById('task-create-button');
   if (taskCreateButton) {
     taskCreateButton.onclick = () => {
@@ -90,32 +244,7 @@ Views.tasks = async function () {
   const scopedArchived = scoped.filter((t) => t.archivedAt);
   const allTasksCount = scopedActive.length;
 
-  const statusFilterHtml = !isKanban ? `<select id="task-status-filter" class="task-filter-select task-filter-status" aria-label="Фильтр по статусу">
-      <option value="all" ${Views._taskStatusFilter === 'all' ? 'selected' : ''}>Все задачи</option>
-      ${TASK_STATUS_ORDER.map((st) => `<option value="${st}" ${Views._taskStatusFilter === st ? 'selected' : ''}>${TASK_STATUS_LABEL[st]}</option>`).join('')}
-      <option value="archived" ${Views._taskStatusFilter === 'archived' ? 'selected' : ''}>Архив</option>
-    </select>` : '';
-
-  const taskToolbarHtml = `<div class="task-sticky-toolbar ${filtersCollapsed ? 'is-collapsed' : ''}" aria-hidden="${filtersCollapsed ? 'true' : 'false'}" ${filtersCollapsed ? 'inert' : ''}>
-    <div class="task-toolbar-inner">
-      <div class="task-filter-controls">
-      ${statusFilterHtml}
-      ${!isKanban ? `<select id="task-group-filter" class="task-filter-select task-filter-group" aria-label="Группировка задач">
-        <option value="status" ${Views._taskGroupBy === 'status' ? 'selected' : ''}>По статусам</option>
-        <option value="person" ${Views._taskGroupBy === 'person' ? 'selected' : ''}>По сотрудникам</option>
-        <option value="project" ${Views._taskGroupBy === 'project' ? 'selected' : ''}>По проектам</option>
-      </select>` : ''}
-      ${Views._taskWorkMode === 'projects' ? `<select id="task-project-filter" class="task-filter-select task-filter-project" aria-label="Фильтр по проекту">
-        <option value="all" ${Views._taskProjectFilter === 'all' ? 'selected' : ''}>Все проекты</option>
-        ${store.projects.map((p) => `<option value="project:${p.id}" ${Views._taskProjectFilter === 'project:' + p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}
-      </select>` : ''}
-      <select id="task-person-filter" class="task-filter-select task-filter-person" aria-label="Фильтр по сотруднику">
-        <option value="all" ${taskPersonFilter === 'all' ? 'selected' : ''}>Все сотрудники</option>
-        ${store.team().map((p) => `<option value="${p.id}" ${taskPersonFilter === p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}
-      </select>
-      </div>
-    </div>
-  </div>`;
+  const taskToolbarHtml = taskFilterToolbarHtml(isKanban, filtersCollapsed, taskPersonFilter);
   view.innerHTML = `${taskToolbarHtml}<div id="task-content"><div class="tiny">Загрузка…</div></div>`;
   const content = document.getElementById('task-content');
 
@@ -123,68 +252,18 @@ Views.tasks = async function () {
   if (!isKanban && Views._taskStatusFilter !== 'all' && Views._taskStatusFilter !== 'archived') {
     tasks = tasks.filter((t) => t.status === Views._taskStatusFilter);
   }
+  // Текстовый поиск — последний слой фильтра, уже поверх статуса/сотрудника/
+  // проекта; allTasksCount выше считается до него, поэтому пустой результат
+  // поиска по-прежнему показывает «Ничего не найдено», а не «Задач пока нет».
+  const preSearchTasks = tasks;
+  tasks = filterTasksByQuery(preSearchTasks, Views._taskQuery);
 
   const listTasks = tasks;
-
-  // Группировка меняет только представление списка; остальные контролы остаются фильтрами.
-  let groups;
-  if (Views._taskGroupBy === 'person') {
-    groups = store.team().map((person) => ({
-      key: `person:${person.id}`,
-      label: person.name,
-      tasks: listTasks.filter((t) => (t.assigneeIds || []).includes(person.id)),
-    }));
-    const unassigned = listTasks.filter((t) => !(t.assigneeIds || []).length);
-    if (unassigned.length) groups.push({ key: 'person:unassigned', label: 'Без сотрудника', tasks: unassigned });
-  } else if (Views._taskGroupBy === 'project') {
-    groups = store.projects.map((project) => ({
-      key: `project:${project.id}`,
-      label: project.name,
-      tasks: listTasks.filter((t) => t.projectId === project.id),
-    }));
-    const withoutProject = listTasks.filter((t) => !t.projectId);
-    if (withoutProject.length) groups.push({ key: 'project:none', label: 'Без проекта', tasks: withoutProject });
-  } else {
-    groups = TASK_STATUS_ORDER.map((status) => ({
-      key: status,
-      label: TASK_STATUS_LABEL[status],
-      color: TASK_STATUS_COLOR[status],
-      tasks: listTasks.filter((t) => t.status === status),
-    }));
-  }
-  groups = groups.filter((g) => g.tasks.length);
+  const groups = taskGroupsFor(listTasks);
 
   Views._taskCollapsed = Views._taskCollapsed || {};
-  if (!tasks.length) {
-    content.innerHTML = archiveMode
-      ? emptyState('Архив пуст', 'Архивные задачи появятся здесь', 'tasks')
-      : allTasksCount
-        ? emptyState('Ничего не найдено', 'Попробуйте изменить фильтры', 'tasks')
-        : emptyState('Задач пока нет', 'Создайте первую задачу', 'tasks');
-  } else if (Views._taskViewMode === 'kanban') {
-    content.innerHTML = `<div class="task-kanban-wrap"><div class="kanban task-kanban">${TASK_STATUS_ORDER.map((status) => {
-      const columnTasks = tasks.filter((t) => t.status === status);
-      return `<section class="kanban-col task-kanban-col" data-status="${status}">
-        <div class="kanban-col-title"><span>${TASK_STATUS_LABEL[status]}</span></div>
-        <div class="task-kanban-stack" data-status="${status}">${columnTasks.length ? columnTasks.map(taskKanbanCardHtml).join('') : `<div class="kanban-empty">Нет задач</div>`}</div>
-      </section>`;
-    }).join('')}</div></div>`;
-  } else {
-    const separated = true;
-    const groupSectionsHtml = groups.map((g) => {
-      const hasSavedCollapseState = Object.prototype.hasOwnProperty.call(Views._taskCollapsed, g.key);
-      const defaultCollapsed = Views._taskGroupBy === 'status' && g.key === 'done' && !archiveMode;
-      const collapsed = hasSavedCollapseState ? !!Views._taskCollapsed[g.key] : defaultCollapsed;
-      const rows = g.tasks.map(taskListRowHtml);
-      return `<section class="task-group-section ${separated ? 'separated' : ''} ${collapsed ? 'is-collapsed' : ''}" data-task-group="${escapeHtml(g.key)}">
-        <div class="ui-disclosure group-header clickable" data-command="toggleTaskGroup" data-command-arg="${g.key}" data-command-self="1" aria-expanded="${collapsed ? 'false' : 'true'}">
-          <span class="group-chevron" style="${collapsed ? '' : 'transform:rotate(90deg)'}">${icon('chevronRight', 10)}</span><span class="task-group-title">${escapeHtml(g.label)}</span>
-        </div>
-        <div class="task-group-body-shell ${collapsed ? 'is-collapsed' : ''}"><div class="task-group-body">${rows.join('') || `<div class="tiny task-group-empty">Пусто</div>`}</div></div>
-      </section>`;
-    }).join('');
-    content.innerHTML = `<div class="view-narrow task-groups ${separated ? 'task-groups-separated' : ''}">${groupSectionsHtml}</div>`;
-  }
+  content.innerHTML = taskListContentHtml(tasks, archiveMode, allTasksCount, groups);
+  syncTaskDueColumnWidth(content);
 
   const filterToggle = document.getElementById('task-filter-toggle');
   if (filterToggle) filterToggle.onclick = () => {
@@ -209,6 +288,32 @@ Views.tasks = async function () {
     Views._taskGroupBy = e.target.value;
     Views.tasks();
   };
+  const searchToggle = document.getElementById('task-search-toggle');
+  if (searchToggle) searchToggle.onclick = () => {
+    Views._taskSearchOpen = true;
+    Views.tasks();
+  };
+  const searchClose = document.getElementById('task-search-close');
+  if (searchClose) searchClose.onclick = () => {
+    Views._taskSearchOpen = false;
+    Views._taskQuery = '';
+    Views.tasks();
+  };
+  const searchInput = document.getElementById('task-search-input');
+  if (searchInput) {
+    searchInput.focus();
+    const caretPos = searchInput.value.length;
+    searchInput.setSelectionRange(caretPos, caretPos);
+    // Фильтруем на лету поверх уже загруженного preSearchTasks — как
+    // journalSearchInput в Журнале, без похода на сервер на каждую букву.
+    searchInput.oninput = () => {
+      Views._taskQuery = searchInput.value;
+      const shown = filterTasksByQuery(preSearchTasks, Views._taskQuery);
+      content.innerHTML = taskListContentHtml(shown, archiveMode, allTasksCount, taskGroupsFor(shown));
+      syncTaskDueColumnWidth(content);
+      if (isKanban) initTaskKanbanDnD();
+    };
+  }
   document.querySelectorAll('[data-task-work-mode]').forEach((button) => {
     button.onclick = () => {
       const nextMode = button.dataset.taskWorkMode === 'development' ? 'development' : 'projects';
@@ -345,42 +450,9 @@ Views.taskDetailPage = async function (ref) {
   return openTaskModal(task.id, { asPage: true, taskRecord: task });
 };
 
-async function openTaskModal(id, opts) {
-  opts = opts || {};
-  if (!id) return openTaskCreateModal(opts);
-
-  // Existing tasks always open as a normal routed page. The modal is reserved
-  // for creating a new task; taskDetailPage calls back here with asPage=true.
-  if (!opts.asPage) {
-    const task = opts.taskRecord || await Resources.tasks.get(id);
-    Router.go(taskPath(task));
-    return;
-  }
-
-  const detail = await TaskService.detail(id, opts.taskRecord);
-  const t = detail.task;
-  const goalOptions = detail.goals;
-  const issueOptions = detail.issues;
-  const personalNotesResponse = detail.personalNotes;
-  const comments = detail.comments;
-  let taskNotes = Array.isArray(comments) ? comments.slice() : [];
-  const canEdit = Auth.canEditTask(t);
-  const canDelete = Auth.canDeleteTask(t);
-  const isArchived = Boolean(t.archivedAt);
-  let personalNotes = Array.isArray(personalNotesResponse) ? personalNotesResponse.slice() : [];
-  if (personalNotes.some((note) => String(note.text || '').trim())) {
-    try {
-      const existingTexts = new Set(taskNotes.map((note) => String(note.text || '').trim()).filter(Boolean));
-      for (const note of personalNotes.filter((item) => String(item.text || '').trim())) {
-        const text = String(note.text).trim();
-        if (existingTexts.has(text)) continue;
-        taskNotes.push(await Comments.create('task', t.id, { text, color: 'yellow' }));
-        existingTexts.add(text);
-      }
-    } catch (_) {}
-  }
+function taskDetailTopbarHtml(t, canEdit, canDelete, isArchived) {
   const hasTaskActions = true;
-  setTopbar(`<h1 class="topbar-h1-key">${escapeHtml(t.taskKey || '')}</h1>
+  return `<h1 class="topbar-h1-key">${escapeHtml(t.taskKey || '')}</h1>
     <div class="actions task-detail-topbar-actions">
       <button type="button" class="sidebar-collapse-btn task-notes-sidebar-toggle" id="task-notes-toggle" aria-label="Скрыть панель стикеров" title="Скрыть панель стикеров" aria-expanded="true">${icon('sticky', 16)}</button>
       ${hasTaskActions ? `<div class="task-actions-menu-wrap">
@@ -395,16 +467,18 @@ async function openTaskModal(id, opts) {
       </div>` : ''}
       <button type="button" class="ui-button btn task-detail-topbar-btn" data-command="taskDetailGoBack">Назад</button>
     </div>
-  `, { crumbs: [
-    { label: 'Garden', path: '/overview' },
-    { label: 'Задачи', path: '/tasks' },
-  ] });
-  const assignees = (t.assigneeIds || []).map((personId) => store.person(personId)).filter(Boolean);
-  const project = store.project(t.projectId);
-  let linkedGoalIds = Relations.ids(t, 'task.goals');
-  let linkedIssueIds = Relations.ids(t, 'task.issues');
+  `;
+}
 
-  const taskDetailMarkup = `
+// Отдельная лента обсуждения задачи — по образцу «Комментариев» на странице
+// проекта The Labs. Живёт независимо от боковой панели «Стикеры» (те технически
+// тоже комментарии задачи, но приватные цветные заметки, а не общая переписка).
+function taskDetailCommentsSectionHtml(discussion) {
+  return `<section class="task-comments-section"><div class="task-comments-head"><span>Комментарии</span><span class="task-comments-count" id="task-discussion-count">${discussion.length || ''}</span></div><div class="task-comments-list" id="task-discussion-list">${commentThreadHtml(discussion)}</div><div class="task-comment-compose"><textarea id="task-discussion-input" rows="2" placeholder="Оставить комментарий…"></textarea><button type="button" class="ui-button btn task-comment-send-inline" id="task-discussion-send" hidden>Отправить</button></div></section>`;
+}
+
+function taskDetailBodyHtml(t, canEdit, isArchived, assignees, goalOptions, issueOptions, taskNotes, discussion) {
+  return `
     <div class="task-detail-shell">
 ${detailPageHeaderHtml({ title: t.title, eyebrow: '', inputId: 'tf-title', displayId: 'tf-title-display', shellId: 'tf-title-shell', editable: canEdit, ariaLabel: 'Название задачи' })}
 
@@ -441,7 +515,12 @@ ${detailPageHeaderHtml({ title: t.title, eyebrow: '', inputId: 'tf-title', displ
             <div class="task-detail-section-label task-detail-section-title">Описание</div>
             <div class="task-inline-edit task-inline-edit-description ${canEdit ? 'is-editable' : ''}">
               ${canEdit
-                ? `<textarea id="tf-desc" class="task-detail-description" rows="4" placeholder="Добавьте описание задачи">${escapeHtml(t.description || '')}</textarea>`
+                // Ссылки в описании должны быть кликабельными без входа в режим
+                // редактирования, поэтому по умолчанию показываем тот же читаемый
+                // рендер, что и для пользователей без права правки (см. renderLinkedText
+                // ниже), и переключаемся на textarea только по клику — как заголовок и
+                // остальные inline-edit поля этой страницы.
+                ? `<div id="tf-desc-display" class="task-detail-description task-detail-description-readonly" role="button" tabindex="0">${renderLinkedText(t.description || '') || '<span class="muted">Добавьте описание задачи</span>'}</div><textarea id="tf-desc" class="task-detail-description" rows="4" placeholder="Добавьте описание задачи" hidden>${escapeHtml(t.description || '')}</textarea>`
                 : `<textarea id="tf-desc" class="task-detail-description" hidden disabled>${escapeHtml(t.description || '')}</textarea><div class="task-detail-description task-detail-description-readonly">${renderLinkedText(t.description || '') || '<span class="muted">Описание не добавлено</span>'}</div>`}
               ${canEdit ? `<span class="task-inline-edit-icon" aria-hidden="true">${icon('edit', 11)}</span>` : ''}
             </div>
@@ -458,6 +537,7 @@ ${detailPageHeaderHtml({ title: t.title, eyebrow: '', inputId: 'tf-title', displ
             <div class="task-relation-list task-relation-list-unified" id="task-relations"></div>
           </section>
 
+          ${taskDetailCommentsSectionHtml(discussion)}
 
         </main>
 
@@ -473,23 +553,15 @@ ${detailPageHeaderHtml({ title: t.title, eyebrow: '', inputId: 'tf-title', displ
       <div class="task-comments-list detail-sticky-comments-list unified-notes-list" id="task-comments-list">${commentThreadHtml(taskNotes, { variant: 'notes' })}</div>
     </aside>
   `;
+}
 
-  const view = document.getElementById('view');
-  view.classList.add('task-detail-page-view');
-  view.innerHTML = `<section class="modal-panel modal-task-detail task-detail-page">${taskDetailMarkup}</section>`;
-
-
-  // Keep the description field exactly as tall as its content. This runs on
-  // initial render and after every edit so long descriptions never get clipped.
-  const descriptionField = document.getElementById('tf-desc');
-  const resizeTaskDescription = () => {
-    if (!descriptionField) return;
-    descriptionField.style.height = 'auto';
-    descriptionField.style.height = `${Math.max(descriptionField.scrollHeight, 52)}px`;
-  };
-  resizeTaskDescription();
-  descriptionField?.addEventListener('input', resizeTaskDescription);
-
+// Notes are open by default on every task visit, but only where the layout
+// can fit them without hiding the task itself. Below the same 940px
+// breakpoint where detail-page.css switches the drawer to a full overlay
+// (see "@media (max-width: 940px)" there), defaulting to open would cover
+// the whole task the moment it's opened on a phone. Their state is scoped
+// to the current task page instead of persisting into other routes.
+function bindTaskNotesDrawer(view) {
   const taskPage = view.querySelector('.task-detail-page');
   const notesDrawer = document.getElementById('task-notes-drawer');
   const notesToggle = document.getElementById('task-notes-toggle');
@@ -508,31 +580,93 @@ ${detailPageHeaderHtml({ title: t.title, eyebrow: '', inputId: 'tf-title', displ
       notesToggle.innerHTML = icon('sticky', 16);
     }
   };
-  // Notes are open by default on every task visit, but only where the layout
-  // can fit them without hiding the task itself. Below the same 940px
-  // breakpoint where detail-page.css switches the drawer to a full overlay
-  // (see "@media (max-width: 940px)" there), defaulting to open would cover
-  // the whole task the moment it's opened on a phone. Their state is scoped
-  // to the current task page instead of persisting into other routes.
   setNotesDrawerOpen(window.innerWidth > 940);
   if (notesToggle) notesToggle.onclick = () => setNotesDrawerOpen(!taskPage?.classList.contains('notes-open'));
+}
+
+function bindTaskActionsMenuToggle(actionsToggle, actionsMenu) {
+  if (!actionsToggle || !actionsMenu) return;
+  const setActionsOpen = (open) => {
+    actionsMenu.hidden = !open;
+    actionsToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+  const actionsWrap = actionsToggle.closest('.task-actions-menu-wrap');
+  actionsToggle.onclick = (event) => {
+    event.stopPropagation();
+    const open = actionsMenu.hidden;
+    setActionsOpen(open);
+    if (open) bindOutsideClickClose(actionsWrap, () => setActionsOpen(false));
+  };
+  actionsMenu.onclick = (event) => event.stopPropagation();
+}
+
+async function openTaskModal(id, opts) {
+  opts = opts || {};
+  if (!id) return openTaskCreateModal(opts);
+
+  // Existing tasks always open as a normal routed page. The modal is reserved
+  // for creating a new task; taskDetailPage calls back here with asPage=true.
+  if (!opts.asPage) {
+    const task = opts.taskRecord || await Resources.tasks.get(id);
+    Router.go(taskPath(task));
+    return;
+  }
+
+  const detail = await TaskService.detail(id, opts.taskRecord);
+  const t = detail.task;
+  const goalOptions = detail.goals;
+  const issueOptions = detail.issues;
+  const personalNotesResponse = detail.personalNotes;
+  const comments = detail.comments;
+  let taskNotes = Array.isArray(comments) ? comments.slice() : [];
+  const discussion = Array.isArray(detail.discussion) ? detail.discussion.slice() : [];
+  const canEdit = Auth.canEditTask(t);
+  const canDelete = Auth.canDeleteTask(t);
+  const isArchived = Boolean(t.archivedAt);
+  let personalNotes = Array.isArray(personalNotesResponse) ? personalNotesResponse.slice() : [];
+  if (personalNotes.some((note) => String(note.text || '').trim())) {
+    try {
+      const existingTexts = new Set(taskNotes.map((note) => String(note.text || '').trim()).filter(Boolean));
+      for (const note of personalNotes.filter((item) => String(item.text || '').trim())) {
+        const text = String(note.text).trim();
+        if (existingTexts.has(text)) continue;
+        taskNotes.push(await Comments.create('task', t.id, { text, color: 'yellow' }));
+        existingTexts.add(text);
+      }
+    } catch (_) {}
+  }
+  setTopbar(taskDetailTopbarHtml(t, canEdit, canDelete, isArchived), { crumbs: [
+    { label: 'Garden', path: '/overview' },
+    { label: 'Задачи', path: '/tasks' },
+  ] });
+  const assignees = (t.assigneeIds || []).map((personId) => store.person(personId)).filter(Boolean);
+  const project = store.project(t.projectId);
+  let linkedGoalIds = Relations.ids(t, 'task.goals');
+  let linkedIssueIds = Relations.ids(t, 'task.issues');
+
+  const taskDetailMarkup = taskDetailBodyHtml(t, canEdit, isArchived, assignees, goalOptions, issueOptions, taskNotes, discussion);
+
+  const view = document.getElementById('view');
+  view.classList.add('task-detail-page-view');
+  view.innerHTML = `<section class="modal-panel modal-task-detail task-detail-page">${taskDetailMarkup}</section>`;
+
+
+  // Keep the description field exactly as tall as its content. This runs on
+  // initial render and after every edit so long descriptions never get clipped.
+  const descriptionField = document.getElementById('tf-desc');
+  const resizeTaskDescription = () => {
+    if (!descriptionField) return;
+    descriptionField.style.height = 'auto';
+    descriptionField.style.height = `${Math.max(descriptionField.scrollHeight, 52)}px`;
+  };
+  resizeTaskDescription();
+  descriptionField?.addEventListener('input', resizeTaskDescription);
+
+  bindTaskNotesDrawer(view);
 
   const actionsToggle = document.getElementById('task-actions-toggle');
   const actionsMenu = document.getElementById('task-actions-menu');
-  if (actionsToggle && actionsMenu) {
-    const setActionsOpen = (open) => {
-      actionsMenu.hidden = !open;
-      actionsToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-    };
-    const actionsWrap = actionsToggle.closest('.task-actions-menu-wrap');
-    actionsToggle.onclick = (event) => {
-      event.stopPropagation();
-      const open = actionsMenu.hidden;
-      setActionsOpen(open);
-      if (open) bindOutsideClickClose(actionsWrap, () => setActionsOpen(false));
-    };
-    actionsMenu.onclick = (event) => event.stopPropagation();
-  }
+  bindTaskActionsMenuToggle(actionsToggle, actionsMenu);
 
   const versionHistoryButton = document.getElementById('task-version-history');
   if (versionHistoryButton) versionHistoryButton.onclick = async () => {
@@ -567,6 +701,30 @@ ${detailPageHeaderHtml({ title: t.title, eyebrow: '', inputId: 'tf-title', displ
       titleInput.hidden = true;
       titleDisplay.hidden = false;
       titleShell.classList.remove('is-editing');
+    };
+
+    // Описание показывает кликабельные ссылки (renderLinkedText) по умолчанию
+    // и переключается на textarea только по клику — как заголовок выше.
+    const descriptionDisplay = document.getElementById('tf-desc-display');
+    const beginDescriptionEdit = (event) => {
+      if (event?.target?.closest?.('a')) return;
+      if (!descriptionField.hidden) return;
+      descriptionDisplay.hidden = true;
+      descriptionField.hidden = false;
+      descriptionField.focus();
+      resizeTaskDescription();
+      const end = descriptionField.value.length;
+      try { descriptionField.setSelectionRange(end, end); } catch (_) {}
+    };
+    descriptionDisplay.onclick = beginDescriptionEdit;
+    descriptionDisplay.onkeydown = (e) => {
+      if (e.target.closest?.('a')) return;
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); beginDescriptionEdit(e); }
+    };
+    descriptionField.onblur = () => {
+      descriptionDisplay.innerHTML = renderLinkedText(descriptionField.value) || '<span class="muted">Добавьте описание задачи</span>';
+      descriptionField.hidden = true;
+      descriptionDisplay.hidden = false;
     };
 
     const assigneeShell = document.getElementById('tf-assignee-shell');
@@ -776,6 +934,12 @@ ${detailPageHeaderHtml({ title: t.title, eyebrow: '', inputId: 'tf-title', displ
     addId: 'task-note-add', variant: 'notes',
   }).bind();
 
+  createCommentController({
+    entityType: 'task-discussion', entityId: t.id, comments: discussion,
+    listId: 'task-discussion-list', countId: 'task-discussion-count',
+    inputId: 'task-discussion-input', sendId: 'task-discussion-send',
+  }).bind();
+
   if (canEdit) {
     const archiveButton = document.getElementById('task-archive');
     if (archiveButton) archiveButton.onclick = () => archiveTask(t.id, t.status || 'todo');
@@ -801,49 +965,8 @@ async function openTaskCreateModal(opts) {
     { key: 'priority', label: 'Приоритет', type: 'select', default: 'normal', options: ['normal','high'].map((value) => ({ value, label: PRIORITY_LABEL[value] })) },
     {
       key: 'dueDate', label: 'Срок', type: 'date', parse: (v) => v || null,
-      render: ({ id, value, disabled }) => {
-        const isFriday = new Date().getDay() === 5;
-        const suggestions = isFriday
-          ? '<button type="button" class="task-date-suggestion" data-task-date-suggest="today">сегодня</button><span class="task-date-suggestion-separator" aria-hidden="true">·</span><button type="button" class="task-date-suggestion" data-task-date-suggest="next-monday">следующий понедельник</button>'
-          : '<button type="button" class="task-date-suggestion" data-task-date-suggest="today">сегодня</button><span class="task-date-suggestion-separator" aria-hidden="true">·</span><button type="button" class="task-date-suggestion" data-task-date-suggest="tomorrow">завтра</button><span class="task-date-suggestion-separator" aria-hidden="true">·</span><button type="button" class="task-date-suggestion" data-task-date-suggest="week-end">конец недели</button>';
-        return `<div class="task-due-date-create"><input id="${id}" type="date" value="${escapeHtml(value || '')}" ${disabled}/><div class="task-date-suggestions" aria-label="Быстрый выбор срока"><span class="task-date-suggestions-label">Поставить на:</span>${suggestions}</div></div>`;
-      },
-      init: ({ root }) => {
-        const field = root?.closest('.entity-form-field');
-        if (!root || !field) return;
-        const iso = (date) => {
-          const y = date.getFullYear();
-          const m = String(date.getMonth() + 1).padStart(2, '0');
-          const d = String(date.getDate()).padStart(2, '0');
-          return `${y}-${m}-${d}`;
-        };
-        const targetDate = (kind) => {
-          const date = new Date();
-          date.setHours(12, 0, 0, 0);
-          if (kind === 'tomorrow') date.setDate(date.getDate() + 1);
-          if (kind === 'next-monday') {
-            const day = date.getDay();
-            const daysToMonday = ((8 - day) % 7) || 7;
-            date.setDate(date.getDate() + daysToMonday);
-          }
-          if (kind === 'week-end') {
-            const day = date.getDay();
-            const daysToFriday = (5 - day + 7) % 7;
-            // В выходные «до конца недели» означает ближайшее воскресенье,
-            // чтобы саджест никогда не подставлял уже прошедшую пятницу.
-            if (day === 6) date.setDate(date.getDate() + 1);
-            else if (day === 0) {}
-            else date.setDate(date.getDate() + daysToFriday);
-          }
-          return iso(date);
-        };
-        field.querySelectorAll('[data-task-date-suggest]').forEach((button) => {
-          button.addEventListener('click', () => {
-            root.value = targetDate(button.dataset.taskDateSuggest);
-            root.dispatchEvent(new Event('change', { bubbles: true }));
-          });
-        });
-      },
+      render: taskDueDateFieldHtml,
+      init: bindTaskDueDateSuggestions,
     },
     // Relations and personal notes intentionally stay edit-only.
     { key: 'goalIds', label: 'Цели', type: 'text', create: false },
@@ -868,6 +991,51 @@ async function openTaskCreateModal(opts) {
       if (opts.onSaved) await opts.onSaved(saved); else Router.render();
     },
     onReady: () => setTimeout(() => document.getElementById('ef-title')?.focus(), 0),
+  });
+}
+
+function taskDueDateFieldHtml({ id, value, disabled }) {
+  const isFriday = new Date().getDay() === 5;
+  const suggestions = isFriday
+    ? '<button type="button" class="task-date-suggestion" data-task-date-suggest="today">сегодня</button><span class="task-date-suggestion-separator" aria-hidden="true">·</span><button type="button" class="task-date-suggestion" data-task-date-suggest="next-monday">следующий понедельник</button>'
+    : '<button type="button" class="task-date-suggestion" data-task-date-suggest="today">сегодня</button><span class="task-date-suggestion-separator" aria-hidden="true">·</span><button type="button" class="task-date-suggestion" data-task-date-suggest="tomorrow">завтра</button><span class="task-date-suggestion-separator" aria-hidden="true">·</span><button type="button" class="task-date-suggestion" data-task-date-suggest="week-end">конец недели</button>';
+  return `<div class="task-due-date-create"><input id="${id}" type="date" value="${escapeHtml(value || '')}" ${disabled}/><div class="task-date-suggestions" aria-label="Быстрый выбор срока"><span class="task-date-suggestions-label">Поставить на:</span>${suggestions}</div></div>`;
+}
+
+function bindTaskDueDateSuggestions({ root }) {
+  const field = root?.closest('.entity-form-field');
+  if (!root || !field) return;
+  const iso = (date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+  const targetDate = (kind) => {
+    const date = new Date();
+    date.setHours(12, 0, 0, 0);
+    if (kind === 'tomorrow') date.setDate(date.getDate() + 1);
+    if (kind === 'next-monday') {
+      const day = date.getDay();
+      const daysToMonday = ((8 - day) % 7) || 7;
+      date.setDate(date.getDate() + daysToMonday);
+    }
+    if (kind === 'week-end') {
+      const day = date.getDay();
+      const daysToFriday = (5 - day + 7) % 7;
+      // В выходные «до конца недели» означает ближайшее воскресенье,
+      // чтобы саджест никогда не подставлял уже прошедшую пятницу.
+      if (day === 6) date.setDate(date.getDate() + 1);
+      else if (day === 0) {}
+      else date.setDate(date.getDate() + daysToFriday);
+    }
+    return iso(date);
+  };
+  field.querySelectorAll('[data-task-date-suggest]').forEach((button) => {
+    button.addEventListener('click', () => {
+      root.value = targetDate(button.dataset.taskDateSuggest);
+      root.dispatchEvent(new Event('change', { bubbles: true }));
+    });
   });
 }
 

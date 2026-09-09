@@ -37,7 +37,10 @@ api.resource = function resource(baseUrl) {
     list: (query) => {
       if (!query) return api.get(base);
       if (typeof query === 'string') return api.get(`${base}${query.startsWith('?') ? query : `?${query}`}`);
-      const params = new URLSearchParams(Object.entries(query).filter(([, value]) => value !== undefined && value !== null).map(([key, value]) => [key, String(value)]));
+      const entries = Object.entries(query)
+        .filter(([, value]) => value !== undefined && value !== null)
+        .map(([key, value]) => [key, String(value)]);
+      const params = new URLSearchParams(entries);
       return api.get(`${base}?${params.toString()}`);
     },
     get: (id) => api.get(`${base}/${encodeURIComponent(id)}`),

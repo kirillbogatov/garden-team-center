@@ -453,7 +453,10 @@ function formatTenure(hireDate) {
   let years = now.getFullYear() - start.getFullYear();
   let months = now.getMonth() - start.getMonth();
   if (now.getDate() < start.getDate()) months -= 1;
-  if (months < 0) { years -= 1; months += 12; }
+  if (months < 0) {
+    years -= 1;
+    months += 12;
+  }
   const parts = [];
   if (years > 0) parts.push(`${years} ${pluralRu(years, 'год', 'года', 'лет')}`);
   if (months > 0 || years === 0) parts.push(`${months} ${pluralRu(months, 'месяц', 'месяца', 'месяцев')}`);

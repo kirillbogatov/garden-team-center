@@ -39,16 +39,12 @@ function issueCardHtml(i) {
 
 
 function processCardHtml(p) {
-  const status = p.status || 'ok';
-  const statusMeta = status === 'broken'
-    ? { label:'Сломан', color:'var(--red)' }
-    : status === 'attention'
-      ? { label:'Есть проблемы', color:'var(--orange)' }
-      : { label:'Работает', color:'var(--green)' };
+  const status = PROCESS_STATUS_LABEL[p.status] ? p.status : 'ok';
+  const statusClass = status === 'broken' ? 'process-status-broken' : status === 'attention' ? 'process-status-attention' : 'process-status-ok';
   const summary = p.currentBehavior || p.brokenNote || p.expectedBehavior || p.description || '';
   const openIdx = registerAction(() => Router.go(`/processes/${encodeURIComponent(p.id)}`));
   return `<div class="ui-row list-row task-list-row process-list-row" data-action-id="${openIdx}">
-    <span class="process-list-status"><span class="process-status-dot ${status === 'broken' ? 'process-status-broken' : status === 'attention' ? 'process-status-attention' : 'process-status-ok'}"></span><span class="process-status-label">${escapeHtml(statusMeta.label)}</span></span>
+    <span class="process-list-status"><span class="process-status-dot ${statusClass}"></span><span class="process-status-label">${escapeHtml(PROCESS_STATUS_LABEL[status])}</span></span>
     <span class="tl-title">${escapeHtml(p.title || 'Без названия')}</span>
     <div class="tl-right process-list-right">${summary ? `<span class="process-list-summary">${escapeHtml(summary)}</span>` : ''}<span class="ui-tag badge process-code-tag">PROCESS</span></div>
   </div>`;

@@ -58,13 +58,19 @@ function mentionsToEditableHtml(text) {
 function serializeEditableToText(rootEl) {
   let out = '';
   function walk(node) {
-    if (node.nodeType === Node.TEXT_NODE) { out += node.textContent; return; }
+    if (node.nodeType === Node.TEXT_NODE) {
+      out += node.textContent;
+      return;
+    }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     if (node.classList && node.classList.contains('mention-chip')) {
       out += `@[${node.dataset.label}](${node.dataset.type}:${node.dataset.id})`;
       return;
     }
-    if (node.tagName === 'BR') { out += '\n'; return; }
+    if (node.tagName === 'BR') {
+      out += '\n';
+      return;
+    }
     Array.from(node.childNodes).forEach(walk);
     if (node.tagName === 'DIV') out += '\n';
   }
@@ -96,9 +102,19 @@ function attachMentionAutocompleteCE(editableEl, anchorContainer) {
   let matchCaret = -1;
 
   function closeMenu() {
-    if (menuEl) { menuEl.remove(); menuEl = null; }
+    if (menuEl) {
+      menuEl.remove();
+      menuEl = null;
+    }
     candidates = [];
     matchNode = null;
+  }
+
+  function mentionTypeLabel(type) {
+    if (type === 'team') return 'вся команда';
+    if (type === 'project') return 'проект';
+    if (type === 'stakeholder') return 'стейкхолдер';
+    return 'команда';
   }
 
   function renderMenu() {
@@ -108,7 +124,7 @@ function attachMentionAutocompleteCE(editableEl, anchorContainer) {
       const item = el(`<div class="mm-item ${i === activeIndex ? 'active' : ''}">
         ${c.type === 'team' ? `<span class="mm-team-icon">${icon('team', 14)}</span>` : avatarHtml(c.type === 'project' ? null : store.person(c.id))}
         <span>${escapeHtml(c.label)}</span>
-        <span class="mm-type">${c.type === 'team' ? 'вся команда' : c.type === 'project' ? 'проект' : c.type === 'stakeholder' ? 'стейкхолдер' : 'команда'}</span>
+        <span class="mm-type">${mentionTypeLabel(c.type)}</span>
       </div>`);
       item.addEventListener('mousedown', (e) => {
         e.preventDefault();
@@ -126,7 +142,10 @@ function attachMentionAutocompleteCE(editableEl, anchorContainer) {
   }
 
   function chooseCandidate(c) {
-    if (!matchNode || !matchNode.parentNode) { closeMenu(); return; }
+    if (!matchNode || !matchNode.parentNode) {
+      closeMenu();
+      return;
+    }
     const fullText = matchNode.textContent;
     const before = fullText.slice(0, matchStart);
     const after = fullText.slice(matchCaret);
@@ -159,29 +178,59 @@ function attachMentionAutocompleteCE(editableEl, anchorContainer) {
 
   editableEl.addEventListener('input', () => {
     const sel = window.getSelection();
-    if (!sel.rangeCount) { closeMenu(); return; }
+    if (!sel.rangeCount) {
+      closeMenu();
+      return;
+    }
     const range = sel.getRangeAt(0);
     const node = range.startContainer;
-    if (node.nodeType !== Node.TEXT_NODE) { closeMenu(); return; }
+    if (node.nodeType !== Node.TEXT_NODE) {
+      closeMenu();
+      return;
+    }
     const upToCaret = node.textContent.slice(0, range.startOffset);
     const m = /(^|\s)@([^\s@]{0,30})$/.exec(upToCaret);
-    if (!m) { closeMenu(); return; }
+    if (!m) {
+      closeMenu();
+      return;
+    }
     const query = m[2];
     matchNode = node;
     matchCaret = range.startOffset;
     matchStart = range.startOffset - query.length - 1;
     candidates = mentionCandidates(query);
     activeIndex = 0;
-    if (!candidates.length) { closeMenu(); return; }
+    if (!candidates.length) {
+      closeMenu();
+      return;
+    }
     renderMenu();
   });
 
   editableEl.addEventListener('keydown', (e) => {
     if (menuEl && candidates.length) {
-      if (e.key === 'ArrowDown') { e.preventDefault(); activeIndex = (activeIndex + 1) % candidates.length; renderMenu(); return; }
-      if (e.key === 'ArrowUp') { e.preventDefault(); activeIndex = (activeIndex - 1 + candidates.length) % candidates.length; renderMenu(); return; }
-      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); chooseCandidate(candidates[activeIndex]); return; }
-      if (e.key === 'Escape') { e.stopPropagation(); closeMenu(); return; }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        activeIndex = (activeIndex + 1) % candidates.length;
+        renderMenu();
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        activeIndex = (activeIndex - 1 + candidates.length) % candidates.length;
+        renderMenu();
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        chooseCandidate(candidates[activeIndex]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        closeMenu();
+        return;
+      }
     }
     if (e.key === 'Enter' && !e.shiftKey) {
       // Некоторые редакторы (например, быстрый композер Журнала) используют

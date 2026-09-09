@@ -43,14 +43,20 @@ function applyAccent(accent, options = {}) {
   if (!themeSupportsAccent(currentTheme())) return;
   const value = ACCENT_VALUES.includes(accent) ? accent : DEFAULT_ACCENT;
   root.classList.add(`accent-${value}`);
-  if (options.persistLocal !== false) { try { localStorage.setItem('garden-accent', value); } catch (e) {} }
+  if (options.persistLocal !== false) {
+    try {
+      localStorage.setItem('garden-accent', value);
+    } catch (e) {}
+  }
 }
 
 function applyGlow(enabled, options = {}) {
   const value = !!enabled;
   document.documentElement.classList.toggle('glow-enabled', value);
   if (options.persistLocal !== false) {
-    try { localStorage.setItem('garden-glow', value ? '1' : '0'); } catch (e) {}
+    try {
+      localStorage.setItem('garden-glow', value ? '1' : '0');
+    } catch (e) {}
   }
 }
 
@@ -61,13 +67,19 @@ function applyTheme(theme, options = {}) {
   // иконка календаря и т.п.) — не завязан на конкретное имя темы, работает для
   // любой темы с mode: 'dark' (Графит, Хвоя, Ночь, будущие тёмные темы).
   root.classList.toggle('theme-dark', isDarkTheme(theme));
-  if (options.persistLocal !== false) { try { localStorage.setItem('garden-theme', theme); } catch (e) {} }
+  if (options.persistLocal !== false) {
+    try {
+      localStorage.setItem('garden-theme', theme);
+    } catch (e) {}
+  }
   // Переключение темы либо переносит ранее сохранённый акцент (если новая тема
   // его поддерживает), либо снимает accent-* класс целиком — он не должен
   // «протекать» из AnuPpuccin в темы, где акцент не настраивается.
   if (themeSupportsAccent(theme)) {
     let saved = DEFAULT_ACCENT;
-    try { saved = localStorage.getItem('garden-accent') || DEFAULT_ACCENT; } catch (e) {}
+    try {
+      saved = localStorage.getItem('garden-accent') || DEFAULT_ACCENT;
+    } catch (e) {}
     applyAccent(options.accent || saved, { persistLocal: false });
   } else {
     ACCENT_VALUES.forEach((name) => root.classList.remove(`accent-${name}`));
@@ -79,7 +91,9 @@ function applyTheme(theme, options = {}) {
 async function cycleTheme() {
   const next = isDarkTheme(currentTheme()) ? 'tuman' : 'khvoya';
   applyTheme(next);
-  try { await GardenSettings.update({ theme: next }); } catch (_) {}
+  try {
+    await GardenSettings.update({ theme: next });
+  } catch (_) {}
   renderSidebar(Router.current());
 }
 
@@ -97,6 +111,7 @@ const SEARCH_SECTION_ROUTES = {
   'сотрудники': '/team',
   'стейкхолдеры': '/stakeholders',
   'встречи': '/meetings',
+  'график встреч': '/meetings',
   'календарь': '/calendar',
   'работа': '/tasks',
   'задачи': '/tasks',
@@ -140,7 +155,10 @@ function searchSectionRoute(query) {
     'запусти ', 'отправься в ', 'перейди к ', 'проведи к ', 'покажи раздел ', 'хочу открыть ', 'хочу посмотреть ', 'где ',
   ];
   for (const prefix of wrappers) {
-    if (normalized.startsWith(prefix)) { normalized = normalized.slice(prefix.length).trim(); break; }
+    if (normalized.startsWith(prefix)) {
+      normalized = normalized.slice(prefix.length).trim();
+      break;
+    }
   }
   return SEARCH_SECTION_ROUTES[normalized] || null;
 }
@@ -159,7 +177,9 @@ function openPalette() {
     </div>
   </div>`;
   const overlay = document.getElementById('palette-overlay');
-  overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) closePalette(); });
+  overlay.addEventListener('mousedown', (e) => {
+    if (e.target === overlay) closePalette();
+  });
   document.addEventListener('keydown', paletteKeyHandler);
   const input = document.getElementById('palette-input');
   input.focus();
@@ -178,7 +198,10 @@ function openPalette() {
     const trimmed = query.trim();
     paletteState.query = trimmed;
     const request = ++suggestionRequest;
-    if (!trimmed) { renderPaletteQuickActions(); return; }
+    if (!trimmed) {
+      renderPaletteQuickActions();
+      return;
+    }
 
     paletteState.searchMode = true;
     paletteState.activeIndex = -1;
@@ -446,20 +469,21 @@ document.addEventListener('click', (event) => {
 
 function paletteKeyHandler(e) {
   const items = paletteState.flatItems;
-  if (e.key === 'Escape') { closePalette(); return; }
+  if (e.key === 'Escape') {
+    closePalette();
+    return;
+  }
   if (e.key === 'ArrowDown') {
     e.preventDefault();
     if (!items.length) return;
     paletteState.activeIndex = paletteState.activeIndex < 0 ? 0 : Math.min(paletteState.activeIndex + 1, items.length - 1);
     markActivePaletteItem();
-  }
-  else if (e.key === 'ArrowUp') {
+  } else if (e.key === 'ArrowUp') {
     e.preventDefault();
     if (!items.length) return;
     paletteState.activeIndex = paletteState.activeIndex <= 0 ? 0 : paletteState.activeIndex - 1;
     markActivePaletteItem();
-  }
-  else if (e.key === 'Enter') {
+  } else if (e.key === 'Enter') {
     e.preventDefault();
     // Точное название раздела без уточнений сразу открывает этот раздел.
     if (paletteState.searchMode && paletteState.activeIndex < 0 && paletteState.query) {
@@ -549,13 +573,22 @@ function isOverlayOpen() {
 // кнопка в топбаре, поэтому отдельный реестр действий на каждый раздел не нужен.
 function triggerPrimaryAction() {
   const button = document.querySelector('#topbar .btn-primary');
-  if (button) { button.click(); return true; }
+  if (button) {
+    button.click();
+    return true;
+  }
   // На экранах, где создание живёт в самом контенте (например, композер журнала),
   // ставим курсор в поле ввода вместо открытия диалога.
   const composer = document.querySelector('#view textarea, #view [contenteditable="true"]');
-  if (composer) { composer.focus(); return true; }
+  if (composer) {
+    composer.focus();
+    return true;
+  }
   const inlineButton = document.querySelector('#view .btn-primary');
-  if (inlineButton) { inlineButton.click(); return true; }
+  if (inlineButton) {
+    inlineButton.click();
+    return true;
+  }
   return false;
 }
 
@@ -600,14 +633,36 @@ document.addEventListener('keydown', (e) => {
   if (_goSequenceUntil > Date.now()) {
     const target = gardenGoShortcuts().find((item) => item.code === e.code);
     _goSequenceUntil = 0;
-    if (target) { e.preventDefault(); Router.go(target.path); return; }
+    if (target) {
+      e.preventDefault();
+      Router.go(target.path);
+      return;
+    }
   }
 
-  if (e.code === 'Slash' && e.shiftKey) { e.preventDefault(); openShortcutsHelp(); return; }
-  if (e.key === '?') { e.preventDefault(); openShortcutsHelp(); return; }
+  if (e.code === 'Slash' && e.shiftKey) {
+    e.preventDefault();
+    openShortcutsHelp();
+    return;
+  }
+  if (e.key === '?') {
+    e.preventDefault();
+    openShortcutsHelp();
+    return;
+  }
   if (e.shiftKey) return;
-  if (e.code === 'Slash' || e.key === '/') { e.preventDefault(); openPalette(); return; }
-  if (e.code === 'KeyN') { if (triggerPrimaryAction()) e.preventDefault(); return; }
-  if (e.code === 'KeyG') { _goSequenceUntil = Date.now() + 1500; return; }
+  if (e.code === 'Slash' || e.key === '/') {
+    e.preventDefault();
+    openPalette();
+    return;
+  }
+  if (e.code === 'KeyN') {
+    if (triggerPrimaryAction()) e.preventDefault();
+    return;
+  }
+  if (e.code === 'KeyG') {
+    _goSequenceUntil = Date.now() + 1500;
+    return;
+  }
 });
 

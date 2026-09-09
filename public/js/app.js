@@ -152,7 +152,9 @@ function readNavSelectionState() {
 }
 
 function writeNavSelectionState(next) {
-  try { localStorage.setItem(NAV_SELECTION_STORAGE_KEY, JSON.stringify(next || {})); } catch (_) {}
+  try {
+    localStorage.setItem(NAV_SELECTION_STORAGE_KEY, JSON.stringify(next || {}));
+  } catch (_) {}
 }
 
 function rememberNavSelectionByMeta(family, instance) {
@@ -232,7 +234,14 @@ function openCollapsedNavMenu(event, sectionKey) {
   menu.onmouseenter = cancelCollapsedNavClose;
   menu.onmouseleave = () => scheduleCloseCollapsedNavMenu();
   menu.onclick = (e) => e.stopPropagation();
-  menu.querySelectorAll('[data-path]').forEach((button) => { button.onclick = () => { const path = button.dataset.path; window.rememberNavSelectionFromNode(button); closeCollapsedNavMenu(); Router.go(path); }; });
+  menu.querySelectorAll('[data-path]').forEach((button) => {
+    button.onclick = () => {
+      const path = button.dataset.path;
+      window.rememberNavSelectionFromNode(button);
+      closeCollapsedNavMenu();
+      Router.go(path);
+    };
+  });
   document.body.appendChild(menu);
   _collapsedNavOpenKey = sectionKey;
 }
@@ -260,7 +269,10 @@ function closeHeaderMenu() {
 function openHeaderMenu(event, kind) {
   event?.preventDefault?.();
   event?.stopPropagation?.();
-  if (_headerMenuOpenKind === kind) { closeHeaderMenu(); return; }
+  if (_headerMenuOpenKind === kind) {
+    closeHeaderMenu();
+    return;
+  }
   closeHeaderMenu();
   // Событие приходит через делегирование на document, поэтому currentTarget —
   // это document, а не сама кнопка; настоящий якорь ищем через closest().
@@ -333,7 +345,9 @@ const NotificationCenter = {
       NotificationCenter.unreadCount = Number(data?.unreadCount || 0);
       NotificationCenter.refreshBadge();
       return NotificationCenter.items;
-    }).finally(() => { NotificationCenter.loading = null; });
+    }).finally(() => {
+      NotificationCenter.loading = null;
+    });
     return NotificationCenter.loading;
   },
   refreshBadge() {
@@ -352,7 +366,9 @@ const NotificationCenter = {
   },
   async markAllRead() {
     await api.post('/api/notifications/read-all', {});
-    (NotificationCenter.items || []).forEach((item) => { item.readAt = item.readAt || new Date().toISOString(); });
+    (NotificationCenter.items || []).forEach((item) => {
+      item.readAt = item.readAt || new Date().toISOString();
+    });
     NotificationCenter.unreadCount = 0;
     NotificationCenter.refreshBadge();
   },
@@ -536,12 +552,18 @@ async function toggleNavSection(event, key) {
 }
 
 function isSidebarCollapsed() {
-  try { return localStorage.getItem('garden:sidebarCollapsed') === '1'; } catch (_) { return false; }
+  try {
+    return localStorage.getItem('garden:sidebarCollapsed') === '1';
+  } catch (_) {
+    return false;
+  }
 }
 
 function toggleSidebar() {
   const next = !isSidebarCollapsed();
-  try { localStorage.setItem('garden:sidebarCollapsed', next ? '1' : '0'); } catch (_) {}
+  try {
+    localStorage.setItem('garden:sidebarCollapsed', next ? '1' : '0');
+  } catch (_) {}
   renderSidebar(Router.current());
 }
 
@@ -565,15 +587,24 @@ function closeMobileNav(opts) {
 }
 
 function mobileNavKeyHandler(e) {
-  if (e.key === 'Escape') { e.preventDefault(); closeMobileNav({ restoreFocus: true }); return; }
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    closeMobileNav({ restoreFocus: true });
+    return;
+  }
   if (e.key !== 'Tab') return;
   const sidebar = document.getElementById('sidebar');
   const items = focusableWithin(sidebar);
   if (!items.length) return;
   const first = items[0];
   const last = items[items.length - 1];
-  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first.focus();
+  }
 }
 
 function navItemIcon(item) {

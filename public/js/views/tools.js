@@ -9,9 +9,17 @@ Views.tools = async function () {
   const selected = Views._toolsFolder;
   const selectedFolder = folders.find((f) => f.id === selected);
   const filtered = selected === 'all' ? tools : tools.filter((d) => d.folderId === selected);
-  view.innerHTML = resourceFolderLayoutHtml('tools', folders, tools, selected, selectedFolder, filtered, toolRowHtml, 'инструмент','инструмента','инструментов');
+  view.innerHTML = resourceFolderLayoutHtml('tools', folders, tools, selected, selectedFolder, filtered, toolRowHtml, 'инструмент', 'инструмента', 'инструментов');
 };
 
 const openToolModal = (id) => openLinkResourceModal('tools', id);
-async function deleteTool(id) { if (!(await confirmAction('Удалить инструмент из списка?'))) return; await Resources.tools.remove(id); Modal.close(); toast('Удалено'); Views.tools(); }
+
+async function deleteTool(id) {
+  if (!(await confirmAction('Удалить инструмент из списка?'))) return;
+  await Resources.tools.remove(id);
+  Modal.close();
+  toast('Удалено');
+  Views.tools();
+}
+
 FeatureLoader.register({ openToolModal, deleteTool });

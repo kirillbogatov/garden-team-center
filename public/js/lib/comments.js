@@ -12,11 +12,17 @@ function stickyRichTextHtml(text) {
   lines.forEach((line) => {
     const bullet = /^\s*[-•]\s+(.+)$/.exec(line);
     if (bullet) {
-      if (!inList) { html += '<ul>'; inList = true; }
+      if (!inList) {
+        html += '<ul>';
+        inList = true;
+      }
       html += `<li>${inline(bullet[1])}</li>`;
       return;
     }
-    if (inList) { html += '</ul>'; inList = false; }
+    if (inList) {
+      html += '</ul>';
+      inList = false;
+    }
     html += line ? `<div>${inline(line)}</div>` : '<div><br></div>';
   });
   if (inList) html += '</ul>';
@@ -55,36 +61,52 @@ function commentThreadHtml(comments, options = {}) {
 
 function createCommentController(options) {
   const state = {
-    entityType: options.entityType, entityId: options.entityId,
+    entityType: options.entityType,
+    entityId: options.entityId,
     comments: Array.isArray(options.comments) ? options.comments : [],
-    listId: options.listId, countId: options.countId,
-    inputId: options.inputId, sendId: options.sendId,
-    addId: options.addId, variant: options.variant || 'default', color: options.defaultColor || 'yellow',
-    suppressEmptyAfterDelete: !!options.suppressEmptyAfterDelete, onChange: options.onChange || null,
+    listId: options.listId,
+    countId: options.countId,
+    inputId: options.inputId,
+    sendId: options.sendId,
+    addId: options.addId,
+    variant: options.variant || 'default',
+    color: options.defaultColor || 'yellow',
+    suppressEmptyAfterDelete: !!options.suppressEmptyAfterDelete,
+    onChange: options.onChange || null,
     journalPrefix: String(options.journalPrefix || '').trim(),
     onReorder: typeof options.onReorder === 'function' ? options.onReorder : null,
     stickyLayoutKey: `garden:sticky-layout:${options.entityType}:${options.entityId}`,
     stickyOrderKey: `garden:sticky-order:${options.entityType}:${options.entityId}`,
   };
   const baseUrl = `/api/comments/${encodeURIComponent(state.entityType)}/${encodeURIComponent(state.entityId)}`;
-  const stickyColors = ['yellow','pink','blue','green'];
+  const stickyColors = ['yellow', 'pink', 'blue', 'green'];
   let draftSeq = 0;
   let stickyLayout = (() => {
-    try { return localStorage.getItem(state.stickyLayoutKey) === 'two' ? 'two' : 'one'; } catch (_) { return 'one'; }
+    try {
+      return localStorage.getItem(state.stickyLayoutKey) === 'two' ? 'two' : 'one';
+    } catch (_) {
+      return 'one';
+    }
   })();
 
   function persistStickyLayout(mode) {
     stickyLayout = mode === 'two' ? 'two' : 'one';
-    try { localStorage.setItem(state.stickyLayoutKey, stickyLayout); } catch (_) {}
+    try {
+      localStorage.setItem(state.stickyLayoutKey, stickyLayout);
+    } catch (_) {}
   }
   function storedStickyOrder() {
     try {
       const value = JSON.parse(localStorage.getItem(state.stickyOrderKey) || '[]');
       return Array.isArray(value) ? value.map(String) : [];
-    } catch (_) { return []; }
+    } catch (_) {
+      return [];
+    }
   }
   function persistStickyOrder(order) {
-    try { localStorage.setItem(state.stickyOrderKey, JSON.stringify(order)); } catch (_) {}
+    try {
+      localStorage.setItem(state.stickyOrderKey, JSON.stringify(order));
+    } catch (_) {}
   }
   function applyStickyOrder() {
     if (state.variant !== 'notes') return;
@@ -105,7 +127,8 @@ function createCommentController(options) {
     const end = textarea.selectionEnd ?? start;
     const selected = textarea.value.slice(start, end) || 'текст';
     textarea.setRangeText(`${before}${selected}${after}`, start, end, 'end');
-    textarea.focus(); textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    textarea.focus();
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
   }
   function noteDraft() {
     return { id: `draft-${Date.now()}-${++draftSeq}`, text: '', color: 'yellow', canEdit: true, _draft: true };
@@ -132,11 +155,19 @@ function createCommentController(options) {
     },
     ensureDraft(options = {}) {
       let existing = state.comments.find((x) => x._draft);
-      if (!state.comments.length) { existing = noteDraft(); state.comments.push(existing); controller.render(); }
+      if (!state.comments.length) {
+        existing = noteDraft();
+        state.comments.push(existing);
+        controller.render();
+      }
       if (options.focus) document.querySelector(`[data-entity-comment-id="${CSS.escape(existing?.id || '')}"] textarea`)?.focus();
     },
-    savedCount() { return state.comments.filter((x) => !x._draft).length; },
-    filledCount() { return state.comments.filter((x) => !x._draft && String(x.text || '').trim()).length; },
+    savedCount() {
+      return state.comments.filter((x) => !x._draft).length;
+    },
+    filledCount() {
+      return state.comments.filter((x) => !x._draft && String(x.text || '').trim()).length;
+    },
     syncStickyLayout() {
       if (state.variant !== 'notes') return;
       const list = document.getElementById(state.listId);
@@ -208,7 +239,10 @@ function createCommentController(options) {
       const placeDragged = (event) => {
         if (!dragged) return;
         const candidates = [...list.querySelectorAll('.overview-sticky-note:not(.is-dragging)')];
-        if (!candidates.length) { list.append(dragged); return; }
+        if (!candidates.length) {
+          list.append(dragged);
+          return;
+        }
         let target = candidates.find((note) => {
           const r = note.getBoundingClientRect();
           return event.clientY >= r.top && event.clientY <= r.bottom && event.clientX >= r.left && event.clientX <= r.right;
@@ -259,7 +293,10 @@ function createCommentController(options) {
         if (!head || note.classList.contains('is-draft')) return;
         head.draggable = true;
         head.addEventListener('dragstart', (event) => {
-          if (event.target.closest('button,a,input,textarea')) { event.preventDefault(); return; }
+          if (event.target.closest('button,a,input,textarea')) {
+            event.preventDefault();
+            return;
+          }
           dragged = note;
           didDrop = false;
           layoutBeforeDrag = stickyLayout;
@@ -284,7 +321,9 @@ function createCommentController(options) {
           const ordered = order.map((id) => byId.get(String(id))).filter(Boolean);
           const leftovers = state.comments.filter((item) => item._draft || !order.includes(String(item.id)));
           state.comments = [...leftovers.filter((item) => item._draft), ...ordered, ...leftovers.filter((item) => !item._draft)];
-          try { await state.onReorder?.(order); } catch (_) {}
+          try {
+            await state.onReorder?.(order);
+          } catch (_) {}
         });
       });
     },
@@ -305,7 +344,10 @@ function createCommentController(options) {
           // An empty draft is only a local starter card and should not be created on the server.
           // An existing note, however, must be allowed to save an empty string so clearing the
           // textarea does not resurrect the previous text on the next open.
-          if (item._draft && !text.trim()) { if (stateEl) stateEl.textContent = ''; return; }
+          if (item._draft && !text.trim()) {
+            if (stateEl) stateEl.textContent = '';
+            return;
+          }
           if (stateEl) stateEl.textContent = 'Сохраняю…';
           try {
             if (item._draft) {
@@ -319,8 +361,12 @@ function createCommentController(options) {
               state.onChange?.({ type: 'update', savedCount: controller.savedCount(), item });
             }
             if (stateEl) stateEl.textContent = 'Сохранено';
-            setTimeout(() => { if (stateEl?.isConnected && stateEl.textContent === 'Сохранено') stateEl.textContent = ''; }, 900);
-          } catch (_) { if (stateEl) stateEl.textContent = 'Не сохранено'; }
+            setTimeout(() => {
+              if (stateEl?.isConnected && stateEl.textContent === 'Сохранено') stateEl.textContent = '';
+            }, 900);
+          } catch (_) {
+            if (stateEl) stateEl.textContent = 'Не сохранено';
+          }
         };
         textarea.oninput = () => {
           const id = row.dataset.entityCommentId;
@@ -328,7 +374,8 @@ function createCommentController(options) {
           if (item) {
             item.text = textarea.value;
           }
-          clearTimeout(timer); timer = setTimeout(save, 550);
+          clearTimeout(timer);
+          timer = setTimeout(save, 550);
         };
         textarea.onblur = () => {
           clearTimeout(timer);
@@ -348,7 +395,10 @@ function createCommentController(options) {
       if (!item) return;
       const liveText = row?.querySelector('.overview-note-autosave')?.value;
       const text = String(liveText != null ? liveText : item.text || '').trim();
-      if (!text) { toast('Сначала добавьте текст заметки'); return; }
+      if (!text) {
+        toast('Сначала добавьте текст заметки');
+        return;
+      }
       const journalText = state.journalPrefix ? `${state.journalPrefix}: ${text}` : text;
       if (!confirm('Перенести стикер в журнал? После переноса стикер будет удалён.')) return;
       const journalButton = row?.querySelector('[data-comment-action="journal"]');
@@ -363,7 +413,9 @@ function createCommentController(options) {
         toast('Заметка перенесена в журнал');
       } catch (_) {
         if (createdJournal?.id) {
-          try { await Resources.journal.remove(createdJournal.id); } catch (_) {}
+          try {
+            await Resources.journal.remove(createdJournal.id);
+          } catch (_) {}
         }
         if (journalButton?.isConnected) journalButton.disabled = false;
         toast('Не удалось перенести заметку в журнал');
@@ -374,7 +426,9 @@ function createCommentController(options) {
       if (!item || item.canEdit === false) return;
       const current = stickyColors.includes(item.color) ? item.color : 'yellow';
       item.color = stickyColors[(stickyColors.indexOf(current) + 1) % stickyColors.length];
-      if (!item._draft) Object.assign(item, await api.put(`/api/comments/${encodeURIComponent(item.id)}`, { text: item.text || '', color: item.color }));
+      if (!item._draft) {
+        Object.assign(item, await api.put(`/api/comments/${encodeURIComponent(item.id)}`, { text: item.text || '', color: item.color }));
+      }
       controller.render();
     },
     async remove(commentId) {
@@ -386,31 +440,65 @@ function createCommentController(options) {
       toast(state.variant === 'notes' ? 'Заметка удалена' : 'Комментарий удалён');
     },
     async edit(commentId) {
-      const item = state.comments.find((x) => x.id === commentId); if (!item) return;
-      const text = prompt('Редактировать комментарий', item.text || ''); if (text == null || !text.trim()) return;
-      Object.assign(item, await api.put(`/api/comments/${encodeURIComponent(commentId)}`, { text: text.trim() })); controller.render();
+      const item = state.comments.find((x) => x.id === commentId);
+      if (!item) return;
+      const text = prompt('Редактировать комментарий', item.text || '');
+      if (text == null || !text.trim()) return;
+      Object.assign(item, await api.put(`/api/comments/${encodeURIComponent(commentId)}`, { text: text.trim() }));
+      controller.render();
     },
     bind() {
       controller.render();
-      if (state.variant === 'notes') window.addEventListener('resize', controller.syncStickyLayout, { passive: true });
+      // Каждый визит на страницу (Обзор/человек/проект) создаёт новый контроллер
+      // и вызывает bind() заново — явного «размонтирования» предыдущего у view-слоя
+      // нет. Без самоснятия эти resize-слушатели на window копились бы на весь
+      // сеанс: список к тому моменту уже отсоединён от DOM, поэтому первый же
+      // resize после ухода со страницы обнаруживает это и снимает сам себя.
+      if (state.variant === 'notes') {
+        const onResize = () => {
+          if (!document.getElementById(state.listId)?.isConnected) {
+            window.removeEventListener('resize', onResize);
+            return;
+          }
+          controller.syncStickyLayout();
+        };
+        window.addEventListener('resize', onResize, { passive: true });
+      }
       const list = document.getElementById(state.listId);
-      if (list) list.onclick = (event) => {
-        const action = event.target.closest('[data-comment-action]'); if (!action) return;
-        const row = action.closest('[data-entity-comment-id]'); if (!row) return;
-        const id = row.dataset.entityCommentId;
-        if (action.dataset.commentAction === 'edit') controller.edit(id);
-        if (action.dataset.commentAction === 'delete') controller.remove(id);
-        if (action.dataset.commentAction === 'color') controller.cycleColor(id);
-        if (action.dataset.commentAction === 'journal') controller.moveToJournal(id, row);
-      };
+      if (list) {
+        list.onclick = (event) => {
+          const action = event.target.closest('[data-comment-action]');
+          if (!action) return;
+          const row = action.closest('[data-entity-comment-id]');
+          if (!row) return;
+          const id = row.dataset.entityCommentId;
+          if (action.dataset.commentAction === 'edit') controller.edit(id);
+          if (action.dataset.commentAction === 'delete') controller.remove(id);
+          if (action.dataset.commentAction === 'color') controller.cycleColor(id);
+          if (action.dataset.commentAction === 'journal') controller.moveToJournal(id, row);
+        };
+      }
       document.getElementById(state.addId)?.addEventListener('click', () => controller.addDraft());
       if (state.variant === 'notes') return controller;
-      const input = document.getElementById(state.inputId), send = document.getElementById(state.sendId);
+
+      const input = document.getElementById(state.inputId);
+      const send = document.getElementById(state.sendId);
       if (!input || !send) return controller;
-      const sync = () => { send.hidden = !input.value.trim(); };
+      const sync = () => {
+        send.hidden = !input.value.trim();
+      };
       input.oninput = sync;
-      send.onclick = async () => { const text = input.value.trim(); if (!text) return; const created = await api.post(baseUrl, { text, color: state.color }); state.comments.push(created); input.value=''; sync(); controller.render(); };
-      sync(); return controller;
+      send.onclick = async () => {
+        const text = input.value.trim();
+        if (!text) return;
+        const created = await api.post(baseUrl, { text, color: state.color });
+        state.comments.push(created);
+        input.value = '';
+        sync();
+        controller.render();
+      };
+      sync();
+      return controller;
     },
   };
   return controller;

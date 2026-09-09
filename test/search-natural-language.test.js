@@ -44,6 +44,40 @@ test('missed and overdue meetings are synonyms for meetings without outcomes', (
   assert.deepEqual(missed.groups.meetings.map((m) => m.id).sort(), overdue.groups.meetings.map((m) => m.id).sort());
 });
 
+test('«график встреч» is understood as the meetings section, with or without a named person', () => {
+  const bare = search('график встреч');
+  assert.equal(bare.command.group, 'meetings');
+  assert.equal(bare.command.textRemainder, '');
+  assert.ok(bare.groups.meetings.length > 0);
+
+  const withPerson = search('график встреч с Дуайтом');
+  assert.equal(withPerson.command.group, 'meetings');
+  assert.equal(withPerson.command.person.name, 'Дуайт Шрут');
+  assert.ok(withPerson.groups.meetings.every((meeting) => meeting.participantIds.includes(withPerson.command.person.id)));
+});
+
+test('type detection recognizes case forms it was never explicitly given, via stemming', () => {
+  assert.equal(search('задачам Дуайта нужно уделить внимание').command.group, 'tasks');
+  assert.equal(search('в проекте есть просроченные задачи').command.group, 'tasks');
+  assert.equal(search('документах ничего не нашлось').command.group, 'documents');
+  assert.equal(search('договоренностей накопилось много').command.group, 'agreements');
+  assert.equal(search('процессов сломано несколько').command.group, 'processes');
+  assert.equal(search('статус проекта Sabre').command.group, 'projects');
+});
+
+test('exact word forms still win over stemmed matches when they collide with an unrelated word', () => {
+  // «в процессе» — статус задачи, и не должен перехватываться разделом
+  // «Процессы» только потому, что оба слова сводятся к одному стему.
+  const inProgress = search('задачи Дуайта в процессе');
+  assert.equal(inProgress.command.group, 'tasks');
+  assert.ok(inProgress.command.modifiers.includes('in_progress'));
+
+  // «проблемами» (твор. падеж) не должно перехватывать раздел «Проблемы»,
+  // когда точная форма «процессы» уже точно определяет тип запроса.
+  const processesWithIssues = search('процессы с проблемами');
+  assert.equal(processesWithIssues.command.group, 'processes');
+});
+
 test('meeting search combines project and person context', () => {
   const result = search('встречи без итогов Джима Филиал Скрэнтона');
   assert.equal(result.command.person.name, 'Джим Халперт');
@@ -390,7 +424,7 @@ test('documents from a meeting resolves to meeting attachments, not the global D
       participantIds: [], projectId: null, notes: '',
       documentLinks: [{ title: 'План', url: 'https://example.test/plan' }],
     }],
-    documents: [...demo.documents, { id: 'doc_global_only', title: 'Глобальный документ', url: 'https://example.test/global' }],
+    kbDocs: [...demo.kbDocs, { id: 'doc_global_only', title: 'Глобальный документ', url: 'https://example.test/global' }],
   };
   const db = {};
   for (const [name, rows] of Object.entries(data)) db[name] = { all: () => rows, get: (id) => rows.find((row) => row.id === id) };
@@ -520,6 +554,28 @@ test('material search understands «саммари с последних PR» as
   assert.equal(result.command.textRemainder, '');
   assert.deepEqual(result.groups.links.slice(0, 2).map((link) => link.sourceId), ['mtg_pr_new_material', 'mtg_pr_old_material']);
   assert.ok(result.groups.links.every((link) => link.sourceMeetingType === 'pr'));
+});
+
+test('«документы с последних PR» resolves to recent PR meeting attachments, not the global Documents section', () => {
+  const data = {
+    ...demo,
+    meetings: [...demo.meetings,
+      { id: 'mtg_pr_old_docs', type: 'pr', title: 'PR old', date: '2026-08-01T10:00:00', participantIds: [], documentLinks: [{ title: 'Отчёт', url: 'https://example.test/pr-old-docs' }] },
+      { id: 'mtg_pr_new_docs', type: 'pr', title: 'PR new', date: '2026-09-01T10:00:00', participantIds: [], documentLinks: [{ title: 'Отчёт', url: 'https://example.test/pr-new-docs' }] },
+    ],
+    kbDocs: [...demo.kbDocs, { id: 'doc_global_unrelated', title: 'Глобальный документ', url: 'https://example.test/global' }],
+  };
+  const db = {};
+  for (const [name, rows] of Object.entries(data)) db[name] = { all: () => rows, get: (id) => rows.find((row) => row.id === id) };
+  const service = registerSearchRoutes({ get() {} }, { db, visibleItems: (name) => data[name] || [] });
+  const result = service.runSearch('документы с последних pr', {});
+
+  assert.equal(result.command.group, 'links');
+  assert.equal(result.command.sourceType, 'meeting');
+  assert.equal(result.command.sourceMeetingType, 'pr');
+  assert.equal(result.command.textRemainder, '');
+  assert.deepEqual(result.groups.links.slice(0, 2).map((link) => link.sourceId), ['mtg_pr_new_docs', 'mtg_pr_old_docs']);
+  assert.equal(result.groups.documents.length, 0);
 });
 
 test('«документы со встреч» includes explicit attachments and links written in meeting notes', () => {

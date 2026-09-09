@@ -62,17 +62,30 @@ function isImportantChange(entityType, before, after) {
 }
 
 function recordCreate(db, entityType, item, authorUserId) {
-  return db.versions.record(entityType, item.id, item, authorUserId, { summary: creationSummary(entityType), finalized: true });
+  return db.versions.record(entityType, item.id, item, authorUserId, {
+    summary: creationSummary(entityType),
+    finalized: true,
+  });
 }
 
+/** Records an update as a new version, batching consecutive autosaves of the
+ * same field(s) into one open (non-finalized) version within VERSION_WINDOW_MS,
+ * so a burst of small edits doesn't spam the history with one entry each.
+ * A status/archive change ("important") always gets its own finalized version. */
 function recordUpdate(db, entityType, before, after, authorUserId) {
-  db.versions.ensureInitial(entityType, before.id, before, before.createdByUserId || null, { summary: creationSummary(entityType), finalized: true });
-  let latest = db.versions.latest(entityType, after.id);
+  db.versions.ensureInitial(entityType, before.id, before, before.createdByUserId || null, {
+    summary: creationSummary(entityType),
+    finalized: true,
+  });
+  const latest = db.versions.latest(entityType, after.id);
   const important = isImportantChange(entityType, before, after);
 
   if (important) {
     if (latest && !latest.finalized) db.versions.finalizeLatest(entityType, after.id);
-    return db.versions.record(entityType, after.id, after, authorUserId, { summary: versionSummary(entityType, before, after), finalized: true });
+    return db.versions.record(entityType, after.id, after, authorUserId, {
+      summary: versionSummary(entityType, before, after),
+      finalized: true,
+    });
   }
 
   const age = latest?.createdAt ? Date.now() - new Date(latest.createdAt).getTime() : Infinity;
@@ -83,7 +96,10 @@ function recordUpdate(db, entityType, before, after, authorUserId) {
   }
 
   if (latest && !latest.finalized) db.versions.finalizeLatest(entityType, after.id);
-  return db.versions.record(entityType, after.id, after, authorUserId, { summary: versionSummary(entityType, before, after), finalized: false });
+  return db.versions.record(entityType, after.id, after, authorUserId, {
+    summary: versionSummary(entityType, before, after),
+    finalized: false,
+  });
 }
 
 module.exports = { VERSION_WINDOW_MS, changedFields, versionSummary, creationSummary, isImportantChange, recordCreate, recordUpdate };

@@ -17,6 +17,21 @@ function versionHistoryDate(value) {
   return date.toLocaleString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+// Каждый тип сущности хранит свой человекочитаемый ключ под разным именем поля.
+function versionHistoryEntityKey(entityType, entity) {
+  if (entityType === 'tasks') return entity.taskKey || '';
+  if (entityType === 'meetings') return entity.meetingKey || '';
+  return entity.labKey || '';
+}
+
+function versionHistoryActionsHtml(entry, currentVersion, canRestore) {
+  if (entry.version === currentVersion || canRestore === false) return '';
+  return `<div class="version-history-actions">
+    <button type="button" class="ui-button btn btn-sm" data-version-restore="${entry.version}">Откатиться</button>
+    <button type="button" class="ui-button btn btn-sm btn-danger-subtle" data-version-delete="${entry.version}">Удалить</button>
+  </div>`;
+}
+
 async function openVersionHistory(entityType, entity, options) {
   const opts = options || {};
   const entityId = entity?.id;
@@ -30,12 +45,8 @@ async function openVersionHistory(entityType, entity, options) {
     return;
   }
   const currentVersion = versions.find((entry) => entry.current)?.version ?? versions[0]?.version;
-  Modal.open(`
-    <div class="version-history-head">
-      <div><h2>История версий</h2><div class="tiny muted">${escapeHtml(entityType === 'tasks' ? entity.taskKey || '' : entityType === 'meetings' ? entity.meetingKey || '' : entity.labKey || '')}</div></div>
-    </div>
-    <div class="version-history-list">
-      ${versions.length ? versions.map((entry) => `
+  const rowsHtml = versions.length
+    ? versions.map((entry) => `
         <div class="version-history-row ${entry.version === currentVersion ? 'is-current' : ''}">
           <div class="version-history-copy">
             <div class="version-history-title"><strong>Версия ${entry.version}</strong>${entry.version === currentVersion ? '<span class="ui-tag badge">Текущая</span>' : ''}</div>
@@ -43,12 +54,16 @@ async function openVersionHistory(entityType, entity, options) {
             <div class="version-history-preview">${versionHistoryValue(entityType, entry.data || {})}</div>
             <div class="version-history-meta">${escapeHtml(versionHistoryDate(entry.createdAt))}${entry.authorName ? ` · ${escapeHtml(entry.authorName)}` : ''}</div>
           </div>
-          ${entry.version === currentVersion || opts.canRestore === false ? '' : `
-            <div class="version-history-actions">
-              <button type="button" class="ui-button btn btn-sm" data-version-restore="${entry.version}">Откатиться</button>
-              <button type="button" class="ui-button btn btn-sm btn-danger-subtle" data-version-delete="${entry.version}">Удалить</button>
-            </div>`}
-        </div>`).join('') : '<div class="empty-state">История пока пуста</div>'}
+          ${versionHistoryActionsHtml(entry, currentVersion, opts.canRestore)}
+        </div>`).join('')
+    : '<div class="empty-state">История пока пуста</div>';
+
+  Modal.open(`
+    <div class="version-history-head">
+      <div><h2>История версий</h2><div class="tiny muted">${escapeHtml(versionHistoryEntityKey(entityType, entity))}</div></div>
+    </div>
+    <div class="version-history-list">
+      ${rowsHtml}
     </div>
     <div class="ui-modal-actions modal-actions"><button type="button" class="ui-button btn" data-modal-close>Закрыть</button></div>
   `, { label: 'История версий' });

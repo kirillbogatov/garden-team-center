@@ -29,10 +29,14 @@ function isTeamleadUser(user) {
   return normalizedRoles(user).includes('teamlead');
 }
 
+// Every known event type defaults to enabled; only an explicit `false` in the
+// user's saved preferences turns one off.
 function notificationPreferences(db, userId) {
   const raw = db.auth.preferences.get(userId) || {};
   const source = raw.notificationEvents && typeof raw.notificationEvents === 'object' ? raw.notificationEvents : {};
-  return { ...DEFAULT_NOTIFICATION_EVENTS, ...Object.fromEntries(Object.keys(DEFAULT_NOTIFICATION_EVENTS).map((key) => [key, source[key] !== false])) };
+  return Object.fromEntries(
+    Object.keys(DEFAULT_NOTIFICATION_EVENTS).map((key) => [key, source[key] !== false]),
+  );
 }
 
 function notificationEnabled(db, userId, eventType) {
@@ -49,14 +53,23 @@ function createNotification(db, userId, data) {
   return db.notifications.create(userId, data);
 }
 
+/** Resolves the active team-member recipient for `personId`, or null when the
+ * notification should be skipped: not a team person, no active user account,
+ * not an "employee"-role account, or the recipient is the actor themself. */
+function activeTeamRecipient(db, personId, actor) {
+  const person = db.people?.get ? db.people.get(personId) : { type: 'team' };
+  if (!person || person.type !== 'team') return null;
+  const recipient = userForPerson(db, personId);
+  if (!recipient || !isEmployeeUser(recipient) || recipient.id === actor.id) return null;
+  return recipient;
+}
+
 function notifyTaskAssigned(db, actor, task) {
   if (!isTeamleadUser(actor) || !task) return;
   const assigneeIds = Array.isArray(task.assigneeIds) ? task.assigneeIds : [];
   assigneeIds.forEach((personId) => {
-    const person = db.people?.get ? db.people.get(personId) : { type: 'team' };
-    if (!person || person.type !== 'team') return;
-    const recipient = userForPerson(db, personId);
-    if (!recipient || !isEmployeeUser(recipient) || recipient.id === actor.id) return;
+    const recipient = activeTeamRecipient(db, personId, actor);
+    if (!recipient) return;
     createNotification(db, recipient.id, {
       eventType: EVENT_TYPES.TASK_ASSIGNED,
       title: 'Новая задача',
@@ -85,10 +98,8 @@ function notifyProjectLoadChanges(db, actor, before, after) {
     const oldValue = normalizeLoadValue(beforeLoads[personId]);
     const newValue = normalizeLoadValue(afterLoads[personId]);
     if (oldValue === newValue) return;
-    const person = db.people?.get ? db.people.get(personId) : { type: 'team' };
-    if (!person || person.type !== 'team') return;
-    const recipient = userForPerson(db, personId);
-    if (!recipient || !isEmployeeUser(recipient) || recipient.id === actor.id) return;
+    const recipient = activeTeamRecipient(db, personId, actor);
+    if (!recipient) return;
     createNotification(db, recipient.id, {
       eventType: EVENT_TYPES.PROJECT_LOAD_CHANGED,
       title: 'Изменилась загрузка на проекте',
@@ -98,7 +109,6 @@ function notifyProjectLoadChanges(db, actor, before, after) {
     });
   });
 }
-
 
 function teamleadForEmployee(db, actor) {
   if (!isEmployeeUser(actor) || !actor?.personId) return null;

@@ -262,7 +262,7 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select { m
   
   .ui-row--meeting { grid-template-columns:44px minmax(0,1fr) 74px 24px 16px; gap:7px; }
   .ui-row--meeting .meeting-row-project { display:none; }
-  .work-row-right .project-chip, .work-row-right .issue-status-badge { display:none; }
+  .work-row-right .project-chip { display:none; }
   .work-row-meta { max-width:65vw; }
 }
 
@@ -275,7 +275,6 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select { m
 .project-chip,
 .badge.task-kind,
 .lab-type-badge,
-.issue-status-badge,
 .issue-goal-chip {
   --ui-tag-dot: var(--text-quaternary);
   min-height: 0 !important;
@@ -300,7 +299,6 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select { m
 .project-chip::before,
 .badge.task-kind::before,
 .lab-type-badge::before,
-.issue-status-badge::before,
 .issue-goal-chip::before {
   content: "";
   width: 5px;
@@ -315,7 +313,6 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select { m
 .project-chip > .dot,
 .badge.task-kind > .dot,
 .lab-type-badge > .dot,
-.issue-status-badge > .dot,
 .issue-goal-chip > .dot { display: none !important; }
 .ui-tag.clickable:hover,
 .badge.clickable:hover,
@@ -359,7 +356,6 @@ select {
 .project-chip,
 .badge.task-kind,
 .lab-type-badge,
-.issue-status-badge,
 .issue-goal-chip,
 .meeting-type {
   --ui-tag-tone: var(--text-tertiary);
@@ -386,7 +382,6 @@ select {
 .project-chip::before,
 .badge.task-kind::before,
 .lab-type-badge::before,
-.issue-status-badge::before,
 .issue-goal-chip::before,
 .meeting-type::before { display: none !important; content: none !important; }
 
@@ -395,7 +390,6 @@ select {
 .project-chip,
 .badge.task-kind { --ui-tag-tone: var(--accent); }
 .priority-high { --ui-tag-tone: var(--orange); color: color-mix(in srgb, var(--text-primary) 72%, var(--orange)) !important; }
-.issue-status-badge { --ui-tag-tone: var(--text-tertiary); }
 .lab-type-badge { --ui-tag-tone: var(--accent); }
 .meeting-type-1-1 { --ui-tag-tone: var(--accent); }
 .meeting-type-pr { --ui-tag-tone: #7c5ce7; }
@@ -701,7 +695,6 @@ html.theme-dark input[type="month"]::-webkit-calendar-picker-indicator {
   .people-grid--team { grid-template-columns: 1fr !important; }
 }
 @media (max-width: 720px) {
-  .people-grid--team { grid-template-columns: 1fr !important; }
   .team-list-toolbar { justify-content: flex-start; }
 }
 
@@ -711,7 +704,6 @@ html.theme-dark input[type="month"]::-webkit-calendar-picker-indicator {
 .project-chip,
 .badge.task-kind,
 .lab-type-badge,
-.issue-status-badge,
 .issue-goal-chip,
 .meeting-type {
   --ui-tag-tone: var(--text-tertiary);
@@ -745,7 +737,6 @@ html.theme-dark input[type="month"]::-webkit-calendar-picker-indicator {
 .project-chip::before,
 .badge.task-kind::before,
 .lab-type-badge::before,
-.issue-status-badge::before,
 .issue-goal-chip::before,
 .meeting-type::before {
   content: none !important;
@@ -1250,13 +1241,13 @@ textarea {
 
 
 
-.ui-row, .list-row, .zen-goal{
+.ui-row, .list-row{
   border-color: color-mix(in srgb, var(--surface-card-divider, var(--border-soft)) 64%, transparent) !important;
 }
-.ui-row:hover, .list-row:hover, .zen-goal:hover{
+.ui-row:hover, .list-row:hover{
   background: color-mix(in srgb, var(--bg-hover) 66%, transparent);
 }
-.ui-row:last-child, .list-row:last-child, .zen-goal:last-child{ border-bottom: 0 !important; }
+.ui-row:last-child, .list-row:last-child{ border-bottom: 0 !important; }
 
 .task-sticky-toolbar,
 .labs-sticky-toolbar {
@@ -1346,7 +1337,7 @@ textarea {
   .person-card { transition: none !important; }
 }
 
-.checkins-table, .card, .person-card, .settings-card, .ui-surface, .zen-surface, .person-context, .goal-card, .lab-card, .development-panel, .auth-card{
+.checkins-table, .card, .person-card, .settings-card, .ui-surface, .person-context, .goal-card, .lab-card, .development-panel, .auth-card{
   border-color: transparent !important;
   box-shadow: none !important;
 }
@@ -2749,10 +2740,6 @@ html:not(.theme-clarity):not(.theme-clarity-dark) .task-groups.task-groups-separ
   color: var(--text-secondary);
   white-space: nowrap;
 }
-.checkins-history-empty {
-  grid-column: 1 / -1;
-  padding: 16px;
-}
 @supports not (grid-template-columns: subgrid) {
   .checkins-history-table-row {
     grid-template-columns: minmax(132px, 156px) repeat(3, minmax(0, 1fr));
@@ -2828,19 +2815,6 @@ html:not(.theme-clarity):not(.theme-clarity-dark) .task-groups.task-groups-separ
 
 /* Preserve user-entered paragraphs/newlines when textarea content is rendered as text. */
 .formatted-text { white-space: pre-wrap; overflow-wrap: anywhere; }
-
-/* Role access matrix in admin. */
-.admin-access-help { margin-top:-4px; max-width:680px; font-size:var(--fs-sm); line-height:1.5; }
-.admin-access-matrix { margin-top:16px; border-top:1px solid var(--border-soft); }
-.admin-access-head, .admin-access-row { display:grid; grid-template-columns:minmax(170px,1fr) 150px 150px; gap:10px; align-items:center; min-height:42px; border-bottom:1px solid var(--border-soft); }
-.admin-access-head { color:var(--text-tertiary); font-size:var(--fs-2xs); text-transform:uppercase; letter-spacing:.03em; }
-.admin-access-head strong { font-weight:600; color:var(--text-secondary); }
-.admin-access-area { color:var(--text-primary); font-size:var(--fs-sm); }
-.admin-access-select { width:100%; min-width:0; height:30px; font-size:var(--fs-xs); }
-.admin-access-legend { margin-top:12px; color:var(--text-tertiary); font-size:var(--fs-xs); line-height:1.45; }
-.admin-access-legend b { color:var(--text-secondary); font-weight:600; }
-@media (max-width:680px) { .admin-access-head, .admin-access-row { grid-template-columns:minmax(120px,1fr) 118px 118px; gap:6px; } }
-
 
 /* Admin role access — full-page permission matrix. */
 .admin-role-access-page {
@@ -3837,33 +3811,14 @@ a.smart-project-group-title:hover{color:var(--text-primary);}
 .task-page .task-sticky-toolbar:not(.is-collapsed){padding-bottom:14px;margin-bottom:4px !important;}
 
 /* The Labs detail: privacy is a standalone flag below Links, not a property named Access. */
-.view.task-detail-page-view .lab-task-detail-page .lab-detail-privacy-row {
-  margin: 4px 0 0 96px;
-  min-width: 0;
-}
 .view.task-detail-page-view .lab-task-detail-page .lab-detail-access-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
   min-width: 0;
-  min-height: 30px;
   margin: 0;
   color: var(--text-primary);
   font-size: var(--fs-xs);
-  line-height: 1.35;
-}
-.view.task-detail-page-view .lab-task-detail-page .lab-detail-access-toggle input {
-  width: 16px;
-  height: 16px;
-  min-width: 16px;
-  min-height: 16px;
-  margin: 0;
-  padding: 0;
-  flex: 0 0 16px;
 }
 .view.task-detail-page-view .lab-task-detail-page .lab-detail-access-toggle span {
   min-width: 0;
-  white-space: normal;
 }
 .view.task-detail-page-view .lab-task-detail-page .lab-links-editor .meeting-document-head {
   display: none;
@@ -4027,12 +3982,6 @@ html.theme-dark.glow-enabled .meeting-filterbar {
 @media(max-width:720px){
   .view.task-detail-page-view .lab-task-detail-page .lab-detail-access-toggle span{
     white-space:normal;
-  }
-}
-
-@media(max-width:720px){
-  .view.task-detail-page-view .lab-task-detail-page .lab-detail-privacy-row{
-    margin-left:0;
   }
 }
 

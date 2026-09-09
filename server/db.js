@@ -1,3 +1,5 @@
+'use strict';
+
 // Локальная база Garden на SQLite.
 // Все сущности хранятся как JSON-документы в одной транзакционной таблице records.
 // Сущности хранятся как JSON-документы в SQLite и меняются атомарно.
@@ -7,11 +9,19 @@ const path = require('path');
 const { DATA_DIR } = require('./storage');
 const { extractMentions } = require('./mentions');
 const { AsyncLocalStorage } = require('async_hooks');
+
 const workspaceStorage = new AsyncLocalStorage();
-function currentWorkspace() { return workspaceStorage.getStore() || 'main'; }
 
-function scopedMetaKey(key) { const ws = currentWorkspace(); return ws === 'main' ? String(key) : `${ws}:${String(key)}`; }
+function currentWorkspace() {
+  return workspaceStorage.getStore() || 'main';
+}
 
+// A workspace-prefixed key for the shared `meta` table, so 'main' and 'demo'
+// (see db.withWorkspace) never collide on the same key.
+function scopedMetaKey(key) {
+  const ws = currentWorkspace();
+  return ws === 'main' ? String(key) : `${ws}:${String(key)}`;
+}
 
 let DatabaseSync;
 try {
@@ -38,7 +48,6 @@ const COLLECTIONS = [
   'journal',
   'goals',
   'agreements',
-  'documents',
   'tools',
   'processes',
   'vacations',
@@ -151,8 +160,30 @@ sqlite.exec(`
     ON notifications(workspace, user_id, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_notifications_user_unread
     ON notifications(workspace, user_id, read_at);
+
+  -- Запросы умного поиска, которые smart-search не смог разобрать как команду
+  -- (упал в обычный полнотекстовый поиск). Не лог каждого обращения, а счётчик
+  -- по нормализованной форме запроса — так видно реальные пробелы словаря
+  -- («таски», «митинги»...), а не тонет в разовом полнотекстовом поиске.
+  CREATE TABLE IF NOT EXISTS search_misses (
+    workspace TEXT NOT NULL DEFAULT 'main',
+    normalized_query TEXT NOT NULL,
+    sample_query TEXT NOT NULL,
+    hit_count INTEGER NOT NULL DEFAULT 1,
+    first_seen_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    last_person_id TEXT,
+    PRIMARY KEY (workspace, normalized_query)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_search_misses_recent
+    ON search_misses(workspace, last_seen_at DESC);
 `);
 
+// relation_key lets `related()` fetch a collection's rows for one parent
+// without a dedicated join table — each collection defines its own notion
+// of "parent" (a comment's entity, a task note's task, an idea's lab
+// project, a task copy's shared taskGroupId).
 function relationKeyFor(name, item) {
   if (!item || typeof item !== 'object') return null;
   if (name === 'comments') return item.entityType && item.entityId ? `${item.entityType}:${item.entityId}` : null;
@@ -161,8 +192,6 @@ function relationKeyFor(name, item) {
   if (name === 'tasks') return item.taskGroupId || null;
   return null;
 }
-
-
 
 const stmtAll = sqlite.prepare(
   'SELECT data FROM records WHERE workspace = ? AND collection = ? ORDER BY seq ASC'
@@ -190,11 +219,6 @@ const stmtMetaUpsert = sqlite.prepare(`
   INSERT INTO meta (key, value) VALUES (?, ?)
   ON CONFLICT(key) DO UPDATE SET value = excluded.value
 `);
-
-
-const versionColumns = new Set(sqlite.prepare('PRAGMA table_info(entity_versions)').all().map((column) => column.name));
-if (!versionColumns.has('summary')) sqlite.exec("ALTER TABLE entity_versions ADD COLUMN summary TEXT NOT NULL DEFAULT ''");
-if (!versionColumns.has('finalized')) sqlite.exec("ALTER TABLE entity_versions ADD COLUMN finalized INTEGER NOT NULL DEFAULT 1");
 
 const stmtVersionList = sqlite.prepare(`
   SELECT version, data, author_user_id AS authorUserId, created_at AS createdAt, summary, finalized
@@ -263,7 +287,6 @@ function transaction(fn) {
   }
 }
 
-
 function genId(prefix) {
   return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -280,7 +303,6 @@ const prefixes = {
   journal: 'jrn',
   goals: 'gl',
   agreements: 'agr',
-  documents: 'doc',
   tools: 'tool',
   processes: 'prc',
   vacations: 'vac',
@@ -350,7 +372,9 @@ const collection = (name) => ({
       merged.mentions = extractMentions(patch.text);
     }
 
-    const result = stmtUpdate.run(JSON.stringify(merged), relationKeyFor(name, merged), now, currentWorkspace(), name, id);
+    const result = stmtUpdate.run(
+      JSON.stringify(merged), relationKeyFor(name, merged), now, currentWorkspace(), name, id,
+    );
     return Number(result.changes) > 0 ? merged : null;
   },
 
@@ -364,9 +388,12 @@ const collection = (name) => ({
     transaction(() => {
       for (const current of this.all()) stmtDelete.run(currentWorkspace(), name, current.id);
       for (const source of items) {
-        let item = prepareItem(name, source);
+        const item = prepareItem(name, source);
         if (!item.id) throw new Error(`replaceAll(${name}): запись без id`);
-        stmtInsert.run(currentWorkspace(), name, relationKeyFor(name, item), item.id, JSON.stringify(item), item.createdAt || null, item.updatedAt || null);
+        stmtInsert.run(
+          currentWorkspace(), name, relationKeyFor(name, item), item.id,
+          JSON.stringify(item), item.createdAt || null, item.updatedAt || null,
+        );
       }
     });
   },
@@ -392,46 +419,62 @@ db.versions = {
       finalized: Boolean(row.finalized),
     };
   },
+
   list(entityType, entityId) {
     return stmtVersionList.all(currentWorkspace(), String(entityType), String(entityId)).map((row) => this._fromRow(row));
   },
+
   get(entityType, entityId, version) {
     return this._fromRow(stmtVersionGet.get(currentWorkspace(), String(entityType), String(entityId), Number(version)));
   },
+
   latest(entityType, entityId) {
     return this._fromRow(stmtVersionLatest.get(currentWorkspace(), String(entityType), String(entityId)));
   },
+
   record(entityType, entityId, data, authorUserId = null, options = {}) {
     const latest = this.latest(entityType, entityId);
     const version = (latest?.version || 0) + 1;
     const createdAt = options.createdAt || new Date().toISOString();
     const summary = String(options.summary || '');
     const finalized = options.finalized === false ? 0 : 1;
-    stmtVersionInsert.run(currentWorkspace(), String(entityType), String(entityId), version, JSON.stringify(data), authorUserId || null, createdAt, summary, finalized);
+    stmtVersionInsert.run(
+      currentWorkspace(), String(entityType), String(entityId), version,
+      JSON.stringify(data), authorUserId || null, createdAt, summary, finalized,
+    );
     return { version, data, authorUserId: authorUserId || null, createdAt, summary, finalized: Boolean(finalized) };
   },
+
   updateLatest(entityType, entityId, data, authorUserId = null, summary = '') {
     const latest = this.latest(entityType, entityId);
     if (!latest) return this.record(entityType, entityId, data, authorUserId, { summary, finalized: false });
-    stmtVersionUpdateLatest.run(JSON.stringify(data), authorUserId || null, String(summary || ''), currentWorkspace(), String(entityType), String(entityId), latest.version);
+    stmtVersionUpdateLatest.run(
+      JSON.stringify(data), authorUserId || null, String(summary || ''),
+      currentWorkspace(), String(entityType), String(entityId), latest.version,
+    );
     return { ...latest, data, authorUserId: authorUserId || null, summary: String(summary || ''), finalized: false };
   },
+
   finalizeLatest(entityType, entityId) {
     const latest = this.latest(entityType, entityId);
     if (!latest || latest.finalized) return latest;
     stmtVersionFinalizeLatest.run(currentWorkspace(), String(entityType), String(entityId), latest.version);
     return { ...latest, finalized: true };
   },
+
   ensureInitial(entityType, entityId, data, authorUserId = null, options = {}) {
     return this.latest(entityType, entityId) || this.record(entityType, entityId, data, authorUserId, options);
   },
+
   remove(entityType, entityId, version) {
     const result = stmtVersionDeleteOne.run(currentWorkspace(), String(entityType), String(entityId), Number(version));
     return result.changes > 0;
   },
+
   removeEntity(entityType, entityId) {
     stmtVersionDeleteEntity.run(currentWorkspace(), String(entityType), String(entityId));
   },
+
   clearWorkspace() {
     stmtVersionDeleteWorkspace.run(currentWorkspace());
   },
@@ -441,7 +484,11 @@ db.meta = {
   get(key, fallback = null) {
     const row = stmtMetaGet.get(scopedMetaKey(key));
     if (!row) return fallback;
-    try { return JSON.parse(row.value); } catch (_) { return row.value; }
+    try {
+      return JSON.parse(row.value);
+    } catch (_) {
+      return row.value;
+    }
   },
   set(key, value) {
     stmtMetaUpsert.run(scopedMetaKey(key), JSON.stringify(value));
@@ -451,10 +498,13 @@ db.meta = {
 
 // Отдельные нормализованные таблицы для аутентификации. Пароли сюда попадают
 // уже в виде scrypt-хэша; сырой пароль база никогда не хранит.
+// Deliberately omits password_hash/password_salt: a bulk listing should never
+// even momentarily hold password material. Column names are left as their
+// real snake_case (not aliased to camelCase) so the row can go straight into
+// authRow() below without a re-mapping step.
 const authUserAll = sqlite.prepare(`
-  SELECT id, username, display_name AS displayName, role, roles_json AS rolesJson, permissions_json AS permissionsJson, active,
-         must_change_password AS mustChangePassword, created_at AS createdAt,
-         updated_at AS updatedAt, last_login_at AS lastLoginAt, person_id AS personId
+  SELECT id, username, display_name, role, roles_json, permissions_json, active,
+         must_change_password, created_at, updated_at, last_login_at, person_id
   FROM auth_users ORDER BY display_name COLLATE NOCASE, username COLLATE NOCASE
 `);
 const authUserGet = sqlite.prepare('SELECT * FROM auth_users WHERE id = ?');
@@ -501,22 +551,84 @@ const notifInsert = sqlite.prepare(`
 const notifMarkRead = sqlite.prepare('UPDATE notifications SET read_at = COALESCE(read_at, ?) WHERE workspace = ? AND user_id = ? AND id = ?');
 const notifMarkAllRead = sqlite.prepare('UPDATE notifications SET read_at = COALESCE(read_at, ?) WHERE workspace = ? AND user_id = ?');
 
+const searchMissUpsert = sqlite.prepare(`
+  INSERT INTO search_misses (workspace, normalized_query, sample_query, hit_count, first_seen_at, last_seen_at, last_person_id)
+  VALUES (?, ?, ?, 1, ?, ?, ?)
+  ON CONFLICT(workspace, normalized_query) DO UPDATE SET
+    hit_count = hit_count + 1,
+    sample_query = excluded.sample_query,
+    last_seen_at = excluded.last_seen_at,
+    last_person_id = excluded.last_person_id
+`);
+const searchMissList = sqlite.prepare(`
+  SELECT normalized_query AS normalizedQuery, sample_query AS sampleQuery, hit_count AS hitCount,
+         first_seen_at AS firstSeenAt, last_seen_at AS lastSeenAt, last_person_id AS lastPersonId
+  FROM search_misses WHERE workspace = ? ORDER BY hit_count DESC, last_seen_at DESC LIMIT ?
+`);
+const searchMissClear = sqlite.prepare('DELETE FROM search_misses WHERE workspace = ?');
+
+// Shared by authRow() below and db.auth.sessions.get(): a stored roles_json/
+// permissions_json column can be missing, malformed, or (for roles) empty —
+// all three fall back rather than throwing.
+function parseRolesJson(raw, fallbackRole) {
+  try {
+    const value = JSON.parse(raw || '[]');
+    return Array.isArray(value) && value.length ? value : [fallbackRole || 'member'];
+  } catch (_) {
+    return [fallbackRole || 'member'];
+  }
+}
+
+function parsePermissionsJson(raw) {
+  try {
+    const value = JSON.parse(raw || '{}');
+    return value && typeof value === 'object' ? value : {};
+  } catch (_) {
+    return {};
+  }
+}
+
 function authRow(row) {
   if (!row) return null;
   return {
-    id: row.id, username: row.username, displayName: row.display_name, role: row.role,
-    roles: (() => { try { const v = JSON.parse(row.roles_json || row.rolesJson || '[]'); return Array.isArray(v) && v.length ? v : [row.role || 'member']; } catch (_) { return [row.role || 'member']; } })(),
-    permissions: (() => { try { const v = JSON.parse(row.permissions_json || row.permissionsJson || '{}'); return v && typeof v === 'object' ? v : {}; } catch (_) { return {}; } })(),
-    passwordHash: row.password_hash, passwordSalt: row.password_salt,
-    active: Boolean(row.active), mustChangePassword: Boolean(row.must_change_password),
-    createdAt: row.created_at, updatedAt: row.updated_at, lastLoginAt: row.last_login_at || null,
-    personId: row.person_id || row.personId || null,
+    id: row.id,
+    username: row.username,
+    displayName: row.display_name,
+    role: row.role,
+    roles: parseRolesJson(row.roles_json, row.role),
+    permissions: parsePermissionsJson(row.permissions_json),
+    passwordHash: row.password_hash,
+    passwordSalt: row.password_salt,
+    active: Boolean(row.active),
+    mustChangePassword: Boolean(row.must_change_password),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    lastLoginAt: row.last_login_at || null,
+    personId: row.person_id || null,
   };
+}
+
+// Shared by users.create/update below: `roles` defaults to a single-element
+// array from the legacy `role` field when absent/empty, and `primaryRole`
+// (the denormalized auth_users.role column, kept for simple SQL filtering
+// like activeAdminCount's WHERE clause) is the highest-privilege of them.
+function deriveRoles(source) {
+  const roles = Array.isArray(source.roles) && source.roles.length ? source.roles : [source.role || 'member'];
+  const primaryRole = roles.includes('admin') ? 'admin' : roles.includes('teamlead') ? 'teamlead' : 'member';
+  return { roles, primaryRole };
 }
 
 db.auth = {
   users: {
-    all: () => authUserAll.all().map((row) => { const full = authRow({ ...row, display_name: row.displayName, roles_json: row.rolesJson, permissions_json: row.permissionsJson, must_change_password: row.mustChangePassword, created_at: row.createdAt, updated_at: row.updatedAt, last_login_at: row.lastLoginAt, person_id: row.personId }); delete full.passwordHash; delete full.passwordSalt; return full; }),
+    all: () => authUserAll.all().map((row) => {
+      const user = authRow(row);
+      // authUserAll never selects password_hash/password_salt, so these are
+      // already undefined here — delete them so a bulk listing never even
+      // carries the (empty) keys around.
+      delete user.passwordHash;
+      delete user.passwordSalt;
+      return user;
+    }),
     get: (id) => authRow(authUserGet.get(id)),
     byUsername: (username) => authRow(authUserByUsername.get(username)),
     count: () => Number(authUsersCount.get().count),
@@ -524,9 +636,12 @@ db.auth = {
     create(data) {
       const now = new Date().toISOString();
       const id = data.id || genId('usr');
-      const roles = Array.isArray(data.roles) && data.roles.length ? data.roles : [data.role || 'member'];
-      const primaryRole = roles.includes('admin') ? 'admin' : roles.includes('teamlead') ? 'teamlead' : 'member';
-      authUserInsert.run(id, data.username, data.displayName, primaryRole, JSON.stringify(roles), JSON.stringify(data.permissions || {}), data.passwordHash, data.passwordSalt, data.active === false ? 0 : 1, data.mustChangePassword ? 1 : 0, now, now, data.personId || null);
+      const { roles, primaryRole } = deriveRoles(data);
+      authUserInsert.run(
+        id, data.username, data.displayName, primaryRole, JSON.stringify(roles), JSON.stringify(data.permissions || {}),
+        data.passwordHash, data.passwordSalt, data.active === false ? 0 : 1, data.mustChangePassword ? 1 : 0,
+        now, now, data.personId || null,
+      );
       return this.get(id);
     },
     update(id, patch) {
@@ -534,9 +649,12 @@ db.auth = {
       if (!cur) return null;
       const now = new Date().toISOString();
       const next = { ...cur, ...patch, id: cur.id, createdAt: cur.createdAt, updatedAt: now };
-      const roles = Array.isArray(next.roles) && next.roles.length ? next.roles : [next.role || 'member'];
-      const primaryRole = roles.includes('admin') ? 'admin' : roles.includes('teamlead') ? 'teamlead' : 'member';
-      authUserUpdate.run(next.username, next.displayName, primaryRole, JSON.stringify(roles), JSON.stringify(next.permissions || {}), next.active ? 1 : 0, next.mustChangePassword ? 1 : 0, next.passwordHash, next.passwordSalt, now, next.lastLoginAt || null, next.personId || null, id);
+      const { roles, primaryRole } = deriveRoles(next);
+      authUserUpdate.run(
+        next.username, next.displayName, primaryRole, JSON.stringify(roles), JSON.stringify(next.permissions || {}),
+        next.active ? 1 : 0, next.mustChangePassword ? 1 : 0, next.passwordHash, next.passwordSalt,
+        now, next.lastLoginAt || null, next.personId || null, id,
+      );
       return this.get(id);
     },
     remove(id) {
@@ -548,7 +666,11 @@ db.auth = {
     get(userId) {
       const row = userPrefGet.get(userId);
       if (!row) return {};
-      try { return JSON.parse(row.data) || {}; } catch (_) { return {}; }
+      try {
+        return JSON.parse(row.data) || {};
+      } catch (_) {
+        return {};
+      }
     },
     set(userId, data) {
       const value = data && typeof data === 'object' ? data : {};
@@ -564,8 +686,21 @@ db.auth = {
       const row = authSessionGet.get(tokenHash);
       if (!row) return null;
       return {
-        tokenHash: row.token_hash, userId: row.user_id, createdAt: row.created_at, expiresAt: row.expires_at,
-        user: { id: row.id, username: row.username, displayName: row.display_name, role: row.role, roles: (() => { try { return JSON.parse(row.roles_json || '[]'); } catch (_) { return [row.role || 'member']; } })(), permissions: (() => { try { return JSON.parse(row.permissions_json || '{}') || {}; } catch (_) { return {}; } })(), active: Boolean(row.active), mustChangePassword: Boolean(row.must_change_password), personId: row.person_id || null },
+        tokenHash: row.token_hash,
+        userId: row.user_id,
+        createdAt: row.created_at,
+        expiresAt: row.expires_at,
+        user: {
+          id: row.id,
+          username: row.username,
+          displayName: row.display_name,
+          role: row.role,
+          roles: parseRolesJson(row.roles_json, row.role),
+          permissions: parsePermissionsJson(row.permissions_json),
+          active: Boolean(row.active),
+          mustChangePassword: Boolean(row.must_change_password),
+          personId: row.person_id || null,
+        },
       };
     },
     remove: (tokenHash) => authSessionDelete.run(tokenHash),
@@ -577,25 +712,72 @@ db.auth = {
 db.notifications = {
   list(userId, limit = 50) {
     const safeLimit = Math.max(1, Math.min(100, Number(limit) || 50));
-    return notifList.all(currentWorkspace(), String(userId), safeLimit).map((row) => ({ ...row, readAt: row.readAt || null, route: row.route || null }));
+    return notifList.all(currentWorkspace(), String(userId), safeLimit).map((row) => ({
+      ...row,
+      readAt: row.readAt || null,
+      route: row.route || null,
+    }));
   },
-  unreadCount(userId) { return Number(notifUnreadCount.get(currentWorkspace(), String(userId)).count || 0); },
+
+  unreadCount(userId) {
+    return Number(notifUnreadCount.get(currentWorkspace(), String(userId)).count || 0);
+  },
+
   create(userId, data) {
     const createdAt = data.createdAt || new Date().toISOString();
     const id = data.id || genId('ntf');
     const dedupeKey = data.dedupeKey ? String(data.dedupeKey) : null;
-    const result = notifInsert.run(id, currentWorkspace(), String(userId), String(data.eventType || 'general'), String(data.title || ''), String(data.body || ''), data.route ? String(data.route) : null, dedupeKey, createdAt);
+    const result = notifInsert.run(
+      id, currentWorkspace(), String(userId), String(data.eventType || 'general'),
+      String(data.title || ''), String(data.body || ''), data.route ? String(data.route) : null,
+      dedupeKey, createdAt,
+    );
+    // INSERT OR IGNORE means a dedupeKey collision silently produced no row.
     if (!result.changes) return null;
-    return { id, eventType: String(data.eventType || 'general'), title: String(data.title || ''), body: String(data.body || ''), route: data.route || null, createdAt, readAt: null };
+    return {
+      id,
+      eventType: String(data.eventType || 'general'),
+      title: String(data.title || ''),
+      body: String(data.body || ''),
+      route: data.route || null,
+      createdAt,
+      readAt: null,
+    };
   },
+
   markRead(userId, id) {
     const now = new Date().toISOString();
     const result = notifMarkRead.run(now, currentWorkspace(), String(userId), String(id));
     return Number(result.changes) > 0;
   },
+
   markAllRead(userId) {
     const now = new Date().toISOString();
     return Number(notifMarkAllRead.run(now, currentWorkspace(), String(userId)).changes || 0);
+  },
+};
+
+// Счётчик запросов умного поиска, которые парсер не смог опознать как команду
+// (см. server/routes/search.js и server/routes/smart-search.js — они решают,
+// когда запрос считается «непонятым», эта таблица только копит статистику).
+const SEARCH_MISS_QUERY_MAX_LENGTH = 300;
+
+db.searchMisses = {
+  log(rawQuery, { personId = null } = {}) {
+    const sampleQuery = String(rawQuery || '').trim().slice(0, SEARCH_MISS_QUERY_MAX_LENGTH);
+    const normalizedQuery = sampleQuery.toLowerCase();
+    if (!normalizedQuery) return;
+    const now = new Date().toISOString();
+    searchMissUpsert.run(currentWorkspace(), normalizedQuery, sampleQuery, now, now, personId ? String(personId) : null);
+  },
+
+  list(limit = 100) {
+    const safeLimit = Math.max(1, Math.min(500, Number(limit) || 100));
+    return searchMissList.all(currentWorkspace(), safeLimit);
+  },
+
+  clear() {
+    return Number(searchMissClear.run(currentWorkspace()).changes || 0);
   },
 };
 

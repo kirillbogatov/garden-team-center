@@ -1,5 +1,12 @@
 'use strict';
 
+// Ранжирование результатов поиска по коллекциям. Каждая rankXxx-функция знает
+// только формулу сортировки своей коллекции (релевантность текста + доменные
+// признаки вроде статуса/срока/важности); rankGroup внизу файла — единая точка
+// входа, которой пользуются и обычный поиск (server/routes/search.js), и
+// «Умный поиск» (server/domain/smart-search.js), так что порядок результатов
+// в них никогда не расходится.
+
 function dateKey(value) {
   return String(value || '').slice(0, 10);
 }
@@ -10,6 +17,8 @@ function timestamp(value) {
 }
 
 function createSearchRanker({ norm, fuzzyTextMatch, taskPriorityRank }) {
+  // ---------- Релевантность текста ----------
+
   function textScore(query, fields) {
     const q = norm(query);
     if (!q) return 0;
@@ -31,6 +40,8 @@ function createSearchRanker({ norm, fuzzyTextMatch, taskPriorityRank }) {
   const stableTitle = (item) => String(item?.title || item?.name || item?.text || item?.id || '');
   const stable = (a, b) => stableTitle(a).localeCompare(stableTitle(b), 'ru');
 
+  // ---------- Формулы сортировки по коллекциям ----------
+
   function rankTasks(items, query, mode = 'balanced') {
     const today = new Date().toISOString().slice(0, 10);
     return [...(items || [])].map((task) => {
@@ -39,7 +50,7 @@ function createSearchRanker({ norm, fuzzyTextMatch, taskPriorityRank }) {
         item: task,
         relevance: textScore(query, [
           { value: task.title, weight: 1 },
-          { value: task.description, weight: .45 },
+          { value: task.description, weight: 0.45 },
         ]),
         active,
         priority: active ? taskPriorityRank(task, mode, today) : { score: -1, days: null },
@@ -57,7 +68,7 @@ function createSearchRanker({ norm, fuzzyTextMatch, taskPriorityRank }) {
       item,
       relevance: textScore(query, [
         { value: item.title, weight: 1 },
-        { value: item.notes, weight: .5 },
+        { value: item.notes, weight: 0.5 },
       ]),
       date: dateKey(item.date),
     })).sort((a, b) => b.relevance - a.relevance
@@ -72,7 +83,7 @@ function createSearchRanker({ norm, fuzzyTextMatch, taskPriorityRank }) {
       item,
       relevance: textScore(query, [
         { value: item.title, weight: 1 },
-        { value: item.description, weight: .5 },
+        { value: item.description, weight: 0.5 },
       ]),
       active: item.status !== 'resolved',
       severe: item.severity === 'high',
@@ -112,7 +123,7 @@ function createSearchRanker({ norm, fuzzyTextMatch, taskPriorityRank }) {
       item,
       relevance: textScore(query, [
         { value: item.name, weight: 1 },
-        { value: item.description, weight: .45 },
+        { value: item.description, weight: 0.45 },
       ]),
       status: item.status === 'active' ? 3 : item.status === 'paused' ? 2 : 0,
       member: !!user?.personId && (item.memberIds || []).includes(user.personId),
@@ -130,8 +141,8 @@ function createSearchRanker({ norm, fuzzyTextMatch, taskPriorityRank }) {
       item,
       relevance: textScore(query, [
         { value: item.name, weight: 1 },
-        { value: item.role, weight: .5 },
-        { value: (item.tags || []).join(' '), weight: .35 },
+        { value: item.role, weight: 0.5 },
+        { value: (item.tags || []).join(' '), weight: 0.35 },
       ]),
       status: statusRank[item.status] ?? 2,
       team: item.type === 'team',
@@ -149,7 +160,7 @@ function createSearchRanker({ norm, fuzzyTextMatch, taskPriorityRank }) {
       item,
       relevance: textScore(query, [
         { value: item.title, weight: 1 },
-        { value: item.description, weight: .5 },
+        { value: item.description, weight: 0.5 },
       ]),
       status: statusRank[item.status] ?? 1,
       recent: timestamp(item.updatedAt || item.createdAt),
@@ -177,7 +188,7 @@ function createSearchRanker({ norm, fuzzyTextMatch, taskPriorityRank }) {
       item,
       relevance: textScore(query, [
         { value: item.title, weight: 1 },
-        { value: item.description, weight: .45 },
+        { value: item.description, weight: 0.45 },
       ]),
       status: statusRank[item.status] ?? 1,
       due: dateKey(item.dueDate || item.endDate),
@@ -195,7 +206,7 @@ function createSearchRanker({ norm, fuzzyTextMatch, taskPriorityRank }) {
       relevance: textScore(query, [
         { value: item.did, weight: 1 },
         { value: item.willDo, weight: 1 },
-        { value: item.blockers, weight: .8 },
+        { value: item.blockers, weight: 0.8 },
       ]),
       week: dateKey(item.weekStart),
     })).sort((a, b) => b.relevance - a.relevance
@@ -208,8 +219,8 @@ function createSearchRanker({ norm, fuzzyTextMatch, taskPriorityRank }) {
       item,
       relevance: textScore(query, [
         { value: item.title, weight: 1 },
-        { value: item.sourceTitle, weight: .55 },
-        { value: item.url, weight: .25 },
+        { value: item.sourceTitle, weight: 0.55 },
+        { value: item.url, weight: 0.25 },
       ]),
       material: materialKind ? 1 : 0,
       recent: timestamp(item.sourceDate),
@@ -224,8 +235,8 @@ function createSearchRanker({ norm, fuzzyTextMatch, taskPriorityRank }) {
       item,
       relevance: textScore(query, [
         { value: item.title, weight: 1 },
-        { value: item.description, weight: .45 },
-        { value: item.url, weight: .25 },
+        { value: item.description, weight: 0.45 },
+        { value: item.url, weight: 0.25 },
       ]),
       recent: timestamp(item.updatedAt || item.createdAt),
     })).sort((a, b) => b.relevance - a.relevance
@@ -233,17 +244,16 @@ function createSearchRanker({ norm, fuzzyTextMatch, taskPriorityRank }) {
       || stable(a.item, b.item)).map((row) => row.item);
   }
 
-
   function rankProcesses(items, query) {
     const statusRank = { broken: 3, attention: 2, ok: 0 };
     return [...(items || [])].map((item) => ({
       item,
       relevance: textScore(query, [
         { value: item.title, weight: 1 },
-        { value: item.description, weight: .5 },
-        { value: item.brokenNote, weight: .55 },
-        { value: item.currentBehavior, weight: .4 },
-        { value: item.expectedBehavior, weight: .35 },
+        { value: item.description, weight: 0.5 },
+        { value: item.brokenNote, weight: 0.55 },
+        { value: item.currentBehavior, weight: 0.4 },
+        { value: item.expectedBehavior, weight: 0.35 },
       ]),
       status: statusRank[item.status] ?? 1,
       recent: timestamp(item.updatedAt || item.createdAt),
@@ -264,7 +274,7 @@ function createSearchRanker({ norm, fuzzyTextMatch, taskPriorityRank }) {
         item,
         relevance: textScore(query, [
           { value: item.note, weight: 1 },
-          { value: item.type, weight: .4 },
+          { value: item.type, weight: 0.4 },
         ]),
         phase: active ? 3 : upcoming ? 2 : 0,
         date: active ? end : start,
@@ -278,6 +288,8 @@ function createSearchRanker({ norm, fuzzyTextMatch, taskPriorityRank }) {
   function rankTools(items, query) {
     return rankDocuments(items, query);
   }
+
+  // ---------- Точка входа: выбор формулы по коллекции ----------
 
   function rankGroup(group, items, query, options = {}) {
     if (group === 'tasks') return rankTasks(items, query, options.taskPriorityMode);

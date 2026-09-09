@@ -1,3 +1,4 @@
+// Canonical demo data for Garden.
 module.exports = {
   "people": [
     {
@@ -771,22 +772,6 @@ module.exports = {
       "note": "Запланировано заранее"
     }
   ],
-  "documents": [
-    {
-      "id": "doc_demo_sales",
-      "title": "План продаж Скрэнтона на 3 квартал",
-      "url": "https://example.com/demo/scranton-q3",
-      "scope": "project",
-      "projectId": "prj_demo_scranton"
-    },
-    {
-      "id": "doc_demo_dundies",
-      "title": "Премия «Данди» 2026 — бюджет и программа",
-      "url": "https://example.com/demo/dundies",
-      "scope": "project",
-      "projectId": "prj_demo_dundies"
-    }
-  ],
   "tools": [
     {
       "id": "tol_demo_crm",
@@ -905,6 +890,24 @@ module.exports = {
       "docType": "article",
       "contentHtml": "<h2>Перед заявкой в сервис</h2><p>Укажите модель, серийный номер, код ошибки, тип бумаги и приложите фотографию.</p>",
       "markdown": "## Перед заявкой в сервис\n\nУкажите модель, серийный номер, код ошибки, тип бумаги и приложите фотографию."
+    },
+    {
+      "id": "doc_demo_sales",
+      "title": "План продаж Скрэнтона на 3 квартал",
+      "url": "https://example.com/demo/scranton-q3",
+      "docType": "link",
+      "folderId": null,
+      "contentHtml": "",
+      "markdown": ""
+    },
+    {
+      "id": "doc_demo_dundies",
+      "title": "Премия «Данди» 2026 — бюджет и программа",
+      "url": "https://example.com/demo/dundies",
+      "docType": "link",
+      "folderId": null,
+      "contentHtml": "",
+      "markdown": ""
     }
   ],
   "docFolders": [],

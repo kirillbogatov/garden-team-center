@@ -13,11 +13,28 @@ module.exports = function registerVersionRoutes(app, { db, resolveEntity, canRea
     return item;
   };
 
-  app.get('/api/versions/:entityType/:id', (req, res) => {
+  // Every route below resolves the versioned entity from the URL and checks
+  // access before doing anything else; only the required capability differs
+  // (read history vs. change it).
+  function loadVersionedEntity(req, res, { requireUpdate = false } = {}) {
     const { entityType, id } = req.params;
     const item = resolveVersioned(entityType, id);
-    if (!item) return res.status(404).json({ error: 'not_found' });
-    if (!canReadItem(entityType, item, req.auth.user)) return denied(res);
+    if (!item) {
+      res.status(404).json({ error: 'not_found' });
+      return null;
+    }
+    const allowed = requireUpdate ? canUpdate(entityType, item, req.auth.user) : canReadItem(entityType, item, req.auth.user);
+    if (!allowed) {
+      denied(res);
+      return null;
+    }
+    return { entityType, item };
+  }
+
+  app.get('/api/versions/:entityType/:id', (req, res) => {
+    const loaded = loadVersionedEntity(req, res);
+    if (!loaded) return;
+    const { entityType, item } = loaded;
 
     // An untouched entity still has a meaningful current version. Persist the
     // baseline lazily so old canonical databases do not need a migration pass.
@@ -37,19 +54,18 @@ module.exports = function registerVersionRoutes(app, { db, resolveEntity, canRea
   });
 
   app.post('/api/versions/:entityType/:id/finalize', (req, res) => {
-    const { entityType, id } = req.params;
-    const current = resolveVersioned(entityType, id);
-    if (!current) return res.status(404).json({ error: 'not_found' });
-    if (!canUpdate(entityType, current, req.auth.user)) return denied(res);
+    const loaded = loadVersionedEntity(req, res, { requireUpdate: true });
+    if (!loaded) return;
+    const { entityType, item: current } = loaded;
+
     const latest = db.versions.finalizeLatest(entityType, current.id);
     res.json(latest ? { version: latest.version, finalized: true } : { finalized: true });
   });
 
   app.delete('/api/versions/:entityType/:id/:version', (req, res) => {
-    const { entityType, id } = req.params;
-    const current = resolveVersioned(entityType, id);
-    if (!current) return res.status(404).json({ error: 'not_found' });
-    if (!canUpdate(entityType, current, req.auth.user)) return denied(res);
+    const loaded = loadVersionedEntity(req, res, { requireUpdate: true });
+    if (!loaded) return;
+    const { entityType, item: current } = loaded;
 
     const version = Number(req.params.version);
     const snapshot = db.versions.get(entityType, current.id, version);
@@ -65,10 +81,10 @@ module.exports = function registerVersionRoutes(app, { db, resolveEntity, canRea
   });
 
   app.post('/api/versions/:entityType/:id/:version/restore', (req, res) => {
-    const { entityType, id } = req.params;
-    const current = resolveVersioned(entityType, id);
-    if (!current) return res.status(404).json({ error: 'not_found' });
-    if (!canUpdate(entityType, current, req.auth.user)) return denied(res);
+    const loaded = loadVersionedEntity(req, res, { requireUpdate: true });
+    if (!loaded) return;
+    const { entityType, item: current } = loaded;
+
     const snapshot = db.versions.get(entityType, current.id, Number(req.params.version));
     if (!snapshot) return res.status(404).json({ error: 'version_not_found' });
 

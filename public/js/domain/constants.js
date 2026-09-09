@@ -31,6 +31,50 @@ const TASK_PRIORITY_STRATEGIES = {
 
 const TASK_STATUS_COLOR = { todo: '#6c6e76', in_progress: 'var(--blue)', in_review: 'var(--purple)', paused: 'var(--yellow)', blocked: 'var(--red)', done: 'var(--green)' };
 
+// Общий скоринг приоритета задачи по весам TASK_PRIORITY_STRATEGIES выше.
+// Зеркалит server/domain/task-priority.js (architecture-тесты держат веса в
+// синхроне). Используется и виджетом «Обзора» (views/overview.js — своя
+// версия, с доп. фильтрацией «что вообще стоит показать сегодня»), и
+// сортировкой списка «Мои задачи» (views/tasks.js — сортирует все задачи как
+// есть, без специальной фильтрации), поэтому вынесен сюда, а не дублирован.
+//
+// Статус задаёт ярус (tier) — сначала решает он, а срок/важность расставляют
+// порядок только внутри яруса, а не наоборот: иначе просроченный дедлайн
+// давно приостановленной задачи мог бы перевесить и вытащить её выше того,
+// над чем реально работают прямо сейчас.
+//   2 — активные (todo/в работе/на ревью): обычный расчёт по сроку и важности.
+//   1 — приостановлено/заблокировано: ниже любой активной, но не потерялись —
+//       заметны выше готовых, сортируются по тому же сроку/важности между собой.
+//   0 — готово/архив: срочность здесь уже ничего не значит.
+function taskPriorityScore(task, mode = 'balanced', todayKey = todayStr()) {
+  if (task?.status === 'done' || task?.archivedAt) return { tier: 0, score: 0, days: null };
+  const tier = (task?.status === 'paused' || task?.status === 'blocked') ? 1 : 2;
+  const weights = (TASK_PRIORITY_STRATEGIES[mode] || TASK_PRIORITY_STRATEGIES.balanced).weights;
+  const dueKey = String(task?.dueDate || '').slice(0, 10);
+  let score = task?.priority === 'high' ? weights.important : 0;
+  let days = null;
+  if (dueKey) {
+    const [ty, tm, td] = todayKey.split('-').map(Number);
+    const [dy, dm, dd] = dueKey.split('-').map(Number);
+    days = Math.round((Date.UTC(dy, dm - 1, dd) - Date.UTC(ty, tm - 1, td)) / 86400000);
+    if (days < 0) score += weights.overdue + Math.min(weights.overdueCap, Math.abs(days) * weights.overduePerDay);
+    else if (days === 0) score += weights.today;
+    else if (days === 1) score += weights.tomorrow;
+    else if (days <= 3) score += weights.soon3;
+    else if (days <= 7) score += weights.soon7;
+  }
+  return { tier, score, days };
+}
+
+function compareTasksByPriority(a, b, mode = 'balanced', todayKey = todayStr()) {
+  const infoA = taskPriorityScore(a, mode, todayKey);
+  const infoB = taskPriorityScore(b, mode, todayKey);
+  return (infoB.tier - infoA.tier)
+    || (infoB.score - infoA.score)
+    || ((infoA.days ?? 99999) - (infoB.days ?? 99999))
+    || String(a?.title || '').localeCompare(String(b?.title || ''), 'ru');
+}
+
 const ISSUE_STATUS_LABEL = { open: 'Новая', in_progress: 'В работе', paused: 'Отложена', resolved: 'Решена' };
 const ISSUE_SEVERITY_LABEL = { high: 'Высокая', normal: 'Обычная' };
 const ISSUE_SEVERITY_COLOR = { high: 'var(--orange)', normal: 'var(--text-disabled)' };

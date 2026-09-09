@@ -32,21 +32,30 @@ function goalTreeSpecies(seed) {
   if (TREE_SPECIES[seed]) return seed;
   const str = String(seed == null ? '' : seed);
   let h = 2166136261;
-  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
   return GOAL_TREE_SPECIES_LIST[Math.abs(h) % GOAL_TREE_SPECIES_LIST.length];
 }
 
 const _tRound = (n) => Math.round(n * 10) / 10;
-const _tNoise = (i) => { const v = Math.sin(i * 12.9898) * 43758.5453; return v - Math.floor(v) - 0.5; };
+
+// Детерминированный псевдошум по индексу (не Math.random) — рисунок дерева
+// не должен «дёргаться» при каждой перерисовке одной и той же цели.
+const _tNoise = (i) => {
+  const v = Math.sin(i * 12.9898) * 43758.5453;
+  return v - Math.floor(v) - 0.5;
+};
 
 /* ---------- мазки -------------------------------------------------------- */
 
 function _tBez(p, t) {
   const u = 1 - t;
-  const x = u*u*u*p[0] + 3*u*u*t*p[2] + 3*u*t*t*p[4] + t*t*t*p[6];
-  const y = u*u*u*p[1] + 3*u*u*t*p[3] + 3*u*t*t*p[5] + t*t*t*p[7];
-  const tx = -3*u*u*p[0] + (3*u*u - 6*u*t)*p[2] + (6*u*t - 3*t*t)*p[4] + 3*t*t*p[6];
-  const ty = -3*u*u*p[1] + (3*u*u - 6*u*t)*p[3] + (6*u*t - 3*t*t)*p[5] + 3*t*t*p[7];
+  const x = u * u * u * p[0] + 3 * u * u * t * p[2] + 3 * u * t * t * p[4] + t * t * t * p[6];
+  const y = u * u * u * p[1] + 3 * u * u * t * p[3] + 3 * u * t * t * p[5] + t * t * t * p[7];
+  const tx = -3 * u * u * p[0] + (3 * u * u - 6 * u * t) * p[2] + (6 * u * t - 3 * t * t) * p[4] + 3 * t * t * p[6];
+  const ty = -3 * u * u * p[1] + (3 * u * u - 6 * u * t) * p[3] + (6 * u * t - 3 * t * t) * p[5] + 3 * t * t * p[7];
   return [x, y, tx, ty];
 }
 
@@ -256,7 +265,8 @@ function _tAnchors(sp, stage) {
 }
 
 function _tCrown(sp, stage) {
-  const g = TREE_CLUSTER[stage], anchors = _tAnchors(sp, stage);
+  const g = TREE_CLUSTER[stage];
+  const anchors = _tAnchors(sp, stage);
   let mass = '';
   anchors.forEach(([x, y, k], i) => {
     const r = g.r * sp.clusterK * k;
@@ -310,7 +320,8 @@ function goalTreeArt(stage, species, full) {
   // Цветение: жёлуди и крылатки висят под пучками, цветы сакуры — на них.
   const per = TREE_CANOPY[stage].bloom;
   if (per) {
-    const g = TREE_CLUSTER[stage], anchors = _tAnchors(sp, stage);
+    const g = TREE_CLUSTER[stage];
+    const anchors = _tAnchors(sp, stage);
     if (sp.bloomOn === 'edge') {
       // Жёлуди и крылатки свисают из-под пучков — читаются на просвет.
       const list = anchors.slice(1);
