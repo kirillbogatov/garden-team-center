@@ -89,7 +89,7 @@ Views.goalDetail = async function (id) {
       ? `<span class="tiny" style="${overdue ? 'color:var(--red)' : ''}">${t.status === 'done' ? deadlineDateLabel(t.dueDate) : dueLabel(t.dueDate)}</span>`
       : '';
     const assigneeHtml = assignees.length
-      ? `<div class="flex gap-4">${assignees.map((a) => personAvatarLinkHtml(a)).join('')}</div>`
+      ? `<div class="task-avatar-stack">${peopleAvatarStackHtml(assignees, { limit: assignees.length, showMore: false })}</div>`
       : avatarHtml(null);
     return `<div class="ui-row ui-row--task list-row task-list-row" data-action-id="${idx}">
       ${taskStatusBadge(t.status, t.id)}

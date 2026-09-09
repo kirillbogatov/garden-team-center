@@ -146,7 +146,7 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select { m
 
 .ui-row--meeting {
   display: grid;
-  grid-template-columns: 48px minmax(180px, 1fr) minmax(0, auto) 78px 28px 18px;
+  grid-template-columns: 104px minmax(180px, 1fr) minmax(0, auto) 78px 28px 18px;
   align-items: center;
   gap: 10px;
   min-height: var(--ui-row-h);
@@ -194,7 +194,7 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select { m
 .ui-disclosure.meeting-month-header .meeting-month-title { font-size: var(--fs-xs); font-weight: 600; }
 
 @media (max-width: 980px) {
-  .ui-row--meeting { grid-template-columns: 46px minmax(150px, 1fr) minmax(0, auto) 74px 28px 18px; }
+  .ui-row--meeting { grid-template-columns: 96px minmax(150px, 1fr) minmax(0, auto) 74px 28px 18px; }
   .ui-row--meeting .meeting-row-project { max-width: 150px; }
 }
 @media (max-width: 720px) {
@@ -4032,25 +4032,11 @@ html.theme-dark.glow-enabled .meeting-filterbar {
 }
 .issue-serious-badge {
   white-space:nowrap;
-  --ui-tag-dot:var(--orange);
-}
-.issue-list-avatar-more {
-  min-width:22px;
-  height:22px;
-  padding:0 5px;
-  border-radius:999px;
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  background:var(--surface-secondary);
-  color:var(--text-tertiary);
-  font-size:var(--fs-2xs);
-  line-height:1;
+  --ui-tag-tone:var(--orange);
 }
 @media (max-width:720px) {
   .issue-list-right { gap:6px; }
   .issue-list-avatars .ui-person-avatar:nth-of-type(n+3) { display:none; }
-  .issue-list-avatar-more { display:none; }
 }
 
 /* Assistant digest cards: keep rows within a project tight, but separate semantic groups. */
@@ -4356,3 +4342,162 @@ html.theme-dark.glow-enabled .meeting-filterbar {
 .smart-sections.smart-sections-unified > .smart-section + .smart-section{margin-top:var(--smart-section-gap);}
 .smart-section-head{min-height:28px;align-items:center;}
 .smart-section-head-action{margin-left:auto;}
+
+/* Requested table polish: keep the event-plan header separated even when the
+   table contains the empty-state block instead of a normal data row. */
+.technology-table-head {
+  border-bottom: 1px solid var(--border-soft);
+}
+.technology-table-head + .technology-table-row {
+  border-top: 0 !important;
+}
+
+/* Check-in / By employee: body cells use the same real cell surface as the
+   general weekly Check-in table; only the header keeps its header fill. */
+.checkins-history-table-row:not(.checkins-history-table-head) > .checkins-history-table-cell {
+  background: var(--cal-cell);
+}
+.checkins-history-table-head > .checkins-history-table-cell {
+  background: var(--bg-elevated-2);
+}
+
+
+/* Meetings list: stable column rhythm across mixed meeting types and metadata. */
+.ui-row--meeting {
+  grid-template-columns: 58px minmax(220px, 1fr) 116px 72px minmax(118px, auto) 18px;
+  column-gap: 12px;
+}
+.ui-row--meeting > .meeting-type {
+  justify-self: start;
+  max-width: 58px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-row--meeting .meeting-title {
+  min-width: 0;
+}
+.ui-row--meeting .meeting-title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-row--meeting .meeting-row-project {
+  width: 116px;
+  max-width: 116px;
+  justify-self: end;
+  text-align: right;
+}
+.ui-row--meeting .meeting-row-project .project-chip {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-row--meeting .meeting-date {
+  width: 72px;
+  justify-self: end;
+  text-align: right;
+}
+.ui-row--meeting .meeting-employee-avatar {
+  min-width: 118px;
+  justify-self: end;
+  justify-content: flex-end;
+}
+.ui-row--meeting .meeting-participants {
+  justify-content: flex-end;
+}
+@media (max-width: 980px) {
+  .ui-row--meeting {
+    grid-template-columns: 56px minmax(170px, 1fr) 104px 68px minmax(88px, auto) 18px;
+    column-gap: 9px;
+  }
+  .ui-row--meeting .meeting-row-project { width:104px; max-width:104px; }
+  .ui-row--meeting .meeting-date { width:68px; }
+  .ui-row--meeting .meeting-employee-avatar { min-width:88px; }
+}
+@media (max-width: 720px) {
+  .ui-row--meeting {
+    grid-template-columns: 50px minmax(0, 1fr) 68px minmax(32px, auto) 18px;
+    column-gap: 7px;
+  }
+  .ui-row--meeting .meeting-row-project { display:none; }
+  .ui-row--meeting .meeting-date { width:68px; }
+  .ui-row--meeting .meeting-employee-avatar { min-width:32px; }
+}
+
+/* Shared compact employee avatar stack. Visual source of truth: Meetings. */
+.people-avatar-stack { display:inline-flex; align-items:center; padding-left:1px; vertical-align:middle; }
+.people-avatar-stack .ui-person-avatar { position:relative; margin-left:-7px; border-radius:50%; box-shadow:0 0 0 2px var(--bg-base); }
+.people-avatar-stack .ui-person-avatar:first-child { margin-left:0; }
+.people-avatar-stack .ui-person-avatar:hover,
+.people-avatar-stack .ui-person-avatar:focus-visible { z-index:2; }
+.people-avatar-stack .avatar { width:24px; height:24px; min-width:24px; font-size:9px; }
+.people-avatar-stack-overflow {
+  position:relative;
+  z-index:1;
+  width:24px;
+  height:24px;
+  min-width:24px;
+  margin-left:-7px;
+  border-radius:50%;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  box-sizing:border-box;
+  background:var(--bg-active);
+  color:var(--text-secondary);
+  box-shadow:0 0 0 2px var(--bg-base);
+  font-size:10px;
+  font-weight:600;
+  line-height:1;
+  letter-spacing:-0.2px;
+  white-space:nowrap;
+}
+.people-avatar-stack-overflow:hover { z-index:2; }
+.work-row-avatars, .task-avatar-stack, .project-avatar-stack { display:inline-flex; align-items:center; flex:0 0 auto; }
+
+
+/* ==========================================================================\n   Canonical informational label component\n   --------------------------------------------------------------------------\n   Source of truth for entity/status/type labels across Garden. Only elements\n   carrying .ui-tag participate. Suggestion controls (.smart-suggestion,\n   .smart-suggest-item, task date suggestions, calendar filter chips, people\n   picker chips, counters) intentionally remain separate UI patterns.\n   ========================================================================== */
+.ui-tag {
+  --ui-tag-tone: var(--text-tertiary);
+  min-height: 20px !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 2px 7px !important;
+  border: 0 !important;
+  border-radius: 5px !important;
+  background: color-mix(in srgb, var(--ui-tag-tone) 10%, var(--bg-elevated-2)) !important;
+  box-shadow: none !important;
+  color: var(--text-secondary) !important;
+  font-size: var(--fs-2xs) !important;
+  line-height: 16px !important;
+  font-weight: 400 !important;
+  white-space: nowrap;
+  text-decoration: none !important;
+  box-sizing: border-box;
+  vertical-align: middle;
+}
+.ui-tag::before { content: none !important; display: none !important; }
+.ui-tag > .dot { display: none !important; }
+
+/* Semantic tones: dimensions remain identical; only tone changes. */
+.ui-tag--project,
+.ui-tag--task-type,
+.ui-tag.project-chip,
+.ui-tag.task-kind,
+.ui-tag.lab-type-badge { --ui-tag-tone: var(--accent); }
+.ui-tag.priority-high,
+.ui-tag.issue-serious-badge { --ui-tag-tone: var(--orange); }
+.ui-tag.meeting-type-1-1 { --ui-tag-tone: var(--blue); }
+.ui-tag.meeting-type-pr { --ui-tag-tone: var(--purple); }
+.ui-tag.meeting-type-other { --ui-tag-tone: var(--orange); }
+
+.ui-tag.clickable:hover {
+  background: color-mix(in srgb, var(--ui-tag-tone) 17%, var(--bg-elevated-2)) !important;
+  color: var(--text-primary) !important;
+  text-decoration: none !important;
+}

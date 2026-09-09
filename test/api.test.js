@@ -69,6 +69,17 @@ test('health endpoint works', async () => {
   assert.equal(body.ok, true);
 });
 
+test('demo opens as teamlead with assistant home mode', async () => {
+  const demoLogin = await requestAs('', '/api/auth/demo', { method: 'POST', body: {} });
+  assert.equal(demoLogin.response.status, 200);
+  assert.equal(demoLogin.body.user.role, 'teamlead');
+  assert.ok(demoLogin.body.user.roles.includes('teamlead'));
+
+  const settings = await requestAs(demoLogin.cookie, '/api/settings');
+  assert.equal(settings.response.status, 200);
+  assert.equal(settings.body.overviewHomeMode, 'assistant');
+});
+
 test('Labs project gets stable LAB-XXXX key and resolves by key', async () => {
   const created = await request('/api/labs', {
     method: 'POST',

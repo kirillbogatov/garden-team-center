@@ -79,9 +79,9 @@ test('exact word forms still win over stemmed matches when they collide with an 
 });
 
 test('meeting search combines project and person context', () => {
-  const result = search('встречи без итогов Джима Филиал Скрэнтона');
+  const result = search('встречи без итогов Джима Скрэнтон Q3');
   assert.equal(result.command.person.name, 'Джим Халперт');
-  assert.match(result.command.project.name, /Филиал Скрэнтона/);
+  assert.equal(result.command.project.name, 'Скрэнтон Q3');
   assert.ok(result.groups.meetings.every((meeting) => meeting.projectId === result.command.project.id));
   assert.ok(result.groups.meetings.every((meeting) => meeting.participantIds.includes(result.command.person.id)));
 });
@@ -120,7 +120,7 @@ test('@ references are semantic filters for people and projects, not only UI sub
   assert.equal(byPerson.command.person.name, 'Дуайт Шрут');
   assert.ok(byPerson.groups.tasks.every((task) => (task.assigneeIds || []).includes(byPerson.command.person.id)));
 
-  const project = demo.projects.find((item) => item.name && item.name.includes('Внедрение Sabre')) || demo.projects[0];
+  const project = demo.projects.find((item) => item.name && item.name.includes('Sabre')) || demo.projects[0];
   const byProject = search(`задачи @${project.name}`);
   assert.equal(byProject.command.group, 'tasks');
   assert.equal(byProject.command.project.id, project.id);

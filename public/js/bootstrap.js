@@ -45,6 +45,19 @@ async function boot() {
 
 boot();
 
+// Middle-click on any routed item in the left sidebar opens that destination
+// in a separate browser tab. This is handled explicitly because not every
+// sidebar route is rendered as an <a> (for example, utility items in the footer).
+document.addEventListener('auxclick', (event) => {
+  if (event.button !== 1) return;
+  const route = event.target.closest?.('#sidebar [data-route]');
+  if (!route) return;
+  event.preventDefault();
+  const target = String(route.dataset.route || '').trim();
+  if (!target) return;
+  window.open(new URL(target, window.location.href).href, '_blank', 'noopener');
+});
+
 // Common declarative actions: navigation and modal close do not need inline JS.
 document.addEventListener('click', (event) => {
   // Вложенные самостоятельные действия (статус, аватар, кнопка) не должны

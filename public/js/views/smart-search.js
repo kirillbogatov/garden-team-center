@@ -608,7 +608,9 @@ function smartSearchRowHtml(item, options = {}) {
   }
   return `<div class="smart-row ${attrs ? 'clickable' : ''} ${item.tone ? `tone-${escapeHtml(item.tone)}` : ''}" ${attrs}>
     ${status}
-    ${item.label ? `<span class="smart-row-label">${escapeHtml(item.label)}</span>` : ''}
+    ${item.label ? (item.meetingType && typeof meetingTypeBadgeHtml === 'function'
+      ? meetingTypeBadgeHtml(item.meetingType)
+      : `<span class="smart-row-label">${escapeHtml(item.label)}</span>`) : ''}
     ${item.wrapText
       ? `<span class="smart-row-title smart-row-title-wrap" title="${escapeHtml(full)}">${escapeHtml(full)}</span>`
       : `<span class="smart-row-title" title="${escapeHtml(full)}">${escapeHtml(previewText(full, 200))}</span>`}
@@ -744,12 +746,19 @@ function smartSearchDigestHtml(result) {
   // секции, а сигналы наверху воспринимались как бесполезный дублирующий шум.
   // Данные (digest.signals) сервер по-прежнему считает и отдаёт — здесь их
   // просто не рендерим, чтобы не трогать другие потребители smart-search API.
+  const sections = Array.isArray(digest.sections) ? digest.sections : [];
+  const hasSectionData = sections.some((section) => {
+    const items = Array.isArray(section?.items) ? section.items : [];
+    const groups = Array.isArray(section?.groups) ? section.groups : [];
+    return items.length || groups.some((group) => Array.isArray(group?.items) && group.items.length);
+  });
+  const body = hasSectionData
+    ? `<div class="smart-sections ${digest.sections.length > 1 ? 'smart-sections-unified' : ''}">${digest.sections.map(smartSearchSectionHtml).join('')}</div>`
+    : `<div class="smart-empty">${escapeHtml(digest.emptyText || 'Пока ничего не записано')}</div>`;
   return `<section class="smart-answer smart-answer-${escapeHtml(digest.type || 'digest')}">
     ${header}
     ${resolutionNote}
-    ${digest.sections.length
-      ? `<div class="smart-sections ${digest.sections.length > 1 ? 'smart-sections-unified' : ''}">${digest.sections.map(smartSearchSectionHtml).join('')}</div>`
-      : (!(digest.signals || []).length ? `<div class="smart-empty">Пока ничего не записано</div>` : '')}
+    ${body}
   </section>`;
 }
 

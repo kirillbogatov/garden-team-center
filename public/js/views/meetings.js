@@ -169,11 +169,8 @@ function toggleMeetingMonth(stateKey, button) {
 
 function meetingParticipantsHtml(participants) {
   if (!participants.length) return `<span class="meeting-participants-empty">${avatarHtml(null)}</span>`;
-  const visible = participants.slice(0, 5);
-  const extra = participants.length - visible.length;
   return `<span class="meeting-participants" aria-label="Участники встречи: ${escapeHtml(participants.map((p) => p.name).join(', '))}">
-    <span class="meeting-participants-stack">${visible.map((person) => personAvatarLinkHtml(person)).join('')}</span>
-    ${extra > 0 ? `<span class="meeting-participants-more">и ещё ${extra}…</span>` : ''}
+    ${peopleAvatarStackHtml(participants, { limit: 3 })}
   </span>`;
 }
 
@@ -190,7 +187,7 @@ function meetingRowHtml(m) {
   const openIdx = registerAction(() => Router.go(meetingPath(m)));
   const missed = meetingIsMissed(m);
   return `<div class="ui-row ui-row--meeting meeting-row clickable ${missed ? 'meeting-row--missed' : ''}" data-action-id="${openIdx}">
-      <span class="meeting-type badge meeting-type-${String(m.type || 'other').replace(/[^a-z0-9]+/gi, '-')}">${MEETING_TYPE_LABEL[m.type] || 'Другое'}</span>
+      ${meetingTypeBadgeHtml(m.type)}
       <span class="meeting-title"><span class="meeting-title-text">${escapeHtml(meetingDisplayTitle(m))}</span>${missed ? `<span class="meeting-missed-label">нет записей по итогам</span>` : ''}</span>
       <span class="meeting-row-meta meeting-row-project">${project ? projectChip(project) : ''}</span>
       <span class="meeting-date">${fmtDate(m.date)}</span>

@@ -31,7 +31,7 @@ function issueCardHtml(i) {
     <div class="work-row-right">
       ${project ? projectChip(project) : ''}
       ${i.severity === 'high' ? severityBadge(i.severity) : ''}
-      ${people.length ? `<div class="work-row-avatars">${people.slice(0, 3).map((person) => personAvatarLinkHtml(person)).join('')}</div>` : ''}
+      ${people.length ? `<div class="work-row-avatars">${peopleAvatarStackHtml(people, { limit: 3 })}</div>` : ''}
       <span class="work-row-chevron">${icon('chevronRight', 12)}</span>
     </div>
   </div>`;
@@ -75,7 +75,7 @@ function taskListRowHtml(t) {
     <div class="tl-right">
       <div class="task-tags-cell">${taskLabelsHtml(t)}</div>
       <div class="task-due-cell">${t.dueDate ? `<span class="tiny" title="${escapeHtml(taskDueTooltip(t))}" style="${overdue ? 'color:var(--red)' : ''}">${taskDueLabel(t)}</span>` : ''}</div>
-      <div class="task-assignee-cell">${assignees.length ? `<div class="flex gap-4">${assignees.map((a) => personAvatarLinkHtml(a)).join('')}</div>` : avatarHtml(null)}</div>
+      <div class="task-assignee-cell">${assignees.length ? `<div class="task-avatar-stack">${peopleAvatarStackHtml(assignees, { limit: assignees.length, showMore: false })}</div>` : avatarHtml(null)}</div>
     </div>
   </div>`;
 }

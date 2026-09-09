@@ -189,7 +189,7 @@ function taskWideListRowHtml(t) {
     <div class="tl-right">
       <div class="task-tags-cell">${taskLabelsHtml(t)}</div>
       <div class="task-due-cell">${t.dueDate ? `<span class="tiny" title="${escapeHtml(taskDueTooltip(t))}" style="${overdue ? 'color:var(--red)' : ''}">${taskDueLabel(t)}</span>` : ''}</div>
-      <div class="task-assignee-cell">${assignees.length ? `<div class="flex gap-4">${assignees.map((a) => personAvatarLinkHtml(a)).join('')}</div>` : avatarHtml(null)}</div>
+      <div class="task-assignee-cell">${assignees.length ? `<div class="task-avatar-stack">${peopleAvatarStackHtml(assignees, { limit: assignees.length, showMore: false })}</div>` : avatarHtml(null)}</div>
     </div>
   </div>`;
 }
@@ -496,7 +496,7 @@ function taskKanbanCardHtml(t) {
     </div>
     <div class="kc-meta">
       <span style="flex:1"></span>
-      ${assignees.length ? `<div class="flex gap-4">${assignees.map((a) => personAvatarLinkHtml(a)).join('')}</div>` : avatarHtml(null)}
+      ${assignees.length ? `<div class="task-avatar-stack">${peopleAvatarStackHtml(assignees, { limit: assignees.length, showMore: false })}</div>` : avatarHtml(null)}
     </div>
   </article>`;
 }

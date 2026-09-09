@@ -22,7 +22,7 @@ function projectsListRowHtml(p) {
     <span class="dot" style="background:${p.color || 'var(--accent)'}"></span>
     <span class="title">${escapeHtml(p.name)}</span>
     <span class="ui-tag badge">${PROJECT_STATUS_LABEL[p.status] || p.status}</span>
-    <div class="flex gap-6" style="margin-left:auto">${members.slice(0, 6).map((m) => personAvatarLinkHtml(m)).join('')}</div>
+    <div class="project-avatar-stack" style="margin-left:auto">${peopleAvatarStackHtml(members, { limit: 6 })}</div>
   </div>`;
 }
 
@@ -84,7 +84,7 @@ function projectTaskRowHtml(t) {
         <div class="tl-right">
           <div class="task-tags-cell"><span class="task-labels-group">${priorityBadge(t.priority)}</span></div>
           <div class="task-due-cell">${t.dueDate ? `<span class="tiny" style="${overdue ? 'color:var(--red)' : ''}">${t.status === 'done' ? deadlineDateLabel(t.dueDate) : dueLabel(t.dueDate)}</span>` : ''}</div>
-          <div class="task-assignee-cell">${assignees.length ? `<div class="flex gap-4">${assignees.map((a) => personAvatarLinkHtml(a)).join('')}</div>` : avatarHtml(null)}</div>
+          <div class="task-assignee-cell">${assignees.length ? `<div class="task-avatar-stack">${peopleAvatarStackHtml(assignees, { limit: assignees.length, showMore: false })}</div>` : avatarHtml(null)}</div>
         </div>
       </div>`;
 }

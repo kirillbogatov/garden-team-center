@@ -61,7 +61,7 @@ function agreementCardHtml(a) {
     </div>
     <div class="work-row-right">
       ${project ? projectChip(project) : ''}
-      ${people.length ? `<div class="work-row-avatars">${people.slice(0, 3).map((person) => personAvatarLinkHtml(person)).join('')}</div>` : ''}
+      ${people.length ? `<div class="work-row-avatars">${peopleAvatarStackHtml(people, { limit: 3 })}</div>` : ''}
       <span class="work-row-chevron">${icon('chevronRight', 12)}</span>
     </div>
   </div>`;

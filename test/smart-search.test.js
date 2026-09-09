@@ -93,10 +93,10 @@ test('\"как дела у команды\" returns a team digest instead of acc
 
 test('a project question answers about the project, not about a person with a similar name', () => {
   const engine = makeEngine();
-  const result = ask(engine, 'как дела с проектом Внедрение Sabre');
+  const result = ask(engine, 'как дела с проектом Sabre');
   assert.equal(result.kind, 'digest');
   assert.equal(result.digest.type, 'project');
-  assert.equal(result.digest.title, 'Внедрение Sabre');
+  assert.equal(result.digest.title, 'Sabre');
 });
 
 
@@ -125,6 +125,15 @@ test('"обзор недели" answers with the week digest, not with today', (
   assert.ok(result.digest.signals.length);
   const today = ask(engine, 'на что обратить внимание сегодня');
   assert.equal(today.digest.type, 'today', 'формулировки про день и неделю не должны путаться');
+});
+
+test('week digest has a clear empty-state message when nothing is planned', () => {
+  const engine = makeEngine({ meetings: [], technologyEvents: [], tasks: [], agreements: [], vacations: [], people: [] });
+  const result = ask(engine, 'Обзор недели');
+  assert.equal(result.kind, 'digest');
+  assert.equal(result.digest.type, 'week');
+  assert.equal(result.digest.emptyText, 'На этой неделе мероприятий не запланировано');
+  assert.ok(result.digest.sections.every((section) => !(section.items || []).length && !(section.groups || []).some((group) => (group.items || []).length)));
 });
 
 test('"запиши в журнал …" creates a journal note rather than a search', () => {

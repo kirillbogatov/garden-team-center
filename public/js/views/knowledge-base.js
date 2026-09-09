@@ -225,10 +225,8 @@ Views.knowledgeDocument = async function (ref) {
       <button class="kb-tool" id="kb-image" title="Вставить изображение">Изображение</button>
       <button class="kb-tool" id="kb-table" title="Таблица">Таблица</button>
       <span class="kb-toolbar-spacer"></span>
-      <button class="kb-tool" id="kb-import">Импорт .md</button>
       <button class="kb-tool" id="kb-export">Экспорт .md</button>
       <button class="kb-tool kb-danger" id="kb-delete" title="Удалить">${icon('trash',13)}</button>
-      <input type="file" id="kb-import-file" accept=".md,text/markdown,text/plain" hidden />
       <input type="file" id="kb-image-file" accept="image/*" hidden />
     </div>
     <article id="kb-editor" class="kb-editor" contenteditable="true" data-placeholder="Начните писать…">${initialHtml}</article>
@@ -288,7 +286,7 @@ function restoreKnowledgeDraftIfNeeded({ draftKey, publishedState, titleInput, f
 }
 
 // Кнопки панели инструментов редактора: форматирование через execCommand,
-// вставка изображений/таблиц/кода и импорт/экспорт/удаление документа.
+// вставка изображений/таблиц/кода, экспорт и удаление документа.
 function wireKnowledgeEditorToolbar({ editor, titleInput, folderSelect, d, draftKey, publishedState, scheduleDraftSave }) {
   document.querySelectorAll('[data-cmd]').forEach((b) => {
     b.onmousedown = (e) => {
@@ -326,15 +324,6 @@ function wireKnowledgeEditorToolbar({ editor, titleInput, folderSelect, d, draft
     e.preventDefault();
     openKnowledgeTableActions(editor);
     scheduleDraftSave();
-  };
-  document.getElementById('kb-import').onclick = () => document.getElementById('kb-import-file').click();
-  document.getElementById('kb-import-file').onchange = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    editor.innerHTML = markdownToKnowledgeHtml(await file.text());
-    initKnowledgeImageResizing(editor);
-    scheduleDraftSave();
-    toast('Markdown импортирован. Черновик сохранится автоматически.');
   };
   document.getElementById('kb-export').onclick = () => exportKnowledgeMarkdown(titleInput.value.trim() || d.title, knowledgeHtmlToMarkdown(editor.innerHTML));
   document.getElementById('kb-delete').onclick = async () => {

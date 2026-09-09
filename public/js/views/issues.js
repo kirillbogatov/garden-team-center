@@ -6,9 +6,8 @@ function issueListTitleRowHtml(issue) {
   const openIdx = registerAction(() => FeatureLoader.run('openIssueModal', issue.id));
   const people = (issue.relatedPersonIds || []).map((id) => store.person(id)).filter(Boolean);
   const seriousBadgeHtml = issue.severity === 'high' ? '<span class="ui-tag badge issue-serious-badge">серьёзная</span>' : '';
-  const overflowCount = people.length - 3;
   const avatarsHtml = people.length
-    ? `<div class="work-row-avatars issue-list-avatars">${people.slice(0, 3).map((person) => personAvatarLinkHtml(person)).join('')}${overflowCount > 0 ? `<span class="issue-list-avatar-more" aria-label="Ещё ${overflowCount} причастных">+${overflowCount}</span>` : ''}</div>`
+    ? `<div class="work-row-avatars issue-list-avatars">${peopleAvatarStackHtml(people, { limit: 3 })}</div>`
     : '';
   return `<div class="ui-row ui-row--issue list-row issue-list-row" data-action-id="${openIdx}">
     ${issueStatusBadge(issue.status, issue.id)}

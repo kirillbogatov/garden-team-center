@@ -79,7 +79,7 @@ const ISSUE_STATUS_LABEL = { open: 'Новая', in_progress: 'В работе',
 const ISSUE_SEVERITY_LABEL = { high: 'Высокая', normal: 'Обычная' };
 const ISSUE_SEVERITY_COLOR = { high: 'var(--orange)', normal: 'var(--text-disabled)' };
 
-const MEETING_TYPE_LABEL = { '1:1': '1:1', pr: 'PR', club: 'Технологизация', retro: 'Ретро', project: 'Проектные', other: 'Другое' };
+const MEETING_TYPE_LABEL = { '1:1': '1:1', pr: 'PR', club: 'Техна', retro: 'Ретро', project: 'Проект', other: 'Другое' };
 const MEETING_TYPE_ORDER = ['1:1', 'pr', 'club', 'retro', 'project', 'other'];
 
 const JOURNAL_KIND_LABEL = { note: 'Заметка', idea: 'Идея', problem: 'Проблема', agreement: 'Договоренность' };

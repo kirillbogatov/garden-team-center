@@ -82,6 +82,20 @@ function personAvatarLinkHtml(person, size) {
 }
 
 // Аватар с точкой-индикатором в углу, если человек сейчас работает.
+
+function peopleAvatarStackHtml(people, options = {}) {
+  const list = Array.isArray(people) ? people.filter(Boolean) : [];
+  if (!list.length) return '';
+  const limit = Math.max(1, Number(options.limit || 3));
+  const visible = list.slice(0, limit);
+  const hidden = list.slice(visible.length);
+  const extra = hidden.length;
+  const overflow = options.showMore !== false && extra > 0
+    ? `<span class="people-avatar-stack-overflow" aria-label="Ещё ${extra}: ${escapeHtml(hidden.map((person) => person.name || '').filter(Boolean).join(', '))}" title="${escapeHtml(hidden.map((person) => person.name || '').filter(Boolean).join(', '))}">+${extra}</span>`
+    : '';
+  return `<span class="people-avatar-stack" aria-label="${escapeHtml(list.map((person) => person.name || '').filter(Boolean).join(', '))}">${visible.map((person) => personAvatarLinkHtml(person, options.size)).join('')}${overflow}</span>`;
+}
+
 function avatarWithStatusHtml(person, vacations, size) {
   const s = personWorkStatus(person, vacations);
   const working = s && s.text === 'работает';
@@ -116,7 +130,7 @@ function taskLabelsHtml(task) {
 // Обычный приоритет не показывается — бейдж нужен только чтобы обратить внимание на высокий.
 function priorityBadge(priority) {
   if (priority !== 'high') return '';
-  return `<span class="ui-tag badge priority-high" style="--ui-tag-dot: var(--orange)">${PRIORITY_LABEL.high}</span>`;
+  return `<span class="ui-tag badge priority-high" style="--ui-tag-tone: var(--orange)">${PRIORITY_LABEL.high}</span>`;
 }
 
 // Числовой бейдж на вкладке (карточка проекта/сотрудника: «Задачи 3», «Проблемы 1»)
@@ -129,7 +143,7 @@ function listTabCountHtml(count) {
 // Аналогично приоритету — обычная серьёзность проблемы не показывается.
 function severityBadge(severity) {
   if (severity !== 'high') return '';
-  return `<span class="ui-tag badge" style="--ui-tag-dot:${ISSUE_SEVERITY_COLOR.high}">${ISSUE_SEVERITY_LABEL.high}</span>`;
+  return `<span class="ui-tag badge" style="--ui-tag-tone:${ISSUE_SEVERITY_COLOR.high}">${ISSUE_SEVERITY_LABEL.high}</span>`;
 }
 
 const ISSUE_STATUS_SYMBOL = {

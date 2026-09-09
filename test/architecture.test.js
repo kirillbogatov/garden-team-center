@@ -581,9 +581,9 @@ test('meeting types are centralized and reused by filters and forms', () => {
   const constants = read('public/js/domain/constants.js');
   const meetingDomain = read('public/js/domain/meeting.js');
   const meetings = read('public/js/views/meetings.js');
-  assert.match(constants, /club:\s*'Технологизация'/);
+  assert.match(constants, /club:\s*'Техна'/);
   assert.match(constants, /retro:\s*'Ретро'/);
-  assert.match(constants, /project:\s*'Проектные'/);
+  assert.match(constants, /project:\s*'Проект'/);
   assert.match(constants, /MEETING_TYPE_ORDER = \['1:1', 'pr', 'club', 'retro', 'project', 'other'\]/);
   assert.match(meetingDomain, /function meetingTypeOptionsHtml/);
   assert.match(meetingDomain, /includeAll \? \['all', \.\.\.MEETING_TYPE_ORDER\] : MEETING_TYPE_ORDER/);
@@ -634,14 +634,27 @@ test('employee detail exposes project-style sticky sidebar and journals notes wi
   assert.match(settings, /personNotesOpen/, 'employee sidebar open state should persist in user settings');
 });
 
-test('meeting rows render up to five overlapping participant avatars with an overflow count', () => {
+test('meeting rows use the shared three-avatar stack with a circular overflow count', () => {
   const meetings = read('public/js/views/meetings.js');
+  const entityUi = read('public/js/lib/entity-ui.js');
   const css = read('public/css/system.css');
-  assert.match(meetings, /function meetingParticipantsHtml\(participants\)[\s\S]*participants\.slice\(0, 5\)/);
-  assert.match(meetings, /и ещё \$\{extra\}…/);
-  assert.match(meetings, /meeting-participants-stack/);
+  assert.match(meetings, /peopleAvatarStackHtml\(participants, \{ limit: 3 \}\)/);
   assert.doesNotMatch(meetings, /const employee = participants\[0\]/);
-  assert.match(css, /\.meeting-participants-stack \.ui-person-avatar[\s\S]*margin-left:\s*-7px/);
+  assert.match(entityUi, /class="people-avatar-stack-overflow"[\s\S]*>\+\$\{extra\}<\/span>/);
+  assert.match(css, /\.people-avatar-stack \.ui-person-avatar[\s\S]*margin-left:\s*-7px/);
+  assert.match(css, /\.people-avatar-stack-overflow \{[\s\S]*width:24px;[\s\S]*height:24px;[\s\S]*margin-left:-7px;[\s\S]*border-radius:50%/);
+});
+
+test('compact employee lists reuse the shared avatar stack instead of local overflow badges', () => {
+  const renderers = read('public/js/domain/entity-renderers.js');
+  const agreements = read('public/js/views/agreements.js');
+  const issues = read('public/js/views/issues.js');
+  const projects = read('public/js/views/projects.js');
+  assert.match(renderers, /peopleAvatarStackHtml\(people, \{ limit: 3 \}\)/);
+  assert.match(agreements, /peopleAvatarStackHtml\(people, \{ limit: 3 \}\)/);
+  assert.match(issues, /peopleAvatarStackHtml\(people, \{ limit: 3 \}\)/);
+  assert.doesNotMatch(issues, /issue-list-avatar-more/);
+  assert.match(projects, /peopleAvatarStackHtml\(members, \{ limit: 6 \}\)/);
 });
 
 test('repository includes a README describing Garden Team Center capabilities', () => {
@@ -1814,7 +1827,7 @@ test('issues list rows expose interactive status, serious label and related peop
   assert.match(rowRenderer, /issue\.severity === 'high'/);
   assert.match(rowRenderer, />серьёзная</);
   assert.match(rowRenderer, /relatedPersonIds/);
-  assert.match(rowRenderer, /personAvatarLinkHtml\(person\)/);
+  assert.match(rowRenderer, /peopleAvatarStackHtml\(people, \{ limit: 3 \}\)/);
 });
 
 test('Check-in employee history rows do not highlight on row hover', () => {
@@ -2081,4 +2094,23 @@ test('the sticky task filter toolbar also gets a full-width divider line on scro
   // Один window-слушатель на всё приложение (флаг вместо addEventListener на
   // каждый рендер) — тот же приём, что и scheduleCalendarFit в calendar.js.
   assert.match(tasks, /if \(!Views\._taskToolbarBleedBound\) \{\s*\n\s*Views\._taskToolbarBleedBound = true;\s*\n\s*window\.addEventListener\('resize', syncTaskToolbarBleed\);/, 'пересчёт зазора при изменении размера окна должен вешаться один раз на всё приложение, а не на каждый рендер списка задач');
+});
+
+
+test('informational labels use the canonical ui-tag component without styling assistant suggestions', () => {
+  const css = read('public/css/system.css');
+  const meeting = read('public/js/domain/meeting.js');
+  const entityUi = read('public/js/lib/entity-ui.js');
+  const smartSearch = read('public/js/views/smart-search.js');
+
+  assert.match(css, /Canonical informational label component/);
+  assert.match(css, /\.ui-tag\s*\{[\s\S]*?min-height:\s*20px/);
+  assert.match(meeting, /class="ui-tag meeting-type badge meeting-type-/);
+  assert.equal(entityUi.includes('--ui-tag-dot:'), false, 'entity labels must use --ui-tag-tone, not the retired dot token');
+
+  assert.match(smartSearch, /class="smart-suggestion"/);
+  assert.match(smartSearch, /class="smart-suggest-item/);
+  assert.equal(/class="[^"]*ui-tag[^"]*smart-suggest/.test(smartSearch), false, 'assistant suggestions must not opt into ui-tag');
+  const canonical = css.slice(css.indexOf('*/', css.indexOf('Canonical informational label component')) + 2);
+  assert.doesNotMatch(canonical, /\.smart-suggest(?:ion|-item)?\s*[,\{]/);
 });

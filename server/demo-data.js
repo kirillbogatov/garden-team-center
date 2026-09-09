@@ -272,7 +272,7 @@ module.exports = {
   "projects": [
     {
       "id": "prj_demo_scranton",
-      "name": "Филиал Скрэнтона — 3 квартал",
+      "name": "Скрэнтон Q3",
       "description": "Продажи и операционная эффективность филиала Скрэнтона.",
       "status": "active",
       "color": "#5E6AD2",
@@ -287,7 +287,7 @@ module.exports = {
     },
     {
       "id": "prj_demo_sabre",
-      "name": "Внедрение Sabre",
+      "name": "Sabre",
       "description": "Переход филиала на новые принтеры и процессы Sabre.",
       "status": "active",
       "color": "#26B5CE",
@@ -301,7 +301,7 @@ module.exports = {
     },
     {
       "id": "prj_demo_dundies",
-      "name": "Премия «Данди» 2026",
+      "name": "Данди 2026",
       "description": "Ежегодная церемония признания команды. Бюджет держим под контролем.",
       "status": "active",
       "color": "#D9A441",
@@ -314,7 +314,7 @@ module.exports = {
     },
     {
       "id": "prj_demo_infinity",
-      "name": "Dunder Mifflin Infinity — онлайн-продажи",
+      "name": "Infinity",
       "description": "Обновление онлайн-канала продаж — без второго запуска сайта в ту же ночь.",
       "status": "active",
       "color": "#4CB782",
@@ -669,7 +669,7 @@ module.exports = {
       "updatedAt": "2026-08-25T13:10:00.000Z",
       "kind": "idea",
       "authorUserId": "usr_demo",
-      "text": "Идея: короткая форма повторного заказа для @[Dunder Mifflin Infinity — онлайн-продажи](project:prj_demo_infinity) — без регистрации, только номер клиента и последний заказ."
+      "text": "Идея: короткая форма повторного заказа для @[Infinity](project:prj_demo_infinity) — без регистрации, только номер клиента и последний заказ."
     },
     {
       "id": "jrn_demo_3",
@@ -902,7 +902,7 @@ module.exports = {
     },
     {
       "id": "doc_demo_dundies",
-      "title": "Премия «Данди» 2026 — бюджет и программа",
+      "title": "Данди 2026 — бюджет и программа",
       "url": "https://example.com/demo/dundies",
       "docType": "link",
       "folderId": null,

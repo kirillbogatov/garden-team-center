@@ -241,6 +241,19 @@ function openCollapsedNavMenu(event, sectionKey) {
       closeCollapsedNavMenu();
       Router.go(path);
     };
+    // The collapsed flyout lives outside #sidebar and uses data-path rather
+    // than data-route, so the global sidebar middle-click handler cannot see it.
+    // Mirror the expanded-sidebar behaviour explicitly here.
+    button.onauxclick = (event) => {
+      if (event.button !== 1) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const path = String(button.dataset.path || '').trim();
+      if (!path) return;
+      window.rememberNavSelectionFromNode(button);
+      closeCollapsedNavMenu();
+      window.open(new URL(path, window.location.href).href, '_blank', 'noopener');
+    };
   });
   document.body.appendChild(menu);
   _collapsedNavOpenKey = sectionKey;

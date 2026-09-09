@@ -170,7 +170,7 @@ const CREATE_DUE_MARKERS = [
 ].sort((a, b) => b[0].length - a[0].length);
 
 // Зеркало MEETING_TYPE_LABEL из тех же констант — тип встречи показывается в строке.
-const MEETING_TYPE_LABEL = { '1:1': '1:1', pr: 'PR', club: 'Технологизация', retro: 'Ретро', project: 'Проектные', other: 'Другое' };
+const MEETING_TYPE_LABEL = { '1:1': '1:1', pr: 'PR', club: 'Техна', retro: 'Ретро', project: 'Проект', other: 'Другое' };
 
 const RU_MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 
@@ -578,6 +578,7 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
     title: meetingPersonName(meeting, user, focusId) || meeting.title || 'Встреча',
     // Тип в базе встречается и как 'PR', и как 'pr' — сверяем в нижнем регистре.
     label: MEETING_TYPE_LABEL[norm(meeting.type)] || '',
+    meetingType: norm(meeting.type) || 'other',
     date: meeting.date || '',
     open: { route: `/meetings/${encodeURIComponent(meeting.slug || meeting.id)}` },
   });
@@ -1045,6 +1046,7 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
       title: focus ? `Обзор недели — ${focus.name}` : 'Обзор недели',
       subtitle: `${ruDate(today)} — ${ruDate(weekEnd)}`,
       ...(focus ? { person: focusPersonSummary(focus) } : {}),
+      emptyText: 'На этой неделе мероприятий не запланировано',
       signals,
       sections: [
         section('Встречи недели', meetings.map((meeting) => meetingItem(meeting, user, focus ? personId : null)), { footer: { label: 'Календарь', route: '/calendar' } }),

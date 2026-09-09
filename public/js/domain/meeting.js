@@ -37,6 +37,17 @@ function meetingMissedDays(meeting, todayKey = todayStr()) {
   return Math.max(1, Math.floor((Date.UTC(ty, tm - 1, td) - Date.UTC(my, mm - 1, md)) / 86400000));
 }
 
+function normalizedMeetingType(type = 'other') {
+  const value = String(type || 'other').trim().toLowerCase();
+  return MEETING_TYPE_LABEL[value] ? value : 'other';
+}
+
+function meetingTypeBadgeHtml(type = 'other', { className = '' } = {}) {
+  const normalized = normalizedMeetingType(type);
+  const label = MEETING_TYPE_LABEL[normalized] || MEETING_TYPE_LABEL.other || 'Другое';
+  const typeClass = normalized.replace(/[^a-z0-9]+/gi, '-');
+  return `<span class="ui-tag meeting-type badge meeting-type-${typeClass}${className ? ` ${escapeHtml(className)}` : ''}">${escapeHtml(label)}</span>`;
+}
 
 function meetingTypeOptionsHtml(selected = 'other', { includeAll = false } = {}) {
   const options = includeAll ? ['all', ...MEETING_TYPE_ORDER] : MEETING_TYPE_ORDER;

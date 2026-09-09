@@ -29,8 +29,8 @@ module.exports = function registerAuthRoutes(app, deps) {
         id: 'usr_demo',
         username: '__demo__',
         displayName: 'Майкл Скотт · Демо',
-        role: 'member',
-        roles: ['member'],
+        role: 'teamlead',
+        roles: ['teamlead'],
         permissions: { 'workspace.manage': true },
         passwordHash: hash,
         passwordSalt: salt,
@@ -38,7 +38,26 @@ module.exports = function registerAuthRoutes(app, deps) {
         mustChangePassword: false,
         personId: 'ppl_demo_michael',
       });
+    } else {
+      // Демо всегда должно открываться в каноническом состоянии тимлида.
+      // Это важно и для уже существующего usr_demo из предыдущих запусков.
+      user = db.auth.users.update(user.id, {
+        displayName: 'Майкл Скотт · Демо',
+        role: 'teamlead',
+        roles: ['teamlead'],
+        permissions: { 'workspace.manage': true },
+        active: true,
+        personId: 'ppl_demo_michael',
+      });
     }
+    // Демо-данные сбрасываются при каждом входе; стартовый экран тоже должен
+    // быть детерминированным и показывать актуальный Ассистент, а не сохранённые
+    // ранее виджеты. Остальные значения восстановятся из defaults настроек.
+    db.auth.preferences.set(user.id, {
+      overviewHomeMode: 'assistant',
+      smartSearchHistory: [],
+      smartSearchPersonHints: {},
+    });
     db.withWorkspace('demo', () => {
       db.versions.clearWorkspace();
       for (const name of COLLECTIONS) db[name].replaceAll(demoSeed[name] || []);
