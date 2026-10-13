@@ -251,7 +251,7 @@ export function AppShell({ user, onLogout, children }) {
       <div className="flex h-[58px] shrink-0 items-center px-4 text-[14px] font-medium text-foreground">{section.label}</div>
       <ScrollArea className="min-h-0 flex-1 px-2.5">
         <nav className="flex flex-col gap-1 pb-4">
-          {items.length ? items.map((item) => { const [to,label,Icon] = item; return <SidebarLink key={to} to={to} label={label} icon={Icon} onContextMenu={(event)=>openMenuContext(event,item)} onNavigate={closeMobile}/>; }) : <div className="px-2.5 py-3 text-[12px] leading-5 text-muted-foreground">Здесь появятся добавленные в избранное разделы.</div>}
+          {items.length ? items.map((item) => { const [to,label,Icon] = item; return <SidebarLink key={to} to={to} label={label} icon={Icon} onContextMenu={(event)=>openMenuContext(event,item)} onNavigate={closeMobile}/>; }) : <div className="px-2.5 py-3 text-[12px] leading-5 text-muted-foreground">Чтобы добавить раздел в «Избранное», нажмите на него правой кнопкой мыши</div>}
         </nav>
       </ScrollArea>
     </aside>;
