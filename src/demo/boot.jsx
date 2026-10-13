@@ -15,16 +15,8 @@ function showFatal(error) {
   if (root) root.textContent = 'Не удалось запустить демо. Обновите страницу или откройте её в другом браузере.';
 }
 
-// Главная Garden — строка ассистента без данных. Первым экраном демо открываем
-// задачи, чтобы демо-данные были видны сразу; свою ссылку с хэшем не трогаем.
-function openDataScreenFirst() {
-  if (window.location.hash) return;
-  window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/tasks`);
-}
-
 export async function startDemo() {
   try {
-    openDataScreenFirst();
     const SQL = await initSqlJs({ locateFile: () => wasmUrl });
     globalThis.__GARDEN_SQL__ = SQL;
 

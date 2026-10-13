@@ -19,7 +19,7 @@ module.exports = {
       ],
       "notes": "Сильные стороны: энергия, продажи, «Данди». Зона роста: встречи, которые могли быть письмом.",
       "slug": "michael-scott",
-      "photoUrl": "https://theoffice.fandom.com/wiki/Special:FilePath/Character%20-%20MichaelScott.PNG",
+      "photoUrl": "/demo-photos/michael-scott.webp",
       "photoPosition": "52% 16%",
       "photoZoomLG": 1.16,
       "photoZoomXL": 1.08
@@ -42,7 +42,7 @@ module.exports = {
       ],
       "notes": "Сильные стороны: дисциплина, безопасность, свекла. Просит писать должность без сокращений.",
       "slug": "dwight-schrute",
-      "photoUrl": "https://theoffice.fandom.com/wiki/Special:FilePath/2009DwightCropped.PNG",
+      "photoUrl": "/demo-photos/dwight-schrute.webp",
       "photoPosition": "50% 18%",
       "photoZoomLG": 1.1
     },
@@ -64,7 +64,7 @@ module.exports = {
       ],
       "notes": "Сильные стороны: продажи, отношения с клиентами. Иногда слишком много времени уходит на «внутренние эксперименты».",
       "slug": "jim-halpert",
-      "photoUrl": "https://theoffice.fandom.com/wiki/Special:FilePath/2009JimCropped.PNG",
+      "photoUrl": "/demo-photos/jim-halpert.webp",
       "photoPosition": "48% 22%",
       "photoZoomLG": 1.07
     },
@@ -86,7 +86,7 @@ module.exports = {
       ],
       "notes": "Сильные стороны: коммуникация, дизайн, организация офиса.",
       "slug": "pam-beesly",
-      "photoUrl": "https://theoffice.fandom.com/wiki/Special:FilePath/2009PamCropped.PNG",
+      "photoUrl": "/demo-photos/pam-beesly.webp",
       "photoPosition": "50% 20%",
       "photoZoomLG": 1.1
     },
@@ -106,7 +106,7 @@ module.exports = {
       ],
       "notes": "Предпочитает точность, порядок и мероприятия без лишнего веселья.",
       "slug": "angela-martin",
-      "photoUrl": "https://theoffice.fandom.com/wiki/Special:FilePath/Angela.PNG",
+      "photoUrl": "/demo-photos/angela-martin.webp",
       "photoPosition": "55% 18%",
       "photoZoomLG": 1.18,
       "photoZoomXL": 1.1
@@ -127,7 +127,7 @@ module.exports = {
       ],
       "notes": "Часто первым замечает, что цифры не сходятся.",
       "slug": "oscar-martinez",
-      "photoUrl": "https://theoffice.fandom.com/wiki/Special:FilePath/2009OscarCropped.PNG",
+      "photoUrl": "/demo-photos/oscar-martinez.webp",
       "photoPosition": "50% 17%",
       "photoZoomLG": 1.1
     },
@@ -147,7 +147,7 @@ module.exports = {
       ],
       "notes": "Лучше не назначать важные встречи на время чили.",
       "slug": "kevin-malone",
-      "photoUrl": "https://theoffice.fandom.com/wiki/Special:FilePath/2009Kevincropped.PNG",
+      "photoUrl": "/demo-photos/kevin-malone.webp",
       "photoPosition": "50% 19%",
       "photoZoomLG": 1.16
     },
@@ -167,7 +167,7 @@ module.exports = {
       ],
       "notes": "Главный критерий хорошей встречи — закончилась вовремя.",
       "slug": "stanley-hudson",
-      "photoUrl": "https://theoffice.fandom.com/wiki/Special:FilePath/2009StanleyCropped.PNG",
+      "photoUrl": "/demo-photos/stanley-hudson.webp",
       "photoPosition": "51% 17%",
       "photoZoomLG": 1.12
     },
@@ -187,7 +187,7 @@ module.exports = {
       ],
       "notes": "Сильные стороны: клиенты, спокойствие, знание локального рынка.",
       "slug": "phyllis-vance",
-      "photoUrl": "https://theoffice.fandom.com/wiki/Special:FilePath/2009PhyllisCropped.PNG",
+      "photoUrl": "/demo-photos/phyllis-vance.webp",
       "photoPosition": "50% 18%",
       "photoZoomLG": 1.1
     },
@@ -207,7 +207,7 @@ module.exports = {
       ],
       "notes": "Интересуется цифровыми инициативами и словами «дизрапшн» и «масштабирование».",
       "slug": "ryan-howard",
-      "photoUrl": "https://theoffice.fandom.com/wiki/Special:FilePath/Ryan-portal.png",
+      "photoUrl": "/demo-photos/ryan-howard.webp",
       "photoPosition": "52% 16%",
       "photoZoomLG": 1.18,
       "photoZoomXL": 1.08
@@ -228,7 +228,7 @@ module.exports = {
       ],
       "notes": "Знает о клиентских настроениях больше, чем любой дашборд.",
       "slug": "kelly-kapoor",
-      "photoUrl": "https://theoffice.fandom.com/wiki/Special:FilePath/2009KellyCropped.PNG",
+      "photoUrl": "/demo-photos/kelly-kapoor.webp",
       "photoPosition": "49% 18%",
       "photoZoomLG": 1.12
     },
@@ -492,6 +492,91 @@ module.exports = {
       "dueDate": "2026-10-16",
       "goalKey": "GOAL-0001",
       "taskKey": "SKRE-0010"
+    },
+    {
+      "id": "tsk_demo_michael_forecast",
+      "title": "Ответить Джен Левинсон по прогнозу продаж",
+      "description": "Собрать цифры по Скрэнтону и объяснить, откуда берётся рост без скидок.",
+      "projectId": "prj_demo_scranton",
+      "assigneeIds": [
+        "ppl_demo_michael"
+      ],
+      "status": "in_progress",
+      "priority": "high",
+      "dueDate": "2026-10-15",
+      "goalKey": "GOAL-0001",
+      "taskKey": "SKRE-0011"
+    },
+    {
+      "id": "tsk_demo_michael_q3",
+      "title": "Подготовить итоги квартала для Дэвида Уоллеса",
+      "description": "Продажи, риски и план на 4 квартал — на одной странице.",
+      "notes": "Начать с цифр, а не с импровизации.",
+      "projectId": "prj_demo_scranton",
+      "assigneeIds": [
+        "ppl_demo_michael"
+      ],
+      "status": "todo",
+      "priority": "high",
+      "dueDate": "2026-10-20",
+      "goalKey": "GOAL-0001",
+      "taskKey": "SKRE-0012"
+    },
+    {
+      "id": "tsk_demo_michael_program",
+      "title": "Утвердить программу церемонии «Данди»",
+      "description": "Выбрать порядок номинаций и ведущего. Красная дорожка — по итогам бюджета.",
+      "projectId": "prj_demo_dundies",
+      "assigneeIds": [
+        "ppl_demo_michael",
+        "ppl_demo_pam"
+      ],
+      "status": "in_review",
+      "priority": "normal",
+      "dueDate": "2026-10-17",
+      "taskKey": "DAND-0003"
+    },
+    {
+      "id": "tsk_demo_michael_meeting_format",
+      "title": "Перевести общую встречу на формат 30 минут",
+      "description": "Повестка из трёх пунктов, таймер и разбор вопросов отдельно.",
+      "projectId": null,
+      "assigneeIds": [
+        "ppl_demo_michael"
+      ],
+      "status": "todo",
+      "priority": "normal",
+      "dueDate": "2026-10-23",
+      "goalKey": "GOAL-0002",
+      "taskKey": "GARDEN-0003"
+    },
+    {
+      "id": "tsk_demo_michael_hr",
+      "title": "Согласовать с Тоби график 1:1 на ноябрь",
+      "description": "Чтобы никто не остался без разговора и никто не получил два подряд.",
+      "projectId": null,
+      "assigneeIds": [
+        "ppl_demo_michael"
+      ],
+      "status": "paused",
+      "priority": "low",
+      "dueDate": "2026-10-30",
+      "taskKey": "GARDEN-0004"
+    },
+    {
+      "id": "tsk_demo_michael_done",
+      "title": "Закрепить приоритеты филиала на октябрь",
+      "description": "Три цели недели для всей команды.",
+      "projectId": "prj_demo_scranton",
+      "assigneeIds": [
+        "ppl_demo_michael"
+      ],
+      "status": "done",
+      "priority": "normal",
+      "dueDate": "2026-10-09",
+      "completedAt": "2026-10-09T15:00:00.000Z",
+      "goalKey": "GOAL-0001",
+      "taskKey": "SKRE-0013"
     }
   ],
   "issues": [
@@ -727,6 +812,95 @@ module.exports = {
       "actionItems": [],
       "nextSteps": "Джим соберёт короткую памятку с формулировками, которые сработали лучше всего.",
       "meetingKey": "MEET-0008"
+    },
+    {
+      "id": "mtg_demo_club_oct",
+      "type": "club",
+      "title": "Клаб продаж: повторные заказы",
+      "date": "2026-10-14T15:00:00",
+      "participantIds": [
+        "ppl_demo_michael",
+        "ppl_demo_jim",
+        "ppl_demo_phyllis",
+        "ppl_demo_stanley",
+        "ppl_demo_kelly"
+      ],
+      "projectId": "prj_demo_scranton",
+      "prepNotes": "Каждый приносит один кейс возвращения клиента.",
+      "notes": "",
+      "actionItems": [],
+      "nextSteps": "",
+      "meetingKey": "MEET-0009"
+    },
+    {
+      "id": "mtg_demo_weekly_oct",
+      "type": "other",
+      "title": "Еженедельная общая встреча филиала",
+      "date": "2026-10-15T10:00:00",
+      "participantIds": [
+        "ppl_demo_michael",
+        "ppl_demo_dwight",
+        "ppl_demo_jim",
+        "ppl_demo_pam",
+        "ppl_demo_angela",
+        "ppl_demo_stanley"
+      ],
+      "projectId": null,
+      "prepNotes": "Пилот: повестка из трёх пунктов и таймер на 30 минут.",
+      "notes": "",
+      "actionItems": [],
+      "nextSteps": "",
+      "meetingKey": "MEET-0010"
+    },
+    {
+      "id": "mtg_demo_wallace_prep",
+      "type": "other",
+      "title": "Подготовка к обзору с Дэвидом Уоллесом",
+      "date": "2026-10-19T14:00:00",
+      "participantIds": [
+        "ppl_demo_michael",
+        "ppl_demo_jim",
+        "ppl_demo_phyllis"
+      ],
+      "projectId": "prj_demo_scranton",
+      "prepNotes": "Свести цифры по повторным заказам и риски по доставке.",
+      "notes": "",
+      "actionItems": [],
+      "nextSteps": "",
+      "meetingKey": "MEET-0011"
+    },
+    {
+      "id": "mtg_demo_dundies_oct",
+      "type": "other",
+      "title": "Комитет «Данди»: финальная программа",
+      "date": "2026-10-21T15:00:00",
+      "participantIds": [
+        "ppl_demo_michael",
+        "ppl_demo_pam",
+        "ppl_demo_angela"
+      ],
+      "projectId": "prj_demo_dundies",
+      "prepNotes": "Утвердить порядок номинаций и держаться бюджета.",
+      "notes": "",
+      "actionItems": [],
+      "nextSteps": "",
+      "meetingKey": "MEET-0012"
+    },
+    {
+      "id": "mtg_demo_wallace_q3",
+      "type": "other",
+      "title": "Квартальный обзор с Дэвидом Уоллесом",
+      "date": "2026-10-28T16:00:00",
+      "participantIds": [
+        "ppl_demo_michael",
+        "ppl_demo_david"
+      ],
+      "projectId": "prj_demo_scranton",
+      "prepNotes": "Показать результаты филиала и план на 4 квартал.",
+      "notes": "",
+      "actionItems": [],
+      "nextSteps": "",
+      "meetingKey": "MEET-0013"
     }
   ],
   "journal": [

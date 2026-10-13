@@ -23,7 +23,7 @@ export function DemoBadge({ onReset }) {
         <button type="button" onClick={() => setConfirming(false)} disabled={busy} className={`${pill} text-foreground`}>Отмена</button>
       </>
       : <>
-        <span>Демо-версия · данные хранятся только в вашем браузере</span>
+        <span>Демо-версия</span>
         <button type="button" onClick={() => setConfirming(true)} className={`${pill} text-foreground`}>
           <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.8}/>Сбросить
         </button>

@@ -153,12 +153,17 @@ const badgeVariants = cva('inline-flex items-center gap-1 rounded-full border px
 });
 export function Badge({ className, variant, ...props }) { return <span className={cn(badgeVariants({ variant }), className)} {...props} />; }
 
+// Фото демо-сотрудников лежат рядом с приложением; на GitHub Pages оно открывается не из корня домена.
+function photoSrc(photoUrl) {
+  return photoUrl?.startsWith('/demo-photos/') ? `${import.meta.env.BASE_URL}${photoUrl.slice(1)}` : photoUrl || '';
+}
+
 export function Avatar({ person, size = 'md', className }) {
   const sizes = { xs: 'h-6 w-6 text-[12px]', sm: 'h-8 w-8 text-[12px]', md: 'h-9 w-9 text-[13px]', lg: 'h-11 w-11 text-[14px]', xl: 'h-16 w-16 text-[17px]' };
   const name = person?.name || person?.displayName || 'Пользователь';
   return (
     <AvatarPrimitive.Root className={cn('relative inline-flex shrink-0 overflow-hidden rounded-full bg-muted ring-1 ring-border', sizes[size], className)}>
-      <AvatarPrimitive.Image src={person?.photoUrl || ''} alt={name} className="aspect-square h-full w-full object-cover" style={{ objectPosition: person?.photoPosition || '50% 50%' }} />
+      <AvatarPrimitive.Image src={photoSrc(person?.photoUrl)} alt={name} className="aspect-square h-full w-full object-cover" style={{ objectPosition: person?.photoPosition || '50% 50%' }} />
       <AvatarPrimitive.Fallback className="flex h-full w-full items-center justify-center bg-secondary font-semibold text-secondary-foreground">{initials(name)}</AvatarPrimitive.Fallback>
     </AvatarPrimitive.Root>
   );
