@@ -9162,3 +9162,6 @@ html.theme-dark .goal-due-date-inline {
 .entity-detail-main { gap: 24px !important; }
 .entity-detail-main > .page-section,
 .entity-detail-main > .page-section + .page-section { margin-top: 0 !important; }
+
+/* Right column of two-column layouts starts level with the sidebar */
+.kb-react-main > .page-section:first-child { margin-top: 0 !important; }

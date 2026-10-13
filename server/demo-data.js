@@ -17,7 +17,8 @@ module.exports = {
       "tags": [
         "manager"
       ],
-      "notes": "Сильные стороны: энергия, продажи, «Данди». Зона роста: встречи, которые могли быть письмом.",
+      "strengthsLikes": "энергия, продажи, «Данди»",
+      "weaknessesDislikes": "встречи, которые могли быть письмом",
       "slug": "michael-scott",
       "photoUrl": "/demo-photos/michael-scott.webp",
       "photoPosition": "52% 16%",
@@ -40,7 +41,8 @@ module.exports = {
       "tags": [
         "senior"
       ],
-      "notes": "Сильные стороны: дисциплина, безопасность, свекла. Просит писать должность без сокращений.",
+      "strengthsLikes": "дисциплина, безопасность, свекла",
+      "notes": "Просит писать должность без сокращений.",
       "slug": "dwight-schrute",
       "photoUrl": "/demo-photos/dwight-schrute.webp",
       "photoPosition": "50% 18%",
@@ -62,7 +64,8 @@ module.exports = {
       "tags": [
         "senior"
       ],
-      "notes": "Сильные стороны: продажи, отношения с клиентами. Иногда слишком много времени уходит на «внутренние эксперименты».",
+      "strengthsLikes": "продажи, отношения с клиентами",
+      "weaknessesDislikes": "Иногда слишком много времени уходит на «внутренние эксперименты»",
       "slug": "jim-halpert",
       "photoUrl": "/demo-photos/jim-halpert.webp",
       "photoPosition": "48% 22%",
@@ -84,7 +87,7 @@ module.exports = {
       "tags": [
         "middle"
       ],
-      "notes": "Сильные стороны: коммуникация, дизайн, организация офиса.",
+      "strengthsLikes": "коммуникация, дизайн, организация офиса",
       "slug": "pam-beesly",
       "photoUrl": "/demo-photos/pam-beesly.webp",
       "photoPosition": "50% 20%",
@@ -185,7 +188,7 @@ module.exports = {
       "tags": [
         "senior"
       ],
-      "notes": "Сильные стороны: клиенты, спокойствие, знание локального рынка.",
+      "strengthsLikes": "клиенты, спокойствие, знание локального рынка",
       "slug": "phyllis-vance",
       "photoUrl": "/demo-photos/phyllis-vance.webp",
       "photoPosition": "50% 18%",
