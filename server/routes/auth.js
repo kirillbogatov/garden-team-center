@@ -1,5 +1,7 @@
 'use strict';
 
+const { shiftDemoDates } = require('../domain/demo-dates');
+
 module.exports = function registerAuthRoutes(app, deps) {
   const {
     db,
@@ -54,9 +56,10 @@ module.exports = function registerAuthRoutes(app, deps) {
       smartSearchHistory: [],
       smartSearchPersonHints: {},
     });
+    const seed = shiftDemoDates(demoSeed);
     db.withWorkspace('demo', () => {
       db.versions.clearWorkspace();
-      for (const name of COLLECTIONS) db[name].replaceAll(demoSeed[name] || []);
+      for (const name of COLLECTIONS) db[name].replaceAll(seed[name] || []);
     });
     createSession(user.id, res);
     res.json({ user: safeUser(user) });

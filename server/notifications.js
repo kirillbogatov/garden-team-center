@@ -169,7 +169,7 @@ function ensureCheckinReminder(db, user, now = new Date()) {
   if (filled) return null;
   return db.notifications.create(user.id, {
     eventType: EVENT_TYPES.CHECKIN_REMINDER,
-    title: 'Пора провести чек-ап',
+    title: 'Пора заполнить Weekly',
     body: 'Weekly за эту неделю ещё не заполнен. Добавьте статус команды.',
     route: '/weekly',
     dedupeKey: `checkin-reminder:${weekStart}:${user.id}`,
