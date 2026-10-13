@@ -9030,10 +9030,16 @@ html.theme-dark .goal-due-date-inline {
 :root:root :is(
   a[href], button, input:not([type="hidden"]), select, textarea, summary,
   [role="button"], [role="tab"], [role="link"], [role="switch"], [role="combobox"],
-  [role="checkbox"], [role="radio"], [role="menuitem"], [tabindex]:not([tabindex="-1"])
+  [role="checkbox"], [role="radio"], [tabindex]:not([tabindex="-1"])
 ):focus-visible {
   outline: var(--focus-ring) !important;
   outline-offset: var(--focus-ring-offset) !important;
+}
+/* Menu items already show focus as a filled highlight (focus:bg-accent); an extra outline
+   doubles it. The trigger of an open menu is likewise covered by the menu itself. */
+:root:root:root [role="menuitem"]:focus-visible,
+:root:root:root [aria-haspopup="menu"][data-state="open"]:focus-visible {
+  outline: none !important;
 }
 /* Inline-edit text fields keep a quiet frame: a full-colour underline replaces the outline. */
 :root:root:root .things-task-detail-title:focus-visible,
