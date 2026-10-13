@@ -8918,6 +8918,19 @@ html.theme-dark .goal-due-date-inline {
 }
 .garden-date-field-input:disabled { cursor: not-allowed; }
 
+/* All native date inputs: Chromium stretches the text part (flex: 1), which pushes the
+   calendar icon to the far edge. Make the text hug its content so the icon sits beside it. */
+input[type="date"]::-webkit-datetime-edit {
+  flex: 0 0 auto;
+  padding-right: 0;
+}
+input[type="date"]::-webkit-calendar-picker-indicator {
+  margin-left: 8px;
+  padding: 0;
+  cursor: pointer;
+}
+input[type="date"] { justify-content: flex-start; }
+
 /* Meeting sidebar: expandable preparation and clear context hierarchy. */
 .meeting-prep-heading { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 10px; }
 .meeting-prep-expand { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 6px; color: hsl(var(--muted-foreground)); }
