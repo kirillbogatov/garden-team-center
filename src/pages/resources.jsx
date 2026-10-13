@@ -656,7 +656,7 @@ export function TeamLoadPage() {
           <div>Загрузка = сумма весов режимов (Фултайм — 3, Парт-тайм — 2, Саппорт — 1) + 0.5 за каждый проект сверх первого.</div>
           <div className="text-muted-foreground">Низкая &lt; 1.5 · Средняя 1.5–3 · Полная 3–5 · Перегруз &gt; 5</div>
         </div>}>
-          <Info className="h-3.5 w-3.5 shrink-0 cursor-help text-muted-foreground" aria-label="Как считается загрузка"/>
+          <Info className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="Как считается загрузка"/>
         </Tooltip>
       </span>}
     />

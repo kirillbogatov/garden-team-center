@@ -3070,7 +3070,7 @@ button.solution-status-control:hover { background: hsl(var(--muted)); }
 .things-task-inline-group-header {
   font-weight: 600;
 }
-.task-linear-priority { cursor: help; }
+.task-linear-priority { cursor: default; }
 
 @media (max-width: 1050px) {
   .tasks-split-layout { grid-template-columns: 1fr; gap: 24px; }
@@ -8360,6 +8360,12 @@ html:not(.dark):not(.theme-noch) .v3-sidebar .sidebar-brand-wordmark {
   outline: none !important;
   box-shadow: none !important;
 }
+
+/* Planned date cell: same box as the neighbouring inputs, with the standard calendar icon visible. */
+.technology-date-input { color-scheme: light; font-family: inherit; }
+.dark .technology-date-input, html.theme-dark .technology-date-input { color-scheme: dark; }
+.technology-date-input::-webkit-calendar-picker-indicator { opacity: .7; cursor: pointer; margin-left: 6px; }
+.technology-date-input:disabled::-webkit-calendar-picker-indicator { cursor: not-allowed; }
 
 /* Main sidebar: one exact grid for links and section buttons. */
 .v3-sidebar:not(.is-collapsed) .sidebar-nav-entry {

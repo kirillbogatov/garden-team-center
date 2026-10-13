@@ -11,7 +11,7 @@ import {
   AlertDialog, Avatar, Badge, Button, Dialog, DialogContent, DialogFooter,
   DialogHeader, DialogTitle, DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuTrigger, EmptyState, Input, Label, Select, SelectContent, SelectItem,
-  SelectTrigger, SelectValue, Skeleton, Switch,
+  SelectTrigger, SelectValue, Skeleton, Switch, Tooltip,
 } from '@/components/ui';
 import { useCrudDialogForm } from '@/hooks/use-crud-dialog-form';
 import { PeopleField } from '@/components/people-field';
@@ -156,10 +156,10 @@ export function TechnologyPage({ user }) {
     </div>
 
     {loading ? <Skeleton className="h-72"/> : filtered.length ? <div className="surface overflow-x-auto">
-      <table className="w-full min-w-[920px] table-fixed text-left">
-        <colgroup><col className="w-[175px]"/><col/><col className="w-[135px]"/><col className="w-[260px]"/><col className="w-[110px]"/><col className="w-[92px]"/></colgroup>
+      <table className="w-full min-w-[1000px] table-fixed text-left">
+        <colgroup><col className="w-[190px]"/><col/><col className="w-[140px]"/><col className="w-[180px]"/><col className="w-[140px]"/><col className="w-[56px]"/></colgroup>
         <thead className="border-b bg-muted/30 text-[12px] font-semibold uppercase tracking-[.06em] text-muted-foreground">
-          <tr><th className="px-3 py-3">Плановая дата</th><th className="px-3 py-3">Тема</th><th className="px-3 py-3">Тайминг, ч</th><th className="px-3 py-3">Драйвер / гость</th><th className="px-3 py-3 text-center">Проведено</th><th className="px-3 py-3"/></tr>
+          <tr><th className="px-3 py-3">Плановая дата</th><th className="px-3 py-3">Тема</th><th className="px-3 py-3 text-center">Тайминг, ч</th><th className="px-3 py-3 text-center">Драйвер / гость</th><th className="px-3 py-3 text-center">Проведено</th><th className="px-3 py-3"/></tr>
         </thead>
         <tbody className="divide-y">
           {filtered.map((item) => <TechnologyRow
@@ -217,11 +217,11 @@ function TechnologyRow({ item, people, meeting, busy, canEdit, canCreateMeeting,
   };
   const selectedPeople = (item.personIds || []).map((id) => people.find((person) => person.id === id)).filter(Boolean);
   return <tr className={item.completed ? 'bg-muted/20 text-muted-foreground' : ''}>
-    <td className="cell-frame p-2"><Input type="date" value={draft.plannedDate} disabled={busy || !canEdit} onChange={(e) => setDraft((d) => ({ ...d, plannedDate: e.target.value }))} onBlur={() => save('plannedDate')} className="cell-input technology-inline-input h-8 bg-transparent px-2 shadow-none"/></td>
-    <td className="cell-frame p-2"><Input value={draft.topic} disabled={busy || !canEdit} onChange={(e) => setDraft((d) => ({ ...d, topic: e.target.value }))} onBlur={() => save('topic')} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} className="cell-input technology-inline-input h-8 bg-transparent px-2 font-medium shadow-none"/></td>
-    <td className="cell-frame p-2"><Input type="number" min="1" step="1" value={draft.hours} disabled={busy || !canEdit} onChange={(e) => setDraft((d) => ({ ...d, hours: e.target.value }))} onBlur={() => save('hours')} className="cell-input technology-inline-input h-8 bg-transparent px-2 shadow-none"/></td>
-    <td className="p-2"><button type="button" disabled={!canEdit} onClick={onPeople} className="ui-focus-ring flex min-h-8 w-full items-center rounded-md px-2 text-left hover:bg-muted/50">
-      {selectedPeople.length ? <div className="flex min-w-0 items-center gap-2"><div className="flex -space-x-1.5">{selectedPeople.slice(0, 3).map((person) => <Avatar key={person.id} person={person} size="xs" className="ring-2 ring-card"/>)}</div><span className="truncate text-xs">{selectedPeople.map((person) => person.name).join(', ')}</span></div> : <span className="text-xs text-muted-foreground">Добавить…</span>}
+    <td className="cell-frame p-2"><input type="date" value={draft.plannedDate} disabled={busy || !canEdit} onChange={(e) => setDraft((d) => ({ ...d, plannedDate: e.target.value }))} onBlur={() => save('plannedDate')} className="cell-input technology-inline-input technology-date-input flex h-8 w-auto rounded-[12px] bg-transparent px-2 py-2 text-[16px] shadow-none disabled:cursor-not-allowed disabled:opacity-50"/></td>
+    <td className="cell-frame p-2"><Input value={draft.topic} disabled={busy || !canEdit} onChange={(e) => setDraft((d) => ({ ...d, topic: e.target.value }))} onBlur={() => save('topic')} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} className="cell-input technology-inline-input h-8 bg-transparent px-2 font-normal shadow-none"/></td>
+    <td className="cell-frame p-2"><Input type="number" min="1" step="1" value={draft.hours} disabled={busy || !canEdit} onChange={(e) => setDraft((d) => ({ ...d, hours: e.target.value }))} onBlur={() => save('hours')} className="cell-input technology-inline-input h-8 bg-transparent px-2 text-center shadow-none"/></td>
+    <td className="p-2"><button type="button" disabled={!canEdit} onClick={onPeople} className="ui-focus-ring flex min-h-8 w-full items-center justify-center rounded-md px-2 text-center hover:bg-muted/50">
+      {selectedPeople.length ? <div className="flex -space-x-1.5">{selectedPeople.slice(0, 4).map((person) => <Tooltip key={person.id} content={person.name}><span className="inline-flex rounded-full"><Avatar person={person} size="xs" className="ring-2 ring-card"/></span></Tooltip>)}{selectedPeople.length > 4 && <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] text-muted-foreground ring-2 ring-card">+{selectedPeople.length - 4}</span>}</div> : <span className="text-xs text-muted-foreground">Добавить…</span>}
     </button></td>
     <td className="p-2 text-center"><div className="inline-flex items-center gap-2"><Switch checked={Boolean(item.completed)} disabled={busy || !canEdit} onCheckedChange={(checked) => onPatch(item, { completed: Boolean(checked) })}/></div></td>
     <td className="p-2 text-right"><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="Действия"><MoreHorizontal className="h-4 w-4"/></Button></DropdownMenuTrigger><DropdownMenuContent align="end">
