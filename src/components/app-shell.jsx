@@ -225,14 +225,14 @@ export function AppShell({ user, onLogout, children }) {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button aria-label={unreadCount ? `Профиль, непрочитанных уведомлений: ${unreadCount}` : 'Профиль'} className={cn('relative flex w-full min-w-0 items-center rounded-[8px] text-left transition-colors hover:bg-white/65 ui-focus-ring', isCollapsed ? 'h-11 justify-center px-0' : 'min-h-11 gap-2.5 px-2 py-1.5')}>
-              <span className="relative shrink-0"><Avatar person={profilePerson} size="sm"/>{unreadCount > 0 && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-destructive ring-2 ring-background" aria-hidden="true"/>}</span>
+              <span className="relative shrink-0"><Avatar person={profilePerson} size="sm"/>{unreadCount > 0 && <span className="absolute -right-1.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground ring-2 ring-background" aria-hidden="true">{unreadCount > 99 ? '99+' : unreadCount}</span>}</span>
               {!isCollapsed && <span className="min-w-0 flex-1"><span className="profile-name-one-line block max-w-full whitespace-nowrap text-[13px] font-medium leading-[16px] tracking-[-0.01em] text-foreground">{profilePerson.name}</span><span className="mt-0.5 block truncate text-[11px] leading-[13px] text-muted-foreground">{currentPerson?.role || 'Тимлид'}</span></span>}
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-56">
             <DropdownMenuLabel className="truncate">{profilePerson.name}</DropdownMenuLabel>
             <DropdownMenuSeparator/>
-            <DropdownMenuItem onSelect={() => navigate('/notifications')}><Bell className="h-4 w-4"/>Уведомления{unreadCount > 0 && <span className="ml-auto rounded-full bg-destructive px-1.5 text-[12px] font-medium leading-5 text-destructive-foreground">{unreadCount}</span>}</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => navigate('/notifications')}><Bell className="h-4 w-4"/>Уведомления{unreadCount > 0 && <span className="ml-auto rounded-full bg-primary px-1.5 text-[12px] font-medium leading-5 text-primary-foreground">{unreadCount}</span>}</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => navigate('/settings')}><Settings className="h-4 w-4"/>Настройки</DropdownMenuItem>
             {(user?.role === 'admin' || user?.roles?.includes?.('admin')) && <DropdownMenuItem onSelect={() => navigate('/admin')}><ShieldCheck className="h-4 w-4"/>Администрирование</DropdownMenuItem>}
             <DropdownMenuSeparator/>

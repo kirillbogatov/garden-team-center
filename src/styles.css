@@ -8402,6 +8402,7 @@ html:not(.dark):not(.theme-noch) .v3-sidebar .sidebar-brand-wordmark {
 .v3-sidebar-profile button > span:last-child {
   overflow: visible;
 }
+.v3-sidebar-profile button > span:first-child { overflow: visible; }
 
 /* Mentions inside titles must be typographically identical to the surrounding title. */
 .task-title-mention-editor .mention-token,
@@ -8445,7 +8446,7 @@ html:not(.dark):not(.theme-noch) .v3-sidebar .sidebar-brand-wordmark {
   padding-top: 5px !important;
   padding-bottom: 5px !important;
 }
-.v3-sidebar-profile button > span:last-child {
+.v3-sidebar-profile button > span:last-child:not(:first-child) {
   min-width: 0;
   overflow: hidden;
 }
