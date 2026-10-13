@@ -819,7 +819,7 @@ export function PersonDetailPage({ user }) {
           </section>
 
           <section className="person-card">
-            <SectionHeader title={<><span>Загрузка</span><span className="person-load-inline-separator"> — </span><span className="person-load-inline-status" data-tone={summary.level.tone}>{String(summary.level.label || '').toLowerCase()}</span></>} compact/>
+            <SectionHeader title="Загрузка" compact/>
             {summary.projects.length ? <PersonLoadBreakdown summary={summary} personId={person.id} onOpenProject={(project)=>{ setSelectedLoadProjectId(project.id); setLoadOpen(true); }}/> : <div className="person-card-empty"><div className="person-card-empty-title">Проектной загрузки нет</div><div className="person-card-empty-copy">Для сотрудника пока не настроена загрузка по проектам.</div><Button variant="outline" size="sm" className="mt-3" onClick={()=>setLoadOpen(true)}>Добавить проекты</Button></div>}
           </section>
         </div>
