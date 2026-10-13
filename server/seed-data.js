@@ -1,4 +1,4 @@
-// Canonical seed data for a fresh Garden workspace.
+// Canonical seed data for Garden.
 module.exports = {
   "people": [
     {
@@ -200,13 +200,13 @@ module.exports = {
       "name": "Дом.ру",
       "description": "",
       "status": "active",
-      "color": "#5E6AD2",
       "memberIds": [
         "ppl_mt4eapkte7yadq",
         "ppl_mt4eapktxoevr6",
         "ppl_mt4eapkt52phy0"
       ],
-      "slug": "dom-ru"
+      "slug": "dom-ru",
+      "projectKey": "DOMR"
     },
     {
       "id": "prj_mt4eapkt5f607o",
@@ -215,11 +215,11 @@ module.exports = {
       "name": "Дневник Новости",
       "description": "",
       "status": "active",
-      "color": "#26B5CE",
       "memberIds": [
         "ppl_mt4eapkt60st2u"
       ],
-      "slug": "dnevnik-novosti"
+      "slug": "dnevnik-novosti",
+      "projectKey": "DNEV"
     },
     {
       "id": "prj_mt4eapktk0veg6",
@@ -228,11 +228,11 @@ module.exports = {
       "name": "Дневник Алиса",
       "description": "",
       "status": "active",
-      "color": "#4CB782",
       "memberIds": [
         "ppl_mt4eapkt52phy0"
       ],
-      "slug": "dnevnik-alisa"
+      "slug": "dnevnik-alisa",
+      "projectKey": "DNE2"
     },
     {
       "id": "prj_mt4eapktzo9n48",
@@ -241,11 +241,11 @@ module.exports = {
       "name": "ATOM",
       "description": "",
       "status": "active",
-      "color": "#F2994A",
       "memberIds": [
         "ppl_mt4eapks4byj7z"
       ],
-      "slug": "atom"
+      "slug": "atom",
+      "projectKey": "ATOM"
     },
     {
       "id": "prj_mt4eapktgtg7lv",
@@ -254,7 +254,6 @@ module.exports = {
       "name": "AI Tools",
       "description": "Сервис представляет собой read-only читалку вики поверх git. Администратор подключает GitLab-репозиторий по ссылке, приложение находит в нём папку forge-wiki/ и показывает её как обычную вики: оглавление, разделы, красиво отрендеренный markdown. Контент не редактируется в приложении — он приходит из репозитория и обновляется сам, когда там появляются новые коммиты.\r\n\r\nКак работает система:\r\n1. Есть набор документов (бриф, описание проекта и др.).\r\n2. AI анализирует их.\r\n3. Формируются стандартные функциональные требования.\r\n4. После проверки требований AI генерирует код.\r\n5. Wiki красиво отображает документацию и связывает документы между собой.\r\n6. Документ нельзя редактировать, но можно оставлять комментарии, лайки и апрувы.\r\n\r\nЧто именно нужно будет сделать:\r\n- Развернуть проект локально.\r\n- Изучить Wiki и существующую документацию.\r\n- Разобраться в текущем пайплайне (какой этап за чем идет)\r\n- Проверить, как работает текущий рендер Markdown.\r\n- Найти проблемы и неудобства.\r\n- Подготовить список улучшений с оценкой сложности.\r\n- При возможности реализовать небольшие улучшения c помощью вайбкодинга.",
       "status": "active",
-      "color": "#EB5757",
       "memberIds": [
         "ppl_mt4eapkte7yadq",
         "ppl_mt4eapkt60st2u",
@@ -262,7 +261,7 @@ module.exports = {
         "ppl_mt4eapkt52phy0"
       ],
       "slug": "ai-tools",
-      "taskCode": "AITO"
+      "projectKey": "AITO"
     }
   ],
   "labs": [],
@@ -279,7 +278,8 @@ module.exports = {
       ],
       "status": "in_progress",
       "priority": "normal",
-      "dueDate": null
+      "dueDate": null,
+      "taskKey": "DOMR-0001"
     },
     {
       "id": "tsk_mt4eapkt3aqtng",
@@ -293,7 +293,8 @@ module.exports = {
       ],
       "status": "paused",
       "priority": "normal",
-      "dueDate": null
+      "dueDate": null,
+      "taskKey": "DOMR-0002"
     },
     {
       "id": "tsk_mt4eapktpaxpvy",
@@ -307,7 +308,8 @@ module.exports = {
       ],
       "status": "in_progress",
       "priority": "normal",
-      "dueDate": "2026-10-01"
+      "dueDate": "2026-10-01",
+      "taskKey": "DNEV-0001"
     },
     {
       "id": "tsk_mt4eapktqkpbgj",
@@ -321,7 +323,8 @@ module.exports = {
       ],
       "status": "paused",
       "priority": "normal",
-      "dueDate": null
+      "dueDate": null,
+      "taskKey": "DNE2-0001"
     },
     {
       "id": "tsk_mt4eapktiudzbr",
@@ -335,7 +338,8 @@ module.exports = {
       ],
       "status": "paused",
       "priority": "normal",
-      "dueDate": null
+      "dueDate": null,
+      "taskKey": "DOMR-0003"
     },
     {
       "id": "tsk_mt4eapkt3pyj1c",
@@ -349,7 +353,8 @@ module.exports = {
       ],
       "status": "blocked",
       "priority": "normal",
-      "dueDate": "2026-08-07"
+      "dueDate": "2026-08-07",
+      "taskKey": "GARDEN-0001"
     },
     {
       "id": "tsk_mt4eapkuknf6ai",
@@ -364,7 +369,8 @@ module.exports = {
       "status": "done",
       "priority": "normal",
       "dueDate": "2026-08-07",
-      "completedAt": "2026-08-22T13:09:36.894Z"
+      "completedAt": "2026-08-22T13:09:36.894Z",
+      "taskKey": "GARDEN-0002"
     },
     {
       "id": "tsk_mt4eapkul3gpyd",
@@ -379,7 +385,8 @@ module.exports = {
       "status": "done",
       "priority": "normal",
       "dueDate": null,
-      "completedAt": "2026-08-22T13:09:36.894Z"
+      "completedAt": "2026-08-22T13:09:36.894Z",
+      "taskKey": "GARDEN-0003"
     },
     {
       "id": "tsk_mt4eapkuk5qaq9",
@@ -393,7 +400,8 @@ module.exports = {
       ],
       "status": "in_progress",
       "priority": "normal",
-      "dueDate": "2026-08-31"
+      "dueDate": "2026-08-31",
+      "taskKey": "AITO-0001"
     },
     {
       "id": "tsk_mt4eapku4gixum",
@@ -407,7 +415,8 @@ module.exports = {
       ],
       "status": "in_progress",
       "priority": "normal",
-      "dueDate": null
+      "dueDate": null,
+      "taskKey": "ATOM-0001"
     },
     {
       "id": "tsk_mt4eapkuki0pl2",
@@ -421,7 +430,8 @@ module.exports = {
       ],
       "status": "todo",
       "priority": "normal",
-      "dueDate": null
+      "dueDate": null,
+      "taskKey": "GARDEN-0004"
     },
     {
       "id": "tsk_mt4eapku1gh87n",
@@ -435,7 +445,8 @@ module.exports = {
       ],
       "status": "in_progress",
       "priority": "normal",
-      "dueDate": null
+      "dueDate": null,
+      "taskKey": "AITO-0002"
     },
     {
       "id": "tsk_mt4eapkuqmv2ml",
@@ -449,7 +460,8 @@ module.exports = {
       ],
       "status": "in_progress",
       "priority": "normal",
-      "dueDate": null
+      "dueDate": null,
+      "taskKey": "DNE2-0002"
     },
     {
       "id": "tsk_mt4eapkucxjlhf",
@@ -464,7 +476,8 @@ module.exports = {
       "status": "todo",
       "priority": "normal",
       "dueDate": null,
-      "goalId": "gl_mt4eapktfca7un"
+      "goalKey": "GOAL-0002",
+      "taskKey": "GARDEN-0005"
     },
     {
       "id": "tsk_mt4eapkuqd4cfh",
@@ -479,7 +492,8 @@ module.exports = {
       "status": "todo",
       "priority": "normal",
       "dueDate": null,
-      "goalId": "gl_mt4eapktfca7un"
+      "goalKey": "GOAL-0002",
+      "taskKey": "GARDEN-0006"
     },
     {
       "id": "tsk_mt4eapku45rkpq",
@@ -494,7 +508,8 @@ module.exports = {
       "status": "todo",
       "priority": "normal",
       "dueDate": null,
-      "goalId": "gl_mt4eapktfca7un"
+      "goalKey": "GOAL-0002",
+      "taskKey": "GARDEN-0007"
     },
     {
       "id": "tsk_mt4eapkubfhjvj",
@@ -508,7 +523,8 @@ module.exports = {
       ],
       "status": "in_progress",
       "priority": "normal",
-      "dueDate": null
+      "dueDate": null,
+      "taskKey": "GARDEN-0008"
     },
     {
       "id": "tsk_mt4eapkuvjdx5t",
@@ -522,7 +538,8 @@ module.exports = {
       ],
       "status": "in_progress",
       "priority": "normal",
-      "dueDate": null
+      "dueDate": null,
+      "taskKey": "GARDEN-0009"
     }
   ],
   "issues": [
@@ -542,7 +559,8 @@ module.exports = {
       ],
       "severity": "high",
       "status": "open",
-      "solutionOptions": []
+      "solutionOptions": [],
+      "issueKey": "ISSUE-0001"
     },
     {
       "id": "iss_mt4eapkutqvtz7",
@@ -556,7 +574,8 @@ module.exports = {
       ],
       "severity": "high",
       "status": "resolved",
-      "solutionOptions": []
+      "solutionOptions": [],
+      "issueKey": "ISSUE-0002"
     },
     {
       "id": "iss_mt4eapku406oxa",
@@ -570,7 +589,8 @@ module.exports = {
       ],
       "severity": "normal",
       "status": "resolved",
-      "solutionOptions": []
+      "solutionOptions": [],
+      "issueKey": "ISSUE-0003"
     },
     {
       "id": "iss_mt4eapkudgrrbd",
@@ -587,7 +607,8 @@ module.exports = {
       "severity": "normal",
       "status": "open",
       "solutionOptions": [],
-      "goalId": "gl_mt4eapktfca7un"
+      "goalKey": "GOAL-0002",
+      "issueKey": "ISSUE-0004"
     }
   ],
   "meetings": [
@@ -604,7 +625,8 @@ module.exports = {
       "projectId": null,
       "notes": "Самооценка сотрудника: Беспокоит непрозрачность процессов и отсутствие плановых повышений. Также беспокоит то, что из-за задач аналитики в ближайшие полтора года не сможет заниматься CUI / AI.",
       "actionItems": [],
-      "nextSteps": ""
+      "nextSteps": "",
+      "meetingKey": "MEET-0001"
     },
     {
       "id": "mtg_mt4eapkvyznaco",
@@ -619,7 +641,8 @@ module.exports = {
       "projectId": null,
       "notes": "Обсудили: Маша активно использует Codex для анализа логов на Дом.ру. Это потребляет много токенов, но работает эффективнее, чем в Claude. Т.к. AI алгоритмизирует поиск, можно попробовать вынести часть анализа в скрипт (дубликаты, точное совпадение и т.д.).",
       "actionItems": [],
-      "nextSteps": ""
+      "nextSteps": "",
+      "meetingKey": "MEET-0002"
     },
     {
       "id": "mtg_mt4eapkvsvwf2t",
@@ -634,7 +657,8 @@ module.exports = {
       "projectId": null,
       "notes": "Обсудили: Текущие проекты, скиллсет. Настя недавно вышла из отпуска.\r\nДом.ру - работа не торопясь.\r\nСмотрит курс Яндекса по системной аналитике.\n\nПроблемы: Неоднозначные ощущения от трансформации из-за неопределенности и отсутствия часов. Волнует вопрос нагрузки. Пока не понимает, чем мы будем заниматься.\r\n\r\nЕсть подвешенное состояние, что к нам придут и скажут, что всё сворачивается.",
       "actionItems": [],
-      "nextSteps": ""
+      "nextSteps": "",
+      "meetingKey": "MEET-0003"
     },
     {
       "id": "mtg_mt4eapkvfnve3j",
@@ -649,7 +673,8 @@ module.exports = {
       "projectId": null,
       "notes": "",
       "actionItems": [],
-      "nextSteps": ""
+      "nextSteps": "",
+      "meetingKey": "MEET-0004"
     },
     {
       "id": "mtg_mt4eapkv7a2oe8",
@@ -664,7 +689,8 @@ module.exports = {
       "projectId": null,
       "notes": "",
       "actionItems": [],
-      "nextSteps": ""
+      "nextSteps": "",
+      "meetingKey": "MEET-0005"
     },
     {
       "id": "mtg_mt4eapkvhc5w6s",
@@ -679,7 +705,8 @@ module.exports = {
       "projectId": null,
       "notes": "",
       "actionItems": [],
-      "nextSteps": ""
+      "nextSteps": "",
+      "meetingKey": "MEET-0006"
     },
     {
       "id": "mtg_mt4eapkvmvul86",
@@ -694,7 +721,8 @@ module.exports = {
       "projectId": null,
       "notes": "Обсудили: Фидбек хороший. Коллеги отмечают проактивность и вовлеченность\n\nПроблемы: Виктор отмечает оверинжениринг на проекте",
       "actionItems": [],
-      "nextSteps": ""
+      "nextSteps": "",
+      "meetingKey": "MEET-0007"
     },
     {
       "id": "mtg_mt4eapkvcdrti0",
@@ -709,7 +737,8 @@ module.exports = {
       "projectId": null,
       "notes": "",
       "actionItems": [],
-      "nextSteps": ""
+      "nextSteps": "",
+      "meetingKey": "MEET-0008"
     },
     {
       "id": "mtg_mt4eapkvzyvy6e",
@@ -724,7 +753,8 @@ module.exports = {
       "projectId": null,
       "notes": "Обсудили: Текущие проекты, перспективы роста в PM / аналитика\n\nПроблемы: Нет проекта по аналитике",
       "actionItems": [],
-      "nextSteps": "Планирует развиваться как системный аналитик, но опасается, что из-за этого больше не будет задач по CUI / AI"
+      "nextSteps": "Планирует развиваться как системный аналитик, но опасается, что из-за этого больше не будет задач по CUI / AI",
+      "meetingKey": "MEET-0009"
     },
     {
       "id": "mtg_mt4eapkwqnvd3a",
@@ -739,7 +769,8 @@ module.exports = {
       "projectId": null,
       "notes": "Саммари: https://docs.google.com/document/d/1iRRDfpv5Pem4hhKyUKjx9yxSB8hTvzG17dkYg8M1-mk/edit?usp=drive_link",
       "actionItems": [],
-      "nextSteps": ""
+      "nextSteps": "",
+      "meetingKey": "MEET-0010"
     },
     {
       "id": "mtg_mt4eapm42j4gli",
@@ -759,7 +790,8 @@ module.exports = {
       "actionItems": [],
       "autoRecurring": true,
       "recurringPersonId": "ppl_mt4eapks4byj7z",
-      "recurringEveryMonths": 1
+      "recurringEveryMonths": 1,
+      "meetingKey": "MEET-0011"
     },
     {
       "id": "mtg_mt4eapm4cstfep",
@@ -779,7 +811,8 @@ module.exports = {
       "actionItems": [],
       "autoRecurring": true,
       "recurringPersonId": "ppl_mt4eapkte7yadq",
-      "recurringEveryMonths": 1
+      "recurringEveryMonths": 1,
+      "meetingKey": "MEET-0012"
     },
     {
       "id": "mtg_mt4eapm4rc9suf",
@@ -799,7 +832,8 @@ module.exports = {
       "actionItems": [],
       "autoRecurring": true,
       "recurringPersonId": "ppl_mt4eapkt52phy0",
-      "recurringEveryMonths": 1
+      "recurringEveryMonths": 1,
+      "meetingKey": "MEET-0013"
     },
     {
       "id": "mtg_mt4eapm5ecg83y",
@@ -819,7 +853,8 @@ module.exports = {
       "actionItems": [],
       "autoRecurring": true,
       "recurringPersonId": "ppl_mt4eapktxoevr6",
-      "recurringEveryMonths": 1
+      "recurringEveryMonths": 1,
+      "meetingKey": "MEET-0014"
     },
     {
       "id": "mtg_mt4eapm5773k1t",
@@ -839,7 +874,8 @@ module.exports = {
       "actionItems": [],
       "autoRecurring": true,
       "recurringPersonId": "ppl_mt4eapkt60st2u",
-      "recurringEveryMonths": 1
+      "recurringEveryMonths": 1,
+      "meetingKey": "MEET-0015"
     },
     {
       "id": "mtg_mt4eapm6pl58n1",
@@ -859,7 +895,8 @@ module.exports = {
       "actionItems": [],
       "autoRecurring": true,
       "recurringPersonId": "ppl_mt4eapkt60st2u",
-      "recurringEveryMonths": 3
+      "recurringEveryMonths": 3,
+      "meetingKey": "MEET-0016"
     }
   ],
   "journal": [
@@ -867,7 +904,6 @@ module.exports = {
       "id": "jrn_mt4eapkvojiifi",
       "createdAt": "2026-08-17T16:01:27.000Z",
       "updatedAt": "2026-08-22T13:09:36.936Z",
-      "kind": "note",
       "text": "@[Юлия Мицкевич](stakeholder:ppl_mt4eapktvnymqr) не отвечает на длинные сообщения",
       "mentions": [
         {
@@ -875,43 +911,21 @@ module.exports = {
           "type": "stakeholder",
           "id": "ppl_mt4eapktvnymqr"
         }
-      ]
-    },
-    {
-      "id": "jrn_mt4eapkv5oi6zk",
-      "createdAt": "2026-08-17T16:40:42.000Z",
-      "updatedAt": "2026-08-22T13:09:36.936Z",
-      "kind": "idea",
-      "text": "Дать @[Александра Крафт](stakeholder:ppl_mt4eapktp0zy86) фидбек на симулятор аналитики и рассказать о нашем скилле",
-      "mentions": [
-        {
-          "label": "Александра Крафт",
-          "type": "stakeholder",
-          "id": "ppl_mt4eapktp0zy86"
-        }
-      ]
+      ],
+      "noteKey": "NOTE-0001"
     },
     {
       "id": "jrn_mt4eapkvsc5gyp",
       "createdAt": "2026-08-17T17:35:45.000Z",
       "updatedAt": "2026-08-22T13:09:36.936Z",
-      "kind": "note",
       "text": "На проект MAPS.ME требуется PM",
-      "mentions": []
-    },
-    {
-      "id": "jrn_mt4eapkvjr0fe3",
-      "createdAt": "2026-08-17T22:31:06.000Z",
-      "updatedAt": "2026-08-22T13:09:36.936Z",
-      "kind": "idea",
-      "text": "Рассказать о проекте на DemoDay",
-      "mentions": []
+      "mentions": [],
+      "noteKey": "NOTE-0002"
     },
     {
       "id": "jrn_mt4eapkvkbl0xz",
       "createdAt": "2026-08-18T13:33:46.000Z",
       "updatedAt": "2026-08-22T13:09:36.936Z",
-      "kind": "note",
       "text": "@[Евгений Девяткин](stakeholder:ppl_mt4eapkts43hfy) может взять одного менти",
       "mentions": [
         {
@@ -919,13 +933,13 @@ module.exports = {
           "type": "stakeholder",
           "id": "ppl_mt4eapkts43hfy"
         }
-      ]
+      ],
+      "noteKey": "NOTE-0003"
     },
     {
       "id": "jrn_mt4eapkv2getfz",
       "createdAt": "2026-08-19T08:58:17.000Z",
       "updatedAt": "2026-08-22T13:09:36.936Z",
-      "kind": "note",
       "text": "@[Полина Майорова](stakeholder:ppl_mt4eapkti9nhwi) может взять @[Мария Зубарева](person:ppl_mt4eapktxoevr6) в качестве менти",
       "mentions": [
         {
@@ -938,13 +952,13 @@ module.exports = {
           "type": "person",
           "id": "ppl_mt4eapktxoevr6"
         }
-      ]
+      ],
+      "noteKey": "NOTE-0004"
     },
     {
       "id": "jrn_mt4eapkvuetbzp",
       "createdAt": "2026-08-04T09:00:00.000Z",
       "updatedAt": "2026-08-22T13:09:36.936Z",
-      "kind": "note",
       "text": "Андрей уходит с проекта (проект: @[Дом.ру](project:prj_mt4eapkt21olrf))",
       "mentions": [
         {
@@ -952,13 +966,13 @@ module.exports = {
           "type": "project",
           "id": "prj_mt4eapkt21olrf"
         }
-      ]
+      ],
+      "noteKey": "NOTE-0005"
     },
     {
       "id": "jrn_mt4eapkvwcnbu3",
       "createdAt": "2026-08-14T09:00:00.000Z",
       "updatedAt": "2026-08-22T13:09:36.936Z",
-      "kind": "note",
       "text": "Старт работ (проект: @[AI Tools](project:prj_mt4eapktgtg7lv))",
       "mentions": [
         {
@@ -966,13 +980,13 @@ module.exports = {
           "type": "project",
           "id": "prj_mt4eapktgtg7lv"
         }
-      ]
+      ],
+      "noteKey": "NOTE-0006"
     },
     {
       "id": "jrn_mt4eapkvleppwl",
       "createdAt": "2026-08-10T09:00:00.000Z",
       "updatedAt": "2026-08-22T13:09:36.936Z",
-      "kind": "note",
       "text": "Старт работ (проект: @[AI Tools](project:prj_mt4eapktgtg7lv))",
       "mentions": [
         {
@@ -980,7 +994,8 @@ module.exports = {
           "type": "project",
           "id": "prj_mt4eapktgtg7lv"
         }
-      ]
+      ],
+      "noteKey": "NOTE-0007"
     }
   ],
   "goals": [
@@ -990,11 +1005,9 @@ module.exports = {
       "updatedAt": "2026-08-22T13:09:36.939Z",
       "title": "Выйти на уровень Junior+",
       "description": "",
-      "timeframe": "до 1 февраля 2027",
       "status": "active",
-      "progress": 0,
-      "projectIds": [],
-      "slug": "vyyti-na-uroven-junior"
+      "goalKey": "GOAL-0001",
+      "dueDate": "2027-02-01"
     },
     {
       "id": "gl_mt4eapktfca7un",
@@ -1002,11 +1015,9 @@ module.exports = {
       "updatedAt": "2026-08-22T13:09:36.939Z",
       "title": "Обеспечить всю команду проектами по аналитике",
       "description": "",
-      "timeframe": "до 1 октября 2026",
       "status": "active",
-      "progress": 0,
-      "projectIds": [],
-      "slug": "obespechit-vsyu-komandu-proektami-po-analitike"
+      "goalKey": "GOAL-0002",
+      "dueDate": "2026-10-01"
     }
   ],
   "agreements": [],

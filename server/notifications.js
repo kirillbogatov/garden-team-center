@@ -104,7 +104,7 @@ function notifyProjectLoadChanges(db, actor, before, after) {
       eventType: EVENT_TYPES.PROJECT_LOAD_CHANGED,
       title: 'Изменилась загрузка на проекте',
       body: `${after.name || 'Проект'} · ${loadLabel(afterLoads[personId])}`,
-      route: `/projects/${encodeURIComponent(after.slug || after.id)}`,
+      route: `/projects/${encodeURIComponent(after.projectKey || after.id)}`,
       dedupeKey: `project-load:${after.id}:${personId}:${after.updatedAt || Date.now()}`,
     });
   });
@@ -127,7 +127,7 @@ function notifyIssueCreated(db, actor, issue) {
     eventType: EVENT_TYPES.ISSUE_CREATED,
     title: 'Новая проблема от сотрудника',
     body: issue.title || issue.name || issue.description || 'Сотрудник добавил новую проблему',
-    route: '/issues',
+    route: `/issues/${encodeURIComponent(issue.issueKey || issue.id)}`,
     dedupeKey: `issue-created:${issue.id}:${recipient.id}`,
   });
 }
@@ -139,9 +139,9 @@ function notifyLabCreated(db, actor, lab) {
   const isIdea = lab.entityType === 'idea';
   return createNotification(db, recipient.id, {
     eventType: EVENT_TYPES.LAB_CREATED,
-    title: isIdea ? 'Новая идея The Labs' : 'Новый проект The Labs',
-    body: lab.title || lab.description || (isIdea ? 'Сотрудник добавил новую идею' : 'Сотрудник создал новый проект The Labs'),
-    route: isIdea ? '/labs?tab=ideas' : `/labs/${encodeURIComponent(lab.labKey || lab.id)}`,
+    title: isIdea ? 'Новая идея' : 'Новый проект Мастерской',
+    body: lab.title || lab.description || (isIdea ? 'Сотрудник добавил новую идею' : 'Сотрудник создал новый проект Мастерской'),
+    route: isIdea ? '/ideas' : `/workshop/${encodeURIComponent(lab.blueprintKey || lab.id)}`,
     dedupeKey: `lab-created:${lab.id}:${recipient.id}`,
   });
 }
@@ -170,8 +170,8 @@ function ensureCheckinReminder(db, user, now = new Date()) {
   return db.notifications.create(user.id, {
     eventType: EVENT_TYPES.CHECKIN_REMINDER,
     title: 'Пора провести чек-ап',
-    body: 'В понедельник Check-in не был заполнен. Заполните его сегодня.',
-    route: '/checkins',
+    body: 'Weekly за эту неделю ещё не заполнен. Добавьте статус команды.',
+    route: '/weekly',
     dedupeKey: `checkin-reminder:${weekStart}:${user.id}`,
   });
 }

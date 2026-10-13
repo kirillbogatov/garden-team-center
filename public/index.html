@@ -1,82 +1,18 @@
 <!doctype html>
 <html lang="ru">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Garden</title>
-<script src="/js/domain/appearance-config.js"></script>
-<script>
-  // Применяем сохранённое оформление до первого рендера, чтобы не было FOUC.
-  try {
-    const cfg = GardenAppearance;
-    let savedTheme = localStorage.getItem('garden-theme') || cfg.defaultTheme;
-    if (!cfg.themeValues.includes(savedTheme)) savedTheme = cfg.defaultTheme;
-    localStorage.setItem('garden-theme', savedTheme);
-    document.documentElement.classList.add(`theme-${savedTheme}`);
-    if (cfg.themeModes[savedTheme] === 'dark') document.documentElement.classList.add('theme-dark');
-    if (cfg.accentThemes.includes(savedTheme)) {
-      let savedAccent = localStorage.getItem('garden-accent');
-      if (!cfg.accentValues.includes(savedAccent)) savedAccent = cfg.defaultAccent;
-      localStorage.setItem('garden-accent', savedAccent);
-      document.documentElement.classList.add(`accent-${savedAccent}`);
-    }
-    if (cfg.themeModes[savedTheme] === 'dark' && localStorage.getItem('garden-glow') === '1') document.documentElement.classList.add('glow-enabled');
-  } catch (e) {}
-</script>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700&display=swap" />
-<link rel="stylesheet" href="/css/style.css" />
-<link rel="stylesheet" href="/css/detail-page.css" />
-<link rel="stylesheet" href="/css/focus-labs.css" />
-<link rel="stylesheet" href="/css/system.css" />
-</head>
-<body>
-<a class="skip-link" href="#main">Перейти к содержимому</a>
-<div id="auth-root" class="auth-root"></div>
-<div id="app">
-  <button type="button" class="nav-backdrop" id="nav-backdrop" hidden aria-label="Закрыть меню" data-close-mobile-nav></button>
-  <aside class="sidebar" id="sidebar" aria-label="Боковое меню"></aside>
-  <main class="main" id="main" tabindex="-1">
-    <div class="app-header" id="app-header"></div>
-    <div class="topbar" id="topbar"></div>
-    <div class="view" id="view"></div>
-  </main>
-</div>
-
-<div id="modal-root"></div>
-<div id="toast-wrap" class="toast-wrap"></div>
-
-<script src="/js/lib/icons.js"></script>
-<script src="/js/domain/constants.js"></script>
-<script src="/js/domain/smart-search-ui-config.js"></script>
-<script src="/js/lib/util.js"></script>
-<script src="/js/lib/tabular-export.js"></script>
-<script src="/js/lib/api.js"></script>
-<script src="/js/lib/state.js"></script>
-<script src="/js/lib/services.js"></script>
-<script src="/js/lib/relations.js"></script>
-<script src="/js/lib/entity-ui.js"></script>
-<script src="/js/lib/modal.js"></script>
-<script src="/js/lib/ui-helpers.js"></script>
-<script src="/js/lib/components.js"></script>
-<script src="/js/lib/comments.js"></script>
-<script src="/js/lib/version-history.js"></script>
-<script src="/js/lib/detail-page.js"></script>
-<script src="/js/lib/entity-form.js"></script>
-<script src="/js/lib/resource-form.js"></script>
-<script src="/js/lib/resource-folders.js"></script>
-<script src="/js/lib/mentions.js"></script>
-<script src="/js/domain/project-load.js"></script>
-<script src="/js/domain/meeting.js"></script>
-<script src="/js/domain/goal-tree.js"></script>
-<script src="/js/domain/entity-renderers.js"></script>
-
-<script src="/js/lib/view-loader.js"></script>
-<script src="/js/lib/auth.js"></script>
-<script src="/js/app.js"></script>
-<script src="/js/lib/router.js"></script>
-<script src="/js/lib/interactions.js"></script>
-<script src="/js/bootstrap.js"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f7f7f5" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <title>Garden</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script type="module" crossorigin src="/assets/index-CsYosqKN.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-Cg8zmEAU.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
 </html>

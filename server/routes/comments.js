@@ -1,6 +1,6 @@
 'use strict';
 
-module.exports = function registerCommentRoutes(app, { db, canReadItem, denied, isAdmin }) {
+module.exports = function registerCommentRoutes(app, { db, canReadItem, denied, isAdmin, resolveEntity: resolvePublicEntity }) {
   const entityConfig = {
     task: { collection: 'tasks' },
     // A separate discussion thread on the same task ("Комментарии", like The
@@ -11,13 +11,14 @@ module.exports = function registerCommentRoutes(app, { db, canReadItem, denied, 
     meeting: { collection: 'meetings' },
     project: { collection: 'projects' },
     person: { collection: 'people' },
+    goal: { collection: 'goals' },
     lab: { collection: 'labs', validate: (item) => item && item.entityType !== 'idea' },
     overview: { synthetic: true },
   };
 
   // These entity types use "comments" as sticky notes (color, free editing)
   // rather than a plain discussion thread — see noteEntity/patch.color below.
-  const STICKY_ENTITY_TYPES = ['overview', 'task', 'meeting', 'project', 'person'];
+  const STICKY_ENTITY_TYPES = ['overview', 'task', 'meeting', 'project', 'person', 'lab', 'goal'];
   const STICKY_COLORS = new Set(['yellow', 'pink', 'blue', 'green']);
   const isStickyEntity = (entityType) => STICKY_ENTITY_TYPES.includes(entityType);
   const sanitizeStickyColor = (candidate) => (STICKY_COLORS.has(String(candidate || '')) ? String(candidate) : null);
@@ -29,7 +30,7 @@ module.exports = function registerCommentRoutes(app, { db, canReadItem, denied, 
       if (type !== 'overview' || String(id) !== 'main') return null;
       return { config, item: { id: 'main' } };
     }
-    const item = db[config.collection].get(id);
+    const item = typeof resolvePublicEntity === 'function' ? resolvePublicEntity(config.collection, id) : db[config.collection].get(id);
     if (!item || (config.validate && !config.validate(item))) return null;
     return { config, item };
   }

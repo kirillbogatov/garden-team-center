@@ -108,12 +108,22 @@ test('natural-language search covers processes and check-ins', () => {
   assert.ok(checkins.groups.checkins.every((checkin) => String(checkin.blockers || '').trim()));
 });
 
-test('ideas are searched in The Labs rather than legacy journal ideas', () => {
+test('ideas stay in their own search scope rather than the Мастерская project scope', () => {
   const result = search('идеи');
   assert.equal(result.command.group, 'labs');
   assert.ok(result.groups.labs.every((item) => item.entityType === 'idea'));
 });
 
+
+
+test('Мастерская is a searchable project scope under the new name', () => {
+  for (const query of ['мастерская', 'мастерскую', 'проекты мастерской']) {
+    const result = search(query);
+    assert.equal(result.command.group, 'labs', query);
+    assert.equal(result.nlu.filters.labEntityType, 'project', query);
+    assert.ok(result.groups.labs.every((item) => item.entityType !== 'idea'), query);
+  }
+});
 test('@ references are semantic filters for people and projects, not only UI substitutions', () => {
   const byPerson = search('задачи @Дуайт Шрут');
   assert.equal(byPerson.command.group, 'tasks');
@@ -171,7 +181,7 @@ test('"мои записи журнала" returns the whole personal journal, n
   assert.equal(result.command.group, 'journal');
   assert.equal(result.command.selfRequested, true);
   assert.equal(result.command.person.id, 'ppl_demo_michael');
-  assert.equal(result.groups.journal.length, demo.journal.filter((entry) => !entry.kind || entry.kind === 'note').length);
+  assert.equal(result.groups.journal.length, demo.journal.length);
 });
 
 test('"мои заметки" uses the same personal-journal semantics', () => {
@@ -179,7 +189,7 @@ test('"мои заметки" uses the same personal-journal semantics', () => {
   assert.equal(result.command.group, 'journal');
   assert.equal(result.command.selfRequested, true);
   assert.ok(result.groups.journal.length > 0);
-  assert.ok(result.groups.journal.every((entry) => !entry.kind || entry.kind === 'note'));
+  assert.ok(result.groups.journal.every((entry) => !Object.hasOwn(entry, 'kind')));
 });
 
 test('development task wording filters by taskType instead of matching title text', () => {
@@ -596,4 +606,13 @@ test('«документы со встреч» includes explicit attachments and
   assert.equal(result.command.textRemainder, '');
   assert.ok(result.groups.links.some((link) => link.sourceId === 'mtg_docs_explicit_plural' && link.title === 'План'));
   assert.ok(result.groups.links.some((link) => link.sourceId === 'mtg_docs_notes_plural' && link.title === 'Саммари'));
+});
+
+
+test('natural-language search treats "важные проблемы" as high-importance issues', () => {
+  const result = search('важные проблемы');
+  assert.equal(result.command.group, 'issues');
+  assert.ok(result.command.modifiers.includes('important'));
+  assert.ok(result.groups.issues.length > 0);
+  assert.ok(result.groups.issues.every((issue) => issue.severity === 'high'));
 });

@@ -275,7 +275,6 @@ module.exports = {
       "name": "Скрэнтон Q3",
       "description": "Продажи и операционная эффективность филиала Скрэнтона.",
       "status": "active",
-      "color": "#5E6AD2",
       "memberIds": [
         "ppl_demo_michael",
         "ppl_demo_dwight",
@@ -283,47 +282,48 @@ module.exports = {
         "ppl_demo_stanley",
         "ppl_demo_phyllis"
       ],
-      "slug": "scranton-q3"
+      "slug": "scranton-q3",
+      "projectKey": "SKRE"
     },
     {
       "id": "prj_demo_sabre",
       "name": "Sabre",
       "description": "Переход филиала на новые принтеры и процессы Sabre.",
       "status": "active",
-      "color": "#26B5CE",
       "memberIds": [
         "ppl_demo_pam",
         "ppl_demo_dwight",
         "ppl_demo_oscar",
         "ppl_demo_kevin"
       ],
-      "slug": "sabre-rollout"
+      "slug": "sabre-rollout",
+      "projectKey": "SABR"
     },
     {
       "id": "prj_demo_dundies",
       "name": "Данди 2026",
       "description": "Ежегодная церемония признания команды. Бюджет держим под контролем.",
       "status": "active",
-      "color": "#D9A441",
       "memberIds": [
         "ppl_demo_michael",
         "ppl_demo_pam",
         "ppl_demo_angela"
       ],
-      "slug": "dundies-2026"
+      "slug": "dundies-2026",
+      "projectKey": "DAND"
     },
     {
       "id": "prj_demo_infinity",
       "name": "Infinity",
       "description": "Обновление онлайн-канала продаж — без второго запуска сайта в ту же ночь.",
       "status": "active",
-      "color": "#4CB782",
       "memberIds": [
         "ppl_demo_ryan",
         "ppl_demo_jim",
         "ppl_demo_kelly"
       ],
-      "slug": "dunder-mifflin-infinity"
+      "slug": "dunder-mifflin-infinity",
+      "projectKey": "INFI"
     }
   ],
   "goals": [
@@ -331,35 +331,25 @@ module.exports = {
       "id": "gl_demo_bestbranch",
       "title": "Сделать Скрэнтон филиалом №1",
       "description": "Рост выручки без потери качества отношений с клиентами.",
-      "timeframe": "до конца 4 квартал 2026",
       "status": "active",
-      "progress": 68,
-      "projectIds": [
-        "prj_demo_scranton"
-      ],
-      "slug": "best-branch"
+      "goalKey": "GOAL-0001",
+      "dueDate": "2026-12-31"
     },
     {
       "id": "gl_demo_meetings",
       "title": "Сократить время на бесполезные встречи",
       "description": "Сохранять встречи, которые помогают работе, и заканчивать их вовремя.",
-      "timeframe": "до 31 декабря 2026",
       "status": "active",
-      "progress": 34,
-      "projectIds": [],
-      "slug": "fewer-meetings"
+      "goalKey": "GOAL-0002",
+      "dueDate": "2026-12-31"
     },
     {
       "id": "gl_demo_digital",
       "title": "Увеличить долю онлайн-продаж",
       "description": "Перевести повторные заказы в удобный цифровой канал.",
-      "timeframe": "1 квартал 2027",
       "status": "active",
-      "progress": 46,
-      "projectIds": [
-        "prj_demo_infinity"
-      ],
-      "slug": "digital-sales"
+      "goalKey": "GOAL-0003",
+      "dueDate": "2027-03-31"
     }
   ],
   "tasks": [
@@ -375,7 +365,8 @@ module.exports = {
       "status": "in_progress",
       "priority": "high",
       "dueDate": "2026-08-27",
-      "goalId": "gl_demo_bestbranch"
+      "goalKey": "GOAL-0001",
+      "taskKey": "SKRE-0001"
     },
     {
       "id": "tsk_demo_client",
@@ -389,7 +380,8 @@ module.exports = {
       "status": "in_review",
       "priority": "high",
       "dueDate": "2026-08-28",
-      "goalId": "gl_demo_bestbranch"
+      "goalKey": "GOAL-0001",
+      "taskKey": "SKRE-0002"
     },
     {
       "id": "tsk_demo_dundies_design",
@@ -402,7 +394,8 @@ module.exports = {
       ],
       "status": "in_progress",
       "priority": "normal",
-      "dueDate": "2026-09-02"
+      "dueDate": "2026-09-02",
+      "taskKey": "DAND-0001"
     },
     {
       "id": "tsk_demo_budget",
@@ -414,7 +407,8 @@ module.exports = {
       ],
       "status": "todo",
       "priority": "high",
-      "dueDate": "2026-08-31"
+      "dueDate": "2026-08-31",
+      "taskKey": "DAND-0002"
     },
     {
       "id": "tsk_demo_printer",
@@ -426,7 +420,8 @@ module.exports = {
       ],
       "status": "todo",
       "priority": "normal",
-      "dueDate": "2026-09-04"
+      "dueDate": "2026-09-04",
+      "taskKey": "SABR-0001"
     },
     {
       "id": "tsk_demo_chili",
@@ -438,7 +433,8 @@ module.exports = {
       ],
       "status": "paused",
       "priority": "normal",
-      "dueDate": null
+      "dueDate": null,
+      "taskKey": "GARDEN-0001"
     },
     {
       "id": "tsk_demo_digital",
@@ -451,7 +447,8 @@ module.exports = {
       "status": "in_progress",
       "priority": "high",
       "dueDate": "2026-09-08",
-      "goalId": "gl_demo_digital"
+      "goalKey": "GOAL-0003",
+      "taskKey": "INFI-0001"
     },
     {
       "id": "tsk_demo_customer",
@@ -464,7 +461,8 @@ module.exports = {
       "status": "todo",
       "priority": "normal",
       "dueDate": "2026-09-01",
-      "goalId": "gl_demo_digital"
+      "goalKey": "GOAL-0003",
+      "taskKey": "INFI-0002"
     },
     {
       "id": "tsk_demo_pretzel",
@@ -477,7 +475,23 @@ module.exports = {
       "status": "done",
       "priority": "high",
       "dueDate": "2026-08-25",
-      "completedAt": "2026-08-25T14:00:00.000Z"
+      "completedAt": "2026-08-25T14:00:00.000Z",
+      "taskKey": "GARDEN-0002"
+    },
+    {
+      "id": "tsk_demo_followup_oct",
+      "title": "Согласовать план повторных заказов",
+      "description": "Обновить предложение для постоянных клиентов по итогам клаб-продаж.",
+      "projectId": "prj_demo_scranton",
+      "assigneeIds": [
+        "ppl_demo_jim",
+        "ppl_demo_phyllis"
+      ],
+      "status": "todo",
+      "priority": "high",
+      "dueDate": "2026-10-16",
+      "goalKey": "GOAL-0001",
+      "taskKey": "SKRE-0010"
     }
   ],
   "issues": [
@@ -496,7 +510,8 @@ module.exports = {
       "solutionOptions": [
         "Вызвать сервис",
         "Проверить настройки плотности бумаги"
-      ]
+      ],
+      "issueKey": "ISSUE-0001"
     },
     {
       "id": "iss_demo_meetings",
@@ -509,11 +524,12 @@ module.exports = {
       ],
       "severity": "normal",
       "status": "open",
-      "goalId": "gl_demo_meetings",
+      "goalKey": "GOAL-0002",
       "solutionOptions": [
         "Повестка на 3 пункта",
         "Таймбокс 30 минут"
-      ]
+      ],
+      "issueKey": "ISSUE-0002"
     },
     {
       "id": "iss_demo_site",
@@ -526,7 +542,58 @@ module.exports = {
       ],
       "severity": "high",
       "status": "open",
-      "solutionOptions": []
+      "solutionOptions": [],
+      "issueKey": "ISSUE-0003"
+    },
+    {
+      "id": "iss_demo_budget_resolved",
+      "issueKey": "ISSUE-0004",
+      "title": "Несовпадение сметы для церемонии «Данди»",
+      "description": "Анджела нашла дублирующую строку аренды в бюджете; Пэм сверила финальную версию.",
+      "projectId": "prj_demo_dundies",
+      "relatedPersonIds": [
+        "ppl_demo_angela",
+        "ppl_demo_pam"
+      ],
+      "severity": "medium",
+      "status": "resolved",
+      "solutionOptions": [
+        "Сверить смету с бухгалтерией",
+        "Утвердить единую версию бюджета"
+      ]
+    },
+    {
+      "id": "iss_demo_q4_delivery",
+      "issueKey": "ISSUE-0005",
+      "title": "Задержка доставки бумаги клиентам Скрэнтона",
+      "description": "Филлис собирает обращения, Джим уточняет отгрузки.",
+      "projectId": "prj_demo_scranton",
+      "relatedPersonIds": [
+        "ppl_demo_phyllis",
+        "ppl_demo_jim"
+      ],
+      "severity": "medium",
+      "status": "in_progress",
+      "solutionOptions": [
+        "Согласовать резервные партии",
+        "Сообщить клиентам новые сроки"
+      ]
+    },
+    {
+      "id": "iss_demo_hr_paused",
+      "issueKey": "ISSUE-0006",
+      "title": "Перегруженный график общих встреч",
+      "description": "Тоби предложил сократить число обязательных участников. Ждём решения Майкла.",
+      "projectId": "prj_demo_scranton",
+      "relatedPersonIds": [
+        "ppl_demo_toby",
+        "ppl_demo_michael"
+      ],
+      "severity": "low",
+      "status": "paused",
+      "solutionOptions": [
+        "Пилот 25-минутных встреч"
+      ]
     }
   ],
   "meetings": [
@@ -542,7 +609,8 @@ module.exports = {
       "prepNotes": "Обсудить приоритеты квартала и напомнить: Помощник регионального менеджера.",
       "notes": "",
       "actionItems": [],
-      "nextSteps": ""
+      "nextSteps": "",
+      "meetingKey": "MEET-0001"
     },
     {
       "id": "mtg_demo_jim",
@@ -556,7 +624,8 @@ module.exports = {
       "prepNotes": "Клиенты, развитие и меньше времени на розыгрыши в рабочие часы.",
       "notes": "",
       "actionItems": [],
-      "nextSteps": ""
+      "nextSteps": "",
+      "meetingKey": "MEET-0002"
     },
     {
       "id": "mtg_demo_pr_dwight",
@@ -570,7 +639,8 @@ module.exports = {
       "prepNotes": "Факты, метрики, примеры. Не обсуждать ранг в вымышленной иерархии безопасности.",
       "notes": "",
       "actionItems": [],
-      "nextSteps": ""
+      "nextSteps": "",
+      "meetingKey": "MEET-0003"
     },
     {
       "id": "mtg_demo_party",
@@ -586,7 +656,8 @@ module.exports = {
       "prepNotes": "Зафиксировать бюджет до обсуждения декора.",
       "notes": "Анджела предлагает строгий регламент. Майкл предлагает красную дорожку.",
       "actionItems": [],
-      "nextSteps": "Пэм приносит 3 варианта макетов."
+      "nextSteps": "Пэм приносит 3 варианта макетов.",
+      "meetingKey": "MEET-0004"
     },
     {
       "id": "mtg_demo_wallace",
@@ -601,7 +672,8 @@ module.exports = {
       "prepNotes": "Продажи, риски, план 4 квартал. Не начинать с импровизационной игры.",
       "notes": "",
       "actionItems": [],
-      "nextSteps": ""
+      "nextSteps": "",
+      "meetingKey": "MEET-0005"
     },
     {
       "id": "mtg_demo_sabre",
@@ -617,7 +689,8 @@ module.exports = {
       "prepNotes": "Собрать список повторяющихся проблем по принтерам.",
       "notes": "",
       "actionItems": [],
-      "nextSteps": ""
+      "nextSteps": "",
+      "meetingKey": "MEET-0006"
     },
     {
       "id": "mtg_demo_oct",
@@ -631,7 +704,8 @@ module.exports = {
       "prepNotes": "Роль офис-администратора и развитие дизайн-навыков.",
       "notes": "",
       "actionItems": [],
-      "nextSteps": ""
+      "nextSteps": "",
+      "meetingKey": "MEET-0007"
     },
     {
       "id": "mtg_demo_sales_club",
@@ -651,7 +725,8 @@ module.exports = {
       "prepNotes": "Каждый приносит один удачный кейс и один вопрос по клиенту.",
       "notes": "Фокус: как сохранять персональный подход при росте повторных заказов.",
       "actionItems": [],
-      "nextSteps": "Джим соберёт короткую памятку с формулировками, которые сработали лучше всего."
+      "nextSteps": "Джим соберёт короткую памятку с формулировками, которые сработали лучше всего.",
+      "meetingKey": "MEET-0008"
     }
   ],
   "journal": [
@@ -659,33 +734,65 @@ module.exports = {
       "id": "jrn_demo_1",
       "createdAt": "2026-08-26T08:30:00.000Z",
       "updatedAt": "2026-08-26T08:30:00.000Z",
-      "kind": "note",
       "authorUserId": "usr_demo",
-      "text": "@[Дуайт Шрут](person:ppl_demo_dwight) снова предложил расширить полномочия группы безопасности. Вернуться к этому на 1:1."
-    },
-    {
-      "id": "jrn_demo_2",
-      "createdAt": "2026-08-25T13:10:00.000Z",
-      "updatedAt": "2026-08-25T13:10:00.000Z",
-      "kind": "idea",
-      "authorUserId": "usr_demo",
-      "text": "Идея: короткая форма повторного заказа для @[Infinity](project:prj_demo_infinity) — без регистрации, только номер клиента и последний заказ."
+      "text": "@[Дуайт Шрут](person:ppl_demo_dwight) снова предложил расширить полномочия группы безопасности. Вернуться к этому на 1:1.",
+      "noteKey": "NOTE-0001"
     },
     {
       "id": "jrn_demo_3",
       "createdAt": "2026-08-24T16:20:00.000Z",
       "updatedAt": "2026-08-24T16:20:00.000Z",
-      "kind": "note",
       "authorUserId": "usr_demo",
-      "text": "@[Стэнли Хадсон](person:ppl_demo_stanley) прав насчёт таймбоксов: после 30 минут общие встречи резко теряют ценность."
+      "text": "@[Стэнли Хадсон](person:ppl_demo_stanley) прав насчёт таймбоксов: после 30 минут общие встречи резко теряют ценность.",
+      "noteKey": "NOTE-0002"
     },
     {
       "id": "jrn_demo_4",
-      "createdAt": "2026-08-23T11:00:00.000Z",
-      "updatedAt": "2026-08-23T11:00:00.000Z",
-      "kind": "insight",
+      "noteKey": "NOTE-0003",
+      "createdAt": "2026-10-05T09:15:00.000Z",
+      "updatedAt": "2026-10-05T09:15:00.000Z",
       "authorUserId": "usr_demo",
-      "text": "Если задача звучит как «создать атмосферу», сначала всё равно нужен владелец, срок и бюджет."
+      "text": "@[Джим Халперт](person:ppl_demo_jim) и @[Филлис Вэнс](person:ppl_demo_phyllis) предложили вернуться к постоянным клиентам перед концом квартала. @[Скрэнтон Q3](project:prj_demo_scranton): назначить созвон."
+    },
+    {
+      "id": "jrn_demo_5",
+      "noteKey": "NOTE-0004",
+      "createdAt": "2026-10-06T13:30:00.000Z",
+      "updatedAt": "2026-10-06T13:30:00.000Z",
+      "authorUserId": "usr_demo",
+      "text": "@[Пэм Бисли](person:ppl_demo_pam) показала обновлённые макеты наград для @[Данди 2026](project:prj_demo_dundies). В пятницу обсудить печать и материалы."
+    },
+    {
+      "id": "jrn_demo_6",
+      "noteKey": "NOTE-0005",
+      "createdAt": "2026-10-07T11:45:00.000Z",
+      "updatedAt": "2026-10-07T11:45:00.000Z",
+      "authorUserId": "usr_demo",
+      "text": "@[Райан Ховард](person:ppl_demo_ryan) и @[Келли Капур](person:ppl_demo_kelly) проверяют тексты нового онлайн-заказа для @[Infinity](project:prj_demo_infinity). Есть расхождение по цене."
+    },
+    {
+      "id": "jrn_demo_7",
+      "noteKey": "NOTE-0006",
+      "createdAt": "2026-10-08T08:20:00.000Z",
+      "updatedAt": "2026-10-08T08:20:00.000Z",
+      "authorUserId": "usr_demo",
+      "text": "@[Дуайт Шрут](person:ppl_demo_dwight) рассказал о новом чек-листе пожарной безопасности. @[Тоби Флендерсон](person:ppl_demo_toby) просит согласовать его перед тренировкой."
+    },
+    {
+      "id": "jrn_demo_8",
+      "noteKey": "NOTE-0007",
+      "createdAt": "2026-05-14T12:00:00.000Z",
+      "updatedAt": "2026-05-14T12:00:00.000Z",
+      "authorUserId": "usr_demo",
+      "text": "@[Оскар Мартинес](person:ppl_demo_oscar) предложил унифицировать описание проблем с принтерами. Вернуться к идее при следующем обращении в Sabre."
+    },
+    {
+      "id": "jrn_demo_9",
+      "noteKey": "NOTE-0008",
+      "createdAt": "2026-03-01T12:00:00.000Z",
+      "updatedAt": "2026-03-01T12:00:00.000Z",
+      "authorUserId": "usr_demo",
+      "text": "Историческая запись: @[Майкл Скотт](person:ppl_demo_michael) предложил общий конкурс на лучшую идею квартала."
     }
   ],
   "agreements": [
@@ -698,7 +805,8 @@ module.exports = {
       "status": "open",
       "withPersonIds": [
         "ppl_demo_pam"
-      ]
+      ],
+      "agreementKey": "AGREE-0001"
     },
     {
       "id": "agr_demo_2",
@@ -710,7 +818,8 @@ module.exports = {
       "withPersonIds": [
         "ppl_demo_dwight",
         "ppl_demo_toby"
-      ]
+      ],
+      "agreementKey": "AGREE-0002"
     },
     {
       "id": "agr_demo_3",
@@ -721,6 +830,46 @@ module.exports = {
       "status": "open",
       "withPersonIds": [
         "ppl_demo_ryan"
+      ],
+      "agreementKey": "AGREE-0003"
+    },
+    {
+      "id": "agr_demo_4",
+      "agreementKey": "AGREE-0004",
+      "text": "@[Анджела Мартин](person:ppl_demo_angela) сверила окончательную смету «Данди» с @[Пэм Бисли](person:ppl_demo_pam)",
+      "date": "2026-09-15",
+      "dueDate": "2026-09-18",
+      "projectId": "prj_demo_dundies",
+      "status": "done",
+      "withPersonIds": [
+        "ppl_demo_angela",
+        "ppl_demo_pam"
+      ]
+    },
+    {
+      "id": "agr_demo_5",
+      "agreementKey": "AGREE-0005",
+      "text": "@[Джим Халперт](person:ppl_demo_jim) и @[Филлис Вэнс](person:ppl_demo_phyllis) подготовят план повторных заказов для @[Скрэнтон Q3](project:prj_demo_scranton)",
+      "date": "2026-10-06",
+      "dueDate": "2026-10-20",
+      "projectId": "prj_demo_scranton",
+      "status": "open",
+      "withPersonIds": [
+        "ppl_demo_jim",
+        "ppl_demo_phyllis"
+      ]
+    },
+    {
+      "id": "agr_demo_6",
+      "agreementKey": "AGREE-0006",
+      "text": "@[Райан Ховард](person:ppl_demo_ryan) покажет @[Келли Капур](person:ppl_demo_kelly) обновлённый сценарий Infinity",
+      "date": "2026-10-08",
+      "dueDate": "2026-10-16",
+      "projectId": "prj_demo_infinity",
+      "status": "open",
+      "withPersonIds": [
+        "ppl_demo_ryan",
+        "ppl_demo_kelly"
       ]
     }
   ],
@@ -733,7 +882,8 @@ module.exports = {
       "authorId": "ppl_demo_dwight",
       "projectType": "tool",
       "status": "in_progress",
-      "private": false
+      "visibility": "team",
+      "blueprintKey": "BLUEPRINT-0001"
     },
     {
       "id": "lab_demo_pranks",
@@ -741,7 +891,8 @@ module.exports = {
       "title": "Калькулятор риска розыгрыша",
       "description": "Оценивать вероятность, что розыгрыш закончится разговором с кадровой службой.",
       "authorId": "ppl_demo_jim",
-      "private": false
+      "visibility": "team",
+      "ideaKey": "IDEA-0001"
     },
     {
       "id": "lab_demo_mugs",
@@ -751,7 +902,8 @@ module.exports = {
       "authorId": "ppl_demo_pam",
       "projectType": "pet",
       "status": "idea",
-      "private": false
+      "visibility": "team",
+      "blueprintKey": "BLUEPRINT-0002"
     }
   ],
   "vacations": [
@@ -779,7 +931,8 @@ module.exports = {
       "url": "https://example.com/demo/crm",
       "folderId": "tlf_demo_daily",
       "projectId": null,
-      "scope": null
+      "scope": null,
+      "toolKey": "TOOL-0001"
     },
     {
       "id": "tol_demo_sabre",
@@ -787,7 +940,17 @@ module.exports = {
       "url": "https://example.com/demo/sabre-support",
       "folderId": "tlf_demo_daily",
       "projectId": "prj_demo_sabre",
-      "scope": null
+      "scope": null,
+      "toolKey": "TOOL-0002"
+    },
+    {
+      "id": "tol_demo_meeting",
+      "toolKey": "TOOL-0003",
+      "title": "Шаблон повестки встречи",
+      "url": "https://example.com/demo/meeting-agenda",
+      "folderId": "tlf_demo_collab",
+      "projectId": "prj_demo_scranton",
+      "description": "Общая повестка и решения по встречам"
     }
   ],
   "processes": [
@@ -908,6 +1071,15 @@ module.exports = {
       "folderId": null,
       "contentHtml": "",
       "markdown": ""
+    },
+    {
+      "id": "kbd_demo_meeting_agenda",
+      "title": "Как готовить короткие встречи",
+      "slug": "short-meetings-guide",
+      "folderId": "kbf_demo_ops",
+      "docType": "article",
+      "contentHtml": "<h2>До встречи</h2><p>Определите решение и пригласите только нужных участников.</p><ul><li>Сформулируйте цель</li><li>Укажите владельца решения</li><li>Отправьте материалы заранее</li></ul><h2>После встречи</h2><ol><li>Зафиксируйте договорённости</li><li>Назначьте сроки</li><li>Отправьте итог участникам</li></ol>",
+      "markdown": "## До встречи\n\n- Сформулируйте цель\n- Укажите владельца решения\n- Отправьте материалы заранее\n\n## После встречи\n\n1. Зафиксируйте договорённости\n2. Назначьте сроки\n3. Отправьте итог участникам"
     }
   ],
   "docFolders": [],
@@ -915,6 +1087,11 @@ module.exports = {
     {
       "id": "tlf_demo_daily",
       "title": "Ежедневная работа",
+      "parentId": null
+    },
+    {
+      "id": "tlf_demo_collab",
+      "title": "Командная работа",
       "parentId": null
     }
   ],
@@ -1038,6 +1215,52 @@ module.exports = {
       "did": "Собрала референсы и черновики наград «Данди».",
       "willDo": "Сделать три визуальных направления.",
       "blockers": "Нужно понять лимит бюджета."
+    }
+  ],
+  "technologyEvents": [
+    {
+      "id": "tech_demo_sales_oct",
+      "plannedDate": "2026-10-14",
+      "topic": "Клаб продаж: повторные заказы и возражения клиентов",
+      "hours": 2,
+      "personIds": [
+        "ppl_demo_jim",
+        "ppl_demo_phyllis"
+      ],
+      "completed": false
+    },
+    {
+      "id": "tech_demo_office_oct",
+      "plannedDate": "2026-10-22",
+      "topic": "Мастер-класс: как оформлять заявки в Sabre",
+      "hours": 1,
+      "personIds": [
+        "ppl_demo_oscar",
+        "ppl_demo_dwight"
+      ],
+      "completed": false
+    },
+    {
+      "id": "tech_demo_ai_sep",
+      "plannedDate": "2026-09-18",
+      "topic": "Разбор инструмента Infinity для онлайн-заказов",
+      "hours": 2,
+      "personIds": [
+        "ppl_demo_ryan",
+        "ppl_demo_kelly"
+      ],
+      "completed": true
+    },
+    {
+      "id": "tech_demo_hr_nov",
+      "plannedDate": "2026-11-05",
+      "topic": "Обратная связь 1:1 и полезная повестка встреч",
+      "hours": 1,
+      "personIds": [
+        "ppl_demo_toby",
+        "ppl_demo_michael"
+      ],
+      "completed": false
     }
   ]
 };

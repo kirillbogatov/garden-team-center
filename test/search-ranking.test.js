@@ -101,3 +101,15 @@ test('task search ranking keeps active work above paused/blocked and completed w
   assert.ok(ids.indexOf('paused-overdue') < ids.indexOf('done-overdue'));
   assert.ok(ids.indexOf('blocked-overdue') < ids.indexOf('done-overdue'));
 });
+
+
+test('balanced task priority never ranks review above new or in-progress work', () => {
+  const rows = ranker.rankGroup('tasks', [
+    { id:'review-urgent', title:'X', status:'in_review', priority:'high', dueDate:'2020-01-01' },
+    { id:'todo-plain', title:'X', status:'todo', priority:'normal' },
+    { id:'progress-plain', title:'X', status:'in_progress', priority:'normal' },
+  ], '', { taskPriorityMode: 'balanced' });
+  const ids = rows.map((x) => x.id);
+  assert.ok(ids.indexOf('todo-plain') < ids.indexOf('review-urgent'));
+  assert.ok(ids.indexOf('progress-plain') < ids.indexOf('review-urgent'));
+});

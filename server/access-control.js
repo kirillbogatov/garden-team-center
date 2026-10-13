@@ -86,18 +86,9 @@ module.exports = function createAccessControl({ db, isAdmin, isManager, isTeamle
     // Структурированные записи (проблемы/договорённости/идеи) всё равно попадают
     // в командные разделы через синхронизацию — там обычная видимость сохраняется.
     if (name === 'journal') return isOwnItem(name, item, user) || isAdmin(user);
-    // Приватность в The Labs (флаг item.private) раньше была декоративной: любой
-    // с "просмотр всех" по The Labs всё равно видел чужой приватный элемент через API.
-    // Теперь приватный элемент виден только автору (+ администратору), а для обычных
-    // проектов The Labs (не идей) — ещё и тимлиду автора, как и заявлено в интерфейсе.
-    if (name === 'labs' && item.private) {
-      if (isOwnItem(name, item, user) || isAdmin(user)) return true;
-      if (item.entityType !== 'idea') {
-        const author = item.authorId ? db.people.get(item.authorId) : null;
-        if (teamleadOwnsPerson(author, user)) return true;
-      }
-      return false;
-    }
+    // Элементы Мастерской с видимостью "Только я" доступны только владельцу
+    // и администратору. Командные элементы подчиняются обычным правам раздела.
+    if (name === 'labs' && item.visibility === 'me') return isOwnItem(name, item, user) || isAdmin(user);
     return caps.view >= 2 || isOwnItem(name, item, user) || isAdmin(user);
   }
 
@@ -113,7 +104,7 @@ module.exports = function createAccessControl({ db, isAdmin, isManager, isTeamle
 
   function visibleItems(name, user, opts = {}) {
     let items = db[name].all().filter((item) => canReadItem(name, item, user));
-    if (name === 'tasks' && !opts.includeArchived) items = items.filter((item) => !item.archivedAt);
+    if ((name === 'tasks' || name === 'projects') && !opts.includeArchived) items = items.filter((item) => !item.archivedAt);
     return items.map((item) => sanitizeItem(name, item, user));
   }
 

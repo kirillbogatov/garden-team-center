@@ -3,7 +3,7 @@
 const { creationSummary } = require('../versioning');
 
 module.exports = function registerVersionRoutes(app, { db, resolveEntity, canReadItem, canUpdate, sanitizeItem, denied }) {
-  const VERSIONED = new Set(['tasks', 'labs', 'meetings']);
+  const VERSIONED = new Set(['tasks', 'labs', 'meetings', 'processes', 'projects']);
 
   const resolveVersioned = (entityType, ref) => {
     if (!VERSIONED.has(entityType)) return null;
@@ -96,8 +96,13 @@ module.exports = function registerVersionRoutes(app, { db, resolveEntity, canRea
     // Human-readable identifiers belong to the entity, not to the historical
     // payload chosen for restore.
     if (entityType === 'tasks') restoredData.taskKey = current.taskKey;
-    if (entityType === 'labs') restoredData.labKey = current.labKey;
+    if (entityType === 'labs') {
+      if (current.entityType === 'idea') restoredData.ideaKey = current.ideaKey;
+      else restoredData.blueprintKey = current.blueprintKey;
+    }
     if (entityType === 'meetings') restoredData.meetingKey = current.meetingKey;
+    if (entityType === 'processes') restoredData.processKey = current.processKey;
+    if (entityType === 'projects') restoredData.projectKey = current.projectKey;
 
     const restored = db[entityType].update(current.id, restoredData);
     db.versions.finalizeLatest(entityType, current.id);

@@ -78,7 +78,7 @@ test('"как дела у <человека>" returns a person digest with check
   assert.equal(result.digest.type, 'person');
   assert.equal(result.digest.person.name, 'Дуайт Шрут');
   assert.deepEqual(result.digest.signals, []);
-  assert.ok(result.digest.sections.some((section) => section.title.startsWith('Check-in за ')));
+  assert.ok(result.digest.sections.some((section) => section.title.startsWith('Weekly за ')));
 });
 
 test('\"как дела у команды\" returns a team digest instead of accidental text-search matches', () => {
@@ -310,6 +310,7 @@ test('today task card groups work by project and keeps no more than three tasks 
   const result = ask(makeEngine({ tasks, projects }), 'чем заняться сегодня');
   const card = result.digest.sections.find((section) => section.title === 'Поработать над задачами');
   assert.deepEqual(new Set(card.groups.map((group) => group.title)), new Set(['Проект Один', 'Проект Два', 'Без проекта']));
+  assert.deepEqual(card.groups.map((group) => group.title), ['Проект Два', 'Проект Один', 'Без проекта']);
   assert.ok(card.groups.every((group) => group.items.length <= 3));
   assert.equal(card.groups.find((group) => group.title === 'Проект Один').more, 2);
   assert.equal(card.groups.find((group) => group.title === 'Проект Два').more, 1);
@@ -341,24 +342,38 @@ test('the week digest only looks forward — nothing that has already happened',
 });
 
 test('a person digest reads as check-in, work in progress, upcoming meetings and notes', () => {
-  const engine = makeEngine();
+  // Демо-данные имеют фиксированные даты, поэтому добавляем гарантированно будущую
+  // встречу: тест не должен начать падать просто из-за наступления новой даты.
+  const future = new Date();
+  future.setDate(future.getDate() + 1);
+  const futureMeetings = [...demo.meetings, {
+    id: 'mtg_test_dwight_future',
+    type: '1:1',
+    title: 'Будущий 1:1 с Дуайтом',
+    date: future.toISOString(),
+    participantIds: ['ppl_demo_dwight'],
+    projectId: null,
+    prepNotes: '', notes: '', actionItems: [], nextSteps: '',
+  }];
+  const engine = makeEngine({ meetings: futureMeetings });
   const result = ask(engine, 'как дела у Дуайта');
   const sections = result.digest.sections;
   assert.ok(sections.some((section) => section.title === 'Загрузка'));
-  assert.ok(sections.some((section) => section.title.startsWith('Check-in за ')));
+  assert.ok(sections.some((section) => section.title.startsWith('Weekly за ')));
   assert.ok(sections.some((section) => section.title === 'Задачи в работе'));
   assert.ok(sections.some((section) => section.title === 'Ближайшие встречи'));
 
-  const checkin = sections.find((section) => section.title.startsWith('Check-in за '));
+  const checkin = sections.find((section) => section.title.startsWith('Weekly за '));
   assert.deepEqual(checkin.items.map((item) => item.label), ['На прошлой неделе', 'На этой неделе', 'Блокеры']);
-  assert.ok(checkin.items.every((item) => item.wrapText), 'текст текущего check-in должен показываться полностью');
+  assert.ok(checkin.items.every((item) => item.wrapText), 'текст текущего Weekly должен показываться полностью');
 
   const inProgress = sections.find((section) => section.title === 'Задачи в работе');
   if (inProgress) assert.ok(inProgress.items.length, 'в блоке только задачи в работе');
 
   const meetings = sections.find((section) => section.title === 'Ближайшие встречи');
   assert.ok(meetings.items.every((item) => item.date), 'у встречи должна быть дата');
-  assert.ok(meetings.items.some((item) => item.label), 'и тип встречи');
+  const personName = result.digest.title;
+  assert.ok(meetings.items.every((item) => item.title && item.title !== personName), 'имя сотрудника не повторяется в заголовке встречи');
 });
 
 // --- Конфликты имён ------------------------------------------------------
@@ -547,7 +562,7 @@ test('today digest adds up to five past meetings without outcomes after the upco
   assert.ok(card.items.every((item) => item.title !== 'С итогами'));
 });
 
-test('person digest exposes workload by project and all mentioned issues and agreements', () => {
+test('person digest exposes workload and only active issues while retaining agreements', () => {
   const personId = 'ppl_demo_dwight';
   const projects = [
     { id: 'load_a', name: 'Проект A', status: 'active', memberIds: [personId], memberLoads: { [personId]: 'half' } },
@@ -566,25 +581,24 @@ test('person digest exposes workload by project and all mentioned issues and agr
   assert.ok(load);
   assert.equal(load.layout, 'project-load');
   assert.equal(load.summary.variant, 'load-level');
-  assert.equal(load.summary.tone, 'medium');
-  assert.equal(load.summary.text, 'Средняя');
-  assert.deepEqual(load.summary.action, { label: 'Редактировать', command: 'openPersonLoadModal', arg: personId });
+  assert.equal(load.summary.tone, 'full');
+  assert.equal(load.summary.text, 'Полная');
+  assert.deepEqual(load.summary.action, { label: 'Изменить загрузку', command: 'openPersonLoadModal', arg: personId });
   assert.deepEqual(load.items.map((item) => [item.title, item.meta]), [
-    ['Проект A', 'Парт-тайм (3–5 часов)'],
-    ['Проект B', 'Саппорт (1–2 часа)'],
+    ['Проект A', 'Парт-тайм'],
+    ['Проект B', 'Саппорт'],
   ]);
-  assert.equal(result.digest.sections.find((section) => section.title === 'Проблемы').items.length, 2);
+  assert.deepEqual(result.digest.sections.find((section) => section.title === 'Проблемы').items.map((item) => item.entityId), ['issue_open_person']);
   assert.equal(result.digest.sections.find((section) => section.title === 'Договорённости').items.length, 2);
 });
 
-test('assistant response rendering is section-based so cards can be reused across intents', () => {
+test('assistant/search rendering is section-based in the React client', () => {
   const fs = require('node:fs');
   const path = require('node:path');
-  const widget = fs.readFileSync(path.join(__dirname, '..', 'public/js/views/smart-search.js'), 'utf8');
-  assert.match(widget, /function smartCardHtml\(/);
-  assert.match(widget, /return smartCardHtml\(\{/);
-  assert.match(widget, /cards\.push\(smartCardHtml\(\{/);
-  assert.match(widget, /digest\.sections\.map\(smartSearchSectionHtml\)/);
+  const page = fs.readFileSync(path.join(__dirname, '..', 'src/pages/misc.jsx'), 'utf8');
+  assert.match(page, /Object\.entries\(result\?\.groups/);
+  assert.match(page, /groups\.map\(\(\[group,items\]\)/);
+  assert.match(page, /<Section key=\{group\}/);
 });
 
 test('person context does not stick to the next generic monthly task query', () => {
@@ -782,4 +796,42 @@ test('"как дела с задачами у <человека>" returns only t
   assert.equal(result.digest.type, 'person');
   assert.equal(result.digest.person.name, 'Дуайт Шрут');
   assert.deepEqual(result.digest.sections.map((section) => section.title), ['Задачи в работе']);
+});
+
+
+test('создание заметки понимает команду «Запиши в заметки» с двоеточием', () => {
+  const engine = makeEngine();
+  const result = ask(engine, 'Запиши в заметки: обсудили с командой план на квартал');
+  assert.equal(result.kind, 'create');
+  assert.equal(result.create.target, 'note');
+  assert.equal(result.create.title, 'обсудили с командой план на квартал');
+});
+
+
+test('assistant suggestions exclude completed and archived tasks and resolved issues', () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const tasks = [
+    { id: 'active_task', title: 'Активная задача', status: 'todo', assigneeIds: [ME], dueDate: today },
+    { id: 'done_task', title: 'Завершённая задача', status: 'done', assigneeIds: [ME], dueDate: today },
+    { id: 'archived_task', title: 'Архивная задача', status: 'archived', assigneeIds: [ME], dueDate: today },
+    { id: 'archived_date_task', title: 'Удалённая из работы', status: 'todo', archivedAt: today, assigneeIds: [ME], dueDate: today },
+  ];
+  const issues = [
+    { id: 'active_issue', title: 'Активная проблема', status: 'open', relatedPersonIds: [ME] },
+    { id: 'resolved_issue', title: 'Решённая проблема', status: 'resolved', relatedPersonIds: [ME] },
+    { id: 'closed_issue', title: 'Закрытая проблема', status: 'closed', relatedPersonIds: [ME] },
+  ];
+  const engine = makeEngine({ tasks, issues });
+  for (const query of ['Чем заняться сегодня', 'Обзор недели', 'Как дела у Майкла']) {
+    const response = ask(engine, query);
+    assert.equal(response.kind, 'digest', query);
+    const allItems = (response.digest.sections || []).flatMap((section) => [
+      ...(section.items || []),
+      ...(section.groups || []).flatMap((group) => group.items || []),
+    ]);
+    const ids = new Set(allItems.map((item) => item.entityId));
+    for (const id of ['done_task', 'archived_task', 'archived_date_task', 'resolved_issue', 'closed_issue']) {
+      assert.equal(ids.has(id), false, `${query}: ${id} should be hidden`);
+    }
+  }
 });

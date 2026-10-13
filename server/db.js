@@ -62,8 +62,7 @@ const COLLECTIONS = [
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 
-const sqlite = new DatabaseSync(DB_PATH);
-sqlite.exec(`
+const INITIAL_SCHEMA_SQL = `
   PRAGMA journal_mode = WAL;
   PRAGMA synchronous = NORMAL;
   PRAGMA busy_timeout = 5000;
@@ -178,7 +177,56 @@ sqlite.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_search_misses_recent
     ON search_misses(workspace, last_seen_at DESC);
-`);
+`;
+
+function isMalformedDatabaseError(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  return error?.errcode === 11 || error?.code === 'SQLITE_CORRUPT' || message.includes('database disk image is malformed');
+}
+
+function quarantineSqliteSidecars() {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const moved = [];
+  for (const suffix of ['-wal', '-shm']) {
+    const source = `${DB_PATH}${suffix}`;
+    if (!fs.existsSync(source)) continue;
+    const target = `${source}.broken-${stamp}`;
+    try {
+      fs.renameSync(source, target);
+      moved.push(path.basename(target));
+    } catch (error) {
+      console.warn(`  Garden: не удалось изолировать ${path.basename(source)}: ${error.message}`);
+    }
+  }
+  return moved;
+}
+
+function openAndInitializeDatabase() {
+  let db = new DatabaseSync(DB_PATH);
+  try {
+    db.exec(INITIAL_SCHEMA_SQL);
+    return db;
+  } catch (error) {
+    try { db.close(); } catch {}
+    if (!isMalformedDatabaseError(error)) throw error;
+
+    const moved = quarantineSqliteSidecars();
+    if (!moved.length) throw error;
+
+    console.warn(`  Garden: обнаружены повреждённые SQLite sidecar-файлы; изолированы: ${moved.join(', ')}`);
+    db = new DatabaseSync(DB_PATH);
+    try {
+      db.exec(INITIAL_SCHEMA_SQL);
+      console.warn('  Garden: основная база успешно открыта без повреждённых sidecar-файлов.');
+      return db;
+    } catch (retryError) {
+      try { db.close(); } catch {}
+      throw retryError;
+    }
+  }
+}
+
+const sqlite = openAndInitializeDatabase();
 
 // relation_key lets `related()` fetch a collection's rows for one parent
 // without a dedicated join table — each collection defines its own notion
@@ -313,8 +361,7 @@ const prefixes = {
 };
 
 function prepareItem(name, data) {
-  const item = name === 'tasks' ? normalizeTask(data) : { ...data };
-  if (name === 'projects') delete item.startDate;
+  let item = name === 'tasks' ? normalizeTask(data) : { ...data };
   if (MENTION_COLLECTIONS.has(name) && typeof item.text === 'string') {
     item.mentions = extractMentions(item.text);
   }
@@ -367,7 +414,6 @@ const collection = (name) => ({
 
     // Упоминания пересчитываем только когда изменился текст — как и раньше.
     if (name === 'tasks') merged = normalizeTask(merged);
-    if (name === 'projects') delete merged.startDate;
     if (MENTION_COLLECTIONS.has(name) && typeof patch.text === 'string') {
       merged.mentions = extractMentions(patch.text);
     }
@@ -400,12 +446,16 @@ const collection = (name) => ({
 });
 
 const db = {};
+// Explicit transaction boundary for application services. Multi-record use cases
+// must commit or roll back as a unit instead of relying on route-level sequencing.
+db.transaction = transaction;
 for (const name of COLLECTIONS) {
   db[name] = collection(name);
 }
 
 db.isEmpty = () => COLLECTIONS.every((name) => db[name].all().length === 0);
 db.withWorkspace = (workspace, fn) => workspaceStorage.run(workspace || 'main', fn);
+
 
 db.versions = {
   _fromRow(row) {

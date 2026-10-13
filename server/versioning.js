@@ -5,18 +5,24 @@ const VERSION_WINDOW_MS = 10 * 60 * 1000;
 const LABELS = {
   tasks: {
     title: 'название', description: 'описание', status: 'статус', taskType: 'тип', projectId: 'проект',
-    assigneeIds: 'исполнитель', priority: 'важность', dueDate: 'срок', goalId: 'цель', goalIds: 'цели', issueIds: 'проблемы', archivedAt: 'архив',
+    assigneeIds: 'исполнитель', priority: 'важность', dueDate: 'срок', goalKey: 'цель', goalKeys: 'цели', issueIds: 'проблемы', jiraLinks: 'Jira', materials: 'материалы', archivedAt: 'архив',
   },
   meetings: {
     title: 'название', type: 'тип', date: 'дата', projectId: 'проект', participantIds: 'участников', notes: 'итоги встречи',
     documentLinks: 'документы', actionItems: 'действия по итогам', archivedAt: 'архив',
   },
   labs: {
-    title: 'название', description: 'описание', authorId: 'автора', projectType: 'тип', private: 'доступ', status: 'статус', links: 'ссылки', archivedAt: 'архив',
+    title: 'название', description: 'описание', authorId: 'автора', projectType: 'тип', visibility: 'видимость', status: 'статус', links: 'ссылки', archivedAt: 'архив',
+  },
+  projects: {
+    name: 'название', description: 'описание', status: 'статус', memberIds: 'участников', memberLoads: 'загрузку', externalLinks: 'ссылки', archivedAt: 'архив',
+  },
+  processes: {
+    title: 'название', status: 'статус', expectedBehavior: 'как должно работать', currentBehavior: 'как работает сейчас', fixOptions: 'варианты улучшения',
   },
 };
 
-const IGNORED = new Set(['id', 'createdAt', 'updatedAt', 'createdByUserId', 'taskKey', 'meetingKey', 'labKey', 'taskGroupId', 'taskGroupIndex']);
+const IGNORED = new Set(['id', 'createdAt', 'updatedAt', 'createdByUserId', 'taskKey', 'meetingKey', 'blueprintKey', 'ideaKey', 'issueKey', 'processKey', 'agreementKey', 'goalKey', 'noteKey', 'toolKey', 'projectKey', 'taskGroupId', 'taskGroupIndex']);
 
 function sameValue(a, b) {
   if (a === b) return true;
@@ -38,10 +44,11 @@ function versionSummary(entityType, before, after) {
   const single = {
     title: 'Изменено название', description: 'Обновлено описание', status: 'Изменён статус', taskType: 'Изменён тип',
     projectId: 'Изменён проект', assigneeIds: 'Изменён исполнитель', priority: 'Изменена важность', dueDate: 'Изменён срок',
-    goalId: 'Изменена цель', goalIds: 'Изменены цели', issueIds: 'Изменены проблемы', archivedAt: 'Изменён архивный статус',
+    goalKey: 'Изменена цель', goalKeys: 'Изменены цели', issueIds: 'Изменены проблемы', jiraLinks: 'Изменены связи Jira', materials: 'Изменены материалы', archivedAt: 'Изменён архивный статус',
     type: 'Изменён тип', date: 'Изменена дата', participantIds: 'Изменены участники', notes: 'Обновлены итоги встречи',
     documentLinks: 'Изменены документы', actionItems: 'Изменены действия по итогам', authorId: 'Изменён автор',
-    projectType: 'Изменён тип', private: 'Изменён доступ', links: 'Изменены ссылки',
+    projectType: 'Изменён тип', visibility: 'Изменена видимость', links: 'Изменены ссылки',
+    expectedBehavior: 'Изменено описание того, как должно работать', currentBehavior: 'Изменено описание того, как работает сейчас', fixOptions: 'Изменены варианты улучшения',
   };
   return single[field] || `Изменено: ${labels[0]}`;
 }
@@ -49,7 +56,9 @@ function versionSummary(entityType, before, after) {
 function creationSummary(entityType) {
   if (entityType === 'tasks') return 'Создана задача';
   if (entityType === 'meetings') return 'Создана встреча';
-  if (entityType === 'labs') return 'Создан проект The Labs';
+  if (entityType === 'labs') return 'Создан проект Мастерской';
+  if (entityType === 'processes') return 'Создан процесс';
+  if (entityType === 'projects') return 'Создан проект';
   return 'Создана версия';
 }
 
@@ -58,6 +67,8 @@ function isImportantChange(entityType, before, after) {
   if (entityType === 'tasks') return fields.has('status') || fields.has('archivedAt');
   if (entityType === 'labs') return fields.has('status') || fields.has('archivedAt');
   if (entityType === 'meetings') return fields.has('archivedAt');
+  if (entityType === 'processes') return fields.has('status');
+  if (entityType === 'projects') return fields.has('status') || fields.has('archivedAt');
   return false;
 }
 

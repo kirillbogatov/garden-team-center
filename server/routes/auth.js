@@ -16,7 +16,6 @@ module.exports = function registerAuthRoutes(app, deps) {
     PASSWORD_MIN_LENGTH,
     hashPassword,
     generatePassword,
-    normalizeWorkspaceIdentifiers,
   } = deps;
 
   app.get('/api/health', (req, res) => res.json({ ok: true }));
@@ -50,18 +49,14 @@ module.exports = function registerAuthRoutes(app, deps) {
         personId: 'ppl_demo_michael',
       });
     }
-    // Демо-данные сбрасываются при каждом входе; стартовый экран тоже должен
-    // быть детерминированным и показывать актуальный Ассистент, а не сохранённые
-    // ранее виджеты. Остальные значения восстановятся из defaults настроек.
+    // Демо-данные сбрасываются при каждом входе; очищаем только историю Ассистента.
     db.auth.preferences.set(user.id, {
-      overviewHomeMode: 'assistant',
       smartSearchHistory: [],
       smartSearchPersonHints: {},
     });
     db.withWorkspace('demo', () => {
       db.versions.clearWorkspace();
       for (const name of COLLECTIONS) db[name].replaceAll(demoSeed[name] || []);
-      normalizeWorkspaceIdentifiers?.();
     });
     createSession(user.id, res);
     res.json({ user: safeUser(user) });

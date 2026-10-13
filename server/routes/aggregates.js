@@ -45,9 +45,7 @@ module.exports = function registerAggregateRoutes(app, { db, resolveEntity, sani
     const agreements = visibleItems('agreements', req.auth.user)
       .filter((a) => a.projectId === id || (a.relatedProjectIds || []).includes(id) || (a.mentions || []).some((m) => m.type === 'project' && m.id === id));
     const members = visibleItems('people', req.auth.user).filter((p) => (project.memberIds || []).includes(p.id));
-    const goals = visibleItems('goals', req.auth.user).filter((g) => (g.projectIds || []).includes(id));
-
-    res.json({ project, tasks, issues, journal, meetings, agreements, members, goals });
+    res.json({ project, tasks, issues, journal, meetings, agreements, members });
   });
 
   app.get('/api/goals/:id/detail', (req, res) => {
@@ -55,12 +53,11 @@ module.exports = function registerAggregateRoutes(app, { db, resolveEntity, sani
     if (!goal) return res.status(404).json({ error: 'not_found' });
     if (!canReadItem('goals', goal, req.auth.user)) return denied(res);
 
-    const projects = visibleItems('projects', req.auth.user).filter((p) => (goal.projectIds || []).includes(p.id));
     const tasks = visibleItems('tasks', req.auth.user, { includeArchived: true })
-      .filter((t) => t.goalId === goal.id || (t.goalIds || []).includes(goal.id));
-    const issues = visibleItems('issues', req.auth.user).filter((i) => i.goalId === goal.id);
+      .filter((t) => t.goalKey === goal.goalKey || (t.goalKeys || []).includes(goal.goalKey));
+    const issues = visibleItems('issues', req.auth.user).filter((i) => i.goalKey === goal.goalKey);
 
-    res.json({ goal, projects, tasks, issues });
+    res.json({ goal, tasks, issues });
   });
 
   app.get('/api/calendar/month', (req, res) => {

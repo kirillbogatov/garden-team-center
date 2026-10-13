@@ -1,17 +1,52 @@
 {
   "name": "garden",
-  "version": "1.0.0",
-  "description": "Garden Team Center — локальный командный центр для тимлида и команды.",
+  "version": "2.0.0",
+  "description": "Garden Team Center — React + shadcn/Radix client with a local Express/SQLite backend.",
   "private": true,
   "main": "server/index.js",
   "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
     "start": "node server/index.js",
+    "start:fresh": "npm run build && node server/index.js",
     "test": "node --test",
-    "test:client": "node --test test/architecture.test.js test/search-natural-language.test.js test/theme-contrast.test.js",
-    "test:api": "node --test test/api.test.js"
+    "test:client": "node --test test/architecture.test.js test/theme-contrast.test.js test/search-natural-language.test.js",
+    "test:api": "node --test test/api.test.js",
+    "build:demo": "node scripts/build-demo.mjs",
+    "preview:demo": "vite preview --outDir dist-demo --port 4174"
   },
   "dependencies": {
-    "express": "^4.19.2"
+    "@radix-ui/react-avatar": "^1.1.10",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-dropdown-menu": "^2.1.16",
+    "@radix-ui/react-popover": "^1.1.15",
+    "@radix-ui/react-scroll-area": "^1.2.10",
+    "@radix-ui/react-select": "^2.2.6",
+    "@radix-ui/react-separator": "^1.1.7",
+    "@radix-ui/react-slot": "^1.2.3",
+    "@radix-ui/react-switch": "^1.2.6",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@radix-ui/react-tooltip": "^1.2.8",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "express": "^4.19.2",
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-router-dom": "^7.9.1",
+    "tailwind-merge": "^3.3.1"
+  },
+  "devDependencies": {
+    "@noble/hashes": "^1.5.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.21",
+    "buffer": "^6.0.3",
+    "esbuild": "^0.25.12",
+    "postcss": "^8.5.6",
+    "sql.js": "^1.12.0",
+    "tailwindcss": "^3.4.17",
+    "vite": "^6.1.0"
   },
   "engines": {
     "node": ">=22.5"

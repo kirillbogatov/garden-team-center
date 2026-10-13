@@ -71,13 +71,14 @@ test('employee problem notifies their teamlead', () => {
     ],
     people: [{ id: 'p1', type: 'team', teamLeadId: 'leadPerson' }],
   });
-  notifyIssueCreated(db, db.auth.users.all()[0], { id: 'issue1', title: 'Не работает отчёт' });
+  notifyIssueCreated(db, db.auth.users.all()[0], { id: 'issue1', issueKey: 'ISSUE-0001', title: 'Не работает отчёт' });
   assert.equal(db.created.length, 1);
   assert.equal(db.created[0].userId, 'lead');
   assert.equal(db.created[0].eventType, 'issue_created');
+  assert.equal(db.created[0].route, '/issues/ISSUE-0001');
 });
 
-test('employee idea and The Labs project use the same teamlead preference event', () => {
+test('employee idea and Мастерская project use the same teamlead preference event', () => {
   const db = mockDb({
     users: [
       { id: 'member', personId: 'p1', active: true, roles: ['member'] },
@@ -87,11 +88,11 @@ test('employee idea and The Labs project use the same teamlead preference event'
   });
   const actor = db.auth.users.all()[0];
   notifyLabCreated(db, actor, { id: 'idea1', entityType: 'idea', title: 'Идея' });
-  notifyLabCreated(db, actor, { id: 'lab1', labKey: 'LAB-0001', entityType: 'project', title: 'Проект' });
+  notifyLabCreated(db, actor, { id: 'lab1', blueprintKey: 'BLUEPRINT-0001', entityType: 'project', title: 'Проект' });
   assert.equal(db.created.length, 2);
   assert.ok(db.created.every((item) => item.eventType === 'lab_created'));
-  assert.match(db.created[0].route, /tab=ideas/);
-  assert.match(db.created[1].route, /LAB-0001/);
+  assert.equal(db.created[0].route, '/ideas');
+  assert.equal(db.created[1].route, '/workshop/BLUEPRINT-0001');
 });
 
 test('teamlead-only notification preference suppresses employee-created events', () => {

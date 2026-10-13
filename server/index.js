@@ -90,9 +90,9 @@ taskAutoArchive.startAutoArchiveTimer();
 // ---------- Slugs and human-readable entity keys ----------
 const identifiers = createEntityIdentifiers({ db, nextNumericKey });
 const {
-  SLUG_COLLECTIONS, uniqueSlug, resolveEntity, validateProjectTaskCode,
-  ensureSlugs, ensureProjectTaskCodes, taskKeyPrefix, nextTaskKey, assignTaskKey, nextLabKey, ensureLabKeys, ensureTaskKeys,
-  nextMeetingKey, assignMeetingKey, ensureMeetingKeys, nextProcessKey, assignProcessKey, ensureProcessKeys,
+  SLUG_COLLECTIONS, uniqueSlug, resolveEntity, validateProjectKey,
+  taskKeyPrefix, nextTaskKey, assignTaskKey, assignLabKey,
+  nextCollectionKey, assignCollectionKey,
 } = identifiers;
 
 const COLLECTIONS = [
@@ -116,22 +116,10 @@ const COLLECTIONS = [
   'technologyEvents',
 ];
 
-// Re-derives every generated identifier (slugs, project task codes, task/lab/
-// meeting/process keys) from scratch — used after a bulk import/seed where
-// records may arrive without them.
-function normalizeWorkspaceIdentifiers() {
-  ensureSlugs();
-  ensureProjectTaskCodes();
-  ensureTaskKeys();
-  ensureLabKeys();
-  ensureMeetingKeys();
-  ensureProcessKeys();
-}
-
 registerAuthRoutes(app, {
   db, COLLECTIONS, demoSeed, cleanUsername, failedLogins, passwordMatches, createSession,
   safeUser, authenticate, clearSessionCookie, validatePassword, PASSWORD_MIN_LENGTH,
-  hashPassword, generatePassword, normalizeWorkspaceIdentifiers,
+  hashPassword, generatePassword,
 });
 
 function isActiveTeamMember(person) {
@@ -141,7 +129,7 @@ function isActiveTeamMember(person) {
 // ---------- Плановые 1:1 и PR ----------
 const {
   syncRecurringMeetingsForPerson, syncRecurringMeetingsForMeeting, ensureRecurringMeetingSchedules,
-} = createRecurringMeetings({ db, isAdmin, isActiveTeamMember, nextMeetingKey });
+} = createRecurringMeetings({ db, isAdmin, isActiveTeamMember, nextMeetingKey: () => nextCollectionKey('meetings') });
 ensureRecurringMeetingSchedules();
 
 // ---------- Multi-assignee task copies ----------
@@ -168,15 +156,14 @@ registerAdminRoutes(app, {
 registerCrudRoutes(app, {
   COLLECTIONS, db, autoArchiveCompletedTasks, canReadItem, sanitizeItem, visibleItems, resolveEntity,
   denied, canCreate, withOwnership, taskLifecyclePatch, sanitizeKnowledgeHtmlServer, isTeamlead,
-  canManageCollection, validateProjectTaskCode, assignTaskKey, SLUG_COLLECTIONS, uniqueSlug, nextLabKey,
+  canManageCollection, validateProjectKey, assignTaskKey, SLUG_COLLECTIONS, uniqueSlug, assignLabKey,
   syncRecurringMeetingsForPerson, syncRecurringMeetingsForMeeting, canUpdate, nextTaskKey, taskKeyPrefix,
-  teamleadOwnsPerson, memberPersonPatch, OWNER_COLLECTIONS, canDelete, assignMeetingKey, nextMeetingKey,
-  assignProcessKey, nextProcessKey,
+  teamleadOwnsPerson, memberPersonPatch, OWNER_COLLECTIONS, canDelete, assignCollectionKey,
 });
 
 // ---------- Collaboration routes ----------
 registerCollaborationRoutes(app, { db, canReadItem, denied });
-registerCommentRoutes(app, { db, canReadItem, denied, isAdmin });
+registerCommentRoutes(app, { db, canReadItem, denied, isAdmin, resolveEntity });
 registerVersionRoutes(app, { db, resolveEntity, canReadItem, canUpdate, sanitizeItem, denied });
 registerNotificationRoutes(app, { db, ensureCheckinReminder });
 

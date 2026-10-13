@@ -1,6 +1,7 @@
 'use strict';
 
 const { rankTasksByPriority } = require('./task-priority');
+const { escapeRe, containsPhrase } = require('./text-match');
 
 // «Умный поиск» — единая строка, которая понимает три вида запросов:
 //   1. создание («создай задачу собрать отчёт»);
@@ -25,27 +26,41 @@ const TODAY_ISSUES_LIMIT = 3;
 const TODAY_AGREEMENTS_LIMIT = 3;
 const TODAY_MISSED_MEETINGS_LIMIT = 5;
 
+// Recommendations show actionable records only. Completed/archived items
+// remain available in their own sections, but must not reappear in digests.
+const isActiveTask = (task) => Boolean(task) && !task.archivedAt
+  && !['done', 'archived', 'closed', 'completed'].includes(String(task.status || '').toLowerCase());
+const isActiveIssue = (issue) => Boolean(issue) && !issue.archivedAt
+  && !['resolved', 'closed', 'archived', 'done'].includes(String(issue.status || '').toLowerCase());
+
+
 const PROJECT_LOAD_OPTIONS = {
-  full: { max: 8, label: 'Фултайм', rangeLabel: '6–8 часов' },
-  half: { max: 5, label: 'Парт-тайм', rangeLabel: '3–5 часов' },
-  support: { max: 2, label: 'Саппорт', rangeLabel: '1–2 часа' },
+  full: { weight: 3, label: 'Фултайм' },
+  half: { weight: 2, label: 'Парт-тайм' },
+  support: { weight: 1, label: 'Саппорт' },
 };
+const LOAD_FRAGMENTATION_PENALTY = 0.5;
 
 function projectLoadConfig(value) {
   const raw = value && typeof value === 'object' ? value.mode : value;
   return PROJECT_LOAD_OPTIONS[raw] || PROJECT_LOAD_OPTIONS.full;
 }
 
-function projectLoadLevel(maxHours) {
-  if (maxHours > 10) return { label: 'Перегруз', tone: 'overloaded' };
-  if (maxHours >= 8) return { label: 'Полная', tone: 'full' };
-  if (maxHours >= 5) return { label: 'Средняя', tone: 'medium' };
-  if (maxHours >= 1) return { label: 'Низкая', tone: 'small' };
+// Flat cost for spreading across more than one active project — not tied to any single project.
+function fragmentationPenalty(projectCount) {
+  return projectCount > 1 ? LOAD_FRAGMENTATION_PENALTY * (projectCount - 1) : 0;
+}
+
+function projectLoadLevel(score) {
+  if (score > 5) return { label: 'Перегруз', tone: 'overloaded' };
+  if (score >= 3) return { label: 'Полная', tone: 'full' };
+  if (score >= 1.5) return { label: 'Средняя', tone: 'medium' };
+  if (score > 0) return { label: 'Низкая', tone: 'small' };
   return { label: 'Нет загрузки', tone: 'none' };
 }
 
-function projectLoadSummary(maxHours) {
-  const level = projectLoadLevel(maxHours);
+function projectLoadSummary(score) {
+  const level = projectLoadLevel(score);
   return { variant: 'load-level', tone: level.tone, text: level.label };
 }
 
@@ -90,7 +105,7 @@ const CREATE_TARGETS = [
   ['договоренности', { target: 'agreements' }], ['договорённости', { target: 'agreements' }],
   ['идею', { target: 'idea' }], ['идея', { target: 'idea' }], ['мысль', { target: 'idea' }],
   ['запись в журнал', { target: 'note' }], ['запись в журнале', { target: 'note' }],
-  ['в журнал', { target: 'note' }], ['заметку', { target: 'note' }], ['заметка', { target: 'note' }],
+  ['в заметки', { target: 'note' }], ['в журнал', { target: 'note' }], ['заметку', { target: 'note' }], ['заметка', { target: 'note' }],
 ].sort((a, b) => b[0].length - a[0].length);
 
 // Обзорные вопросы про человека или проект. Порядок важен: длинные формулировки первыми.
@@ -170,7 +185,8 @@ const CREATE_DUE_MARKERS = [
 ].sort((a, b) => b[0].length - a[0].length);
 
 // Зеркало MEETING_TYPE_LABEL из тех же констант — тип встречи показывается в строке.
-const MEETING_TYPE_LABEL = { '1:1': '1:1', pr: 'PR', club: 'Техна', retro: 'Ретро', project: 'Проект', other: 'Другое' };
+const MEETING_TYPE_LABEL = { '1:1': '1:1', pr: 'PR', other: 'Другое' };
+const MEETING_TYPE_TITLE = { '1:1': 'Встреча 1:1', pr: 'Performance review', other: 'Встреча' };
 
 const RU_MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 
@@ -221,10 +237,6 @@ function daysAgoLabel(days) {
   return `${days} ${plural(days, 'день', 'дня', 'дней')} назад`;
 }
 
-function escapeRe(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 module.exports = function createSmartSearch({ db, visibleItems, search, isTeamlead }) {
   const { norm, rankPeopleByFragment, findProjectByFragment, parseQuery, runSearch, parseRelativeDatePhrase, stripSearchFillers, fuzzyWordMatch } = search;
 
@@ -236,10 +248,6 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
   // («создай идею: клуб продаж»), поэтому граница здесь шире, чем просто пробел.
   function startsWithCommandWord(text, phrase) {
     return new RegExp(`^${escapeRe(phrase)}(?=[\\s:;,.—–-]|$)`, 'i').test(text);
-  }
-
-  function containsPhrase(text, phrase) {
-    return new RegExp(`(^|\\s)${escapeRe(phrase)}(?=\\s|$)`, 'i').test(text);
   }
 
   // ---------- Разбор намерения ----------
@@ -441,7 +449,7 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
       }
 
       const monthAgo = shiftDay(today, -30);
-      const mentions = visibleItems('journal', user).filter((entry) => !entry.kind || entry.kind === 'note').filter((entry) => (entry.mentions || []).some((mention) => mention.id === person.id)
+      const mentions = visibleItems('journal', user).filter((entry) => (entry.mentions || []).some((mention) => mention.id === person.id)
         && (!entry.createdByUserId || entry.createdByUserId === user?.id)
         && dateKey(entry.createdAt) >= monthAgo);
       if (mentions.length) {
@@ -544,16 +552,28 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
     };
   }
 
-  const taskItem = (task, today) => ({
-    title: task.title,
-    date: task.dueDate || '',
-    dateKind: 'due',
-    tone: task.dueDate && dateKey(task.dueDate) < today && task.status !== 'done' ? 'danger' : '',
-    entityType: 'task',
-    entityId: task.id,
-    status: task.status || 'todo',
-    open: { command: 'openTaskModal', arg: task.id },
-  });
+  const taskItem = (task, today, user) => {
+    const projects = visibleItems('projects', user);
+    const people = visibleItems('people', user);
+    const project = task.projectId ? projects.find((item) => item.id === task.projectId) : null;
+    const assigneeId = Array.isArray(task.assigneeIds) ? task.assigneeIds[0] : null;
+    const assignee = assigneeId ? people.find((item) => item.id === assigneeId) : null;
+    return {
+      title: task.title,
+      date: task.dueDate || '',
+      dateKind: 'due',
+      tone: task.dueDate && dateKey(task.dueDate) < today && task.status !== 'done' ? 'danger' : '',
+      entityType: 'task',
+      entityId: task.id,
+      taskKey: task.taskKey || '',
+      status: task.status || 'todo',
+      priority: task.priority || 'normal',
+      projectName: project?.name || (task.taskType === 'development' ? 'Технологизация' : ''),
+      assigneeId: assignee?.id || assigneeId || '',
+      assigneeName: assignee?.name || '',
+      open: { route: `/tasks/${encodeURIComponent(task.taskKey || task.id)}` },
+    };
+  };
 
   function meetingPersonName(meeting, user, focusId = null) {
     const type = norm(meeting.type);
@@ -577,11 +597,20 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
   const meetingItem = (meeting, user, focusId = null) => ({
     title: meetingPersonName(meeting, user, focusId) || meeting.title || 'Встреча',
     // Тип в базе встречается и как 'PR', и как 'pr' — сверяем в нижнем регистре.
-    label: MEETING_TYPE_LABEL[norm(meeting.type)] || '',
-    meetingType: norm(meeting.type) || 'other',
+    label: MEETING_TYPE_LABEL[norm(meeting.type)] || 'Другое',
+    meetingType: ['1:1', 'pr'].includes(norm(meeting.type)) ? norm(meeting.type) : 'other',
     date: meeting.date || '',
-    open: { route: `/meetings/${encodeURIComponent(meeting.slug || meeting.id)}` },
+    meetingKey: meeting.meetingKey || '',
+    open: { route: `/meetings/${encodeURIComponent(meeting.meetingKey || meeting.id)}` },
   });
+
+  // В сводке по сотруднику его имя уже в заголовке страницы: у личных встреч
+  // (1:1, PR) заголовком становится сам тип, у остальных — тема встречи.
+  const personMeetingItem = (meeting, user, personId) => {
+    const type = norm(meeting.type) || 'other';
+    const topic = type === '1:1' || type === 'pr' ? '' : String(meeting.title || '').trim();
+    return { ...meetingItem(meeting, user, personId), title: topic || MEETING_TYPE_TITLE[type] || 'Встреча', label: '' };
+  };
 
   const issueItem = (issue) => ({
     title: issue.title,
@@ -590,8 +619,9 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
     tone: '',
     entityType: 'issue',
     entityId: issue.id,
+    issueKey: issue.issueKey || '',
     status: issue.status || 'open',
-    open: { command: 'openIssueModal', arg: issue.id },
+    open: { route: `/issues/${encodeURIComponent(issue.issueKey || issue.id)}` },
   });
 
   const agreementItem = (agreement, today) => ({
@@ -601,14 +631,16 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
     tone: agreement.dueDate && dateKey(agreement.dueDate) < today ? 'danger' : '',
     entityType: 'agreement',
     entityId: agreement.id,
+    agreementKey: agreement.agreementKey || '',
     status: agreement.status || 'open',
-    open: { command: 'openAgreementModal', arg: agreement.id },
+    open: { route: `/agreements/${encodeURIComponent(agreement.agreementKey || agreement.id)}` },
   });
 
   const journalItem = (entry) => ({
     title: entry.text,
-    date: entry.createdAt || '',
-    open: { route: `/journal?entry=${encodeURIComponent(entry.id)}` },
+    date: dateKey(entry.createdAt) || '',
+    noteKey: entry.noteKey || '',
+    open: { route: `/journal?entry=${encodeURIComponent(entry.noteKey || entry.id)}` },
   });
 
   const technologyEventItem = (item) => ({
@@ -632,8 +664,8 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
   function personDigest(person, user) {
     const today = todayKey();
     const id = person.id;
-    const tasks = visibleItems('tasks', user).filter((task) => !task.archivedAt && (task.assigneeIds || []).includes(id));
-    const openTasks = tasks.filter((task) => task.status !== 'done');
+    const tasks = visibleItems('tasks', user).filter((task) => isActiveTask(task) && (task.assigneeIds || []).includes(id));
+    const openTasks = tasks.filter(isActiveTask);
     const inProgressTasks = openTasks.filter((task) => task.status === 'in_progress');
     const meetings = visibleItems('meetings', user).filter((meeting) => (meeting.participantIds || []).includes(id));
     const upcomingMeetings = meetings.filter((meeting) => dateKey(meeting.date) >= today)
@@ -648,18 +680,17 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
       .filter((item) => item.personId === id)
       .sort((a, b) => dateKey(b.weekStart).localeCompare(dateKey(a.weekStart)))[0] || null;
 
-    // В персональной сводке «Договорённости» и «Проблемы» — это все сущности, где
-    // человек упомянут, независимо от текущего статуса. Так сводка не теряет уже
-    // решённый контекст, который всё ещё важен для разговора с сотрудником.
+    // В персональной сводке оставляем контекст договорённостей, но проблемы
+    // показываем только активные: решённые не являются рекомендациями к действию.
     const agreements = visibleItems('agreements', user).filter((item) =>
       (item.withPersonIds || []).includes(id) || (item.mentions || []).some((mention) => mention.id === id));
-    const issues = visibleItems('issues', user).filter((item) =>
-      (item.relatedPersonIds || []).includes(id) || (item.mentions || []).some((mention) => mention.id === id))
+    const issues = visibleItems('issues', user).filter((item) => isActiveIssue(item) && (
+      (item.relatedPersonIds || []).includes(id) || (item.mentions || []).some((mention) => mention.id === id)))
       .sort((a, b) => Number(b.severity === 'high') - Number(a.severity === 'high')
         || String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
 
-    const notes = visibleItems('journal', user).filter((entry) => (!entry.kind || entry.kind === 'note')
-      && (entry.mentions || []).some((mention) => mention.id === id))
+    const notes = visibleItems('journal', user)
+      .filter((entry) => (entry.mentions || []).some((mention) => mention.id === id))
       .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
 
     const projects = visibleItems('projects', user).filter((project) => project.status === 'active' && (project.memberIds || []).includes(id));
@@ -667,14 +698,13 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
       const cfg = projectLoadConfig((project.memberLoads || {})[id]);
       return {
         title: project.name,
-        meta: `${cfg.label} (${cfg.rangeLabel})`,
-        markerColor: project.color || '',
-        maxHours: cfg.max,
-        open: { route: `/projects/${encodeURIComponent(project.slug || project.id)}` },
+        meta: cfg.label,
+        weight: cfg.weight,
+        open: { route: `/projects/${encodeURIComponent(project.projectKey || project.id)}` },
       };
     });
 
-    const totalMaxHours = loadItems.reduce((sum, item) => sum + item.maxHours, 0);
+    const loadScore = loadItems.reduce((sum, item) => sum + item.weight, 0) + fragmentationPenalty(loadItems.length);
 
     const sections = [
       {
@@ -684,35 +714,35 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
         more: 0,
         layout: 'project-load',
         summary: {
-          ...projectLoadSummary(totalMaxHours),
-          action: { label: 'Редактировать', command: 'openPersonLoadModal', arg: id },
+          ...projectLoadSummary(loadScore),
+          action: { label: 'Изменить загрузку', command: 'openPersonLoadModal', arg: id },
         },
         emptyText: 'Нет активных проектов',
       },
       latestCheckin ? {
-        title: `Check-in за ${ruDate(latestCheckin.weekStart)} — ${ruDate(shiftDay(dateKey(latestCheckin.weekStart), 6))}`,
+        title: `Weekly за ${ruDate(latestCheckin.weekStart)} — ${ruDate(shiftDay(dateKey(latestCheckin.weekStart), 6))}`,
         count: 3,
         layout: 'labeled-text',
         items: [
-          { label: 'На прошлой неделе', title: String(latestCheckin.did || '').trim() || '—', wrapText: true },
-          { label: 'На этой неделе', title: String(latestCheckin.willDo || '').trim() || '—', wrapText: true },
-          { label: 'Блокеры', title: String(latestCheckin.blockers || '').trim() || '—', tone: String(latestCheckin.blockers || '').trim() ? 'warning' : '', wrapText: true },
+          { label: 'На прошлой неделе', title: String(latestCheckin.did || '').trim() || 'Не заполнено', wrapText: true },
+          { label: 'На этой неделе', title: String(latestCheckin.willDo || '').trim() || 'Не заполнено', wrapText: true },
+          { label: 'Блокеры', title: String(latestCheckin.blockers || '').trim() || 'Блокеров нет', tone: String(latestCheckin.blockers || '').trim() ? 'warning' : '', wrapText: true },
         ],
         more: 0,
-        footer: { label: 'Все check-in', route: `/checkins?person=${encodeURIComponent(id)}` },
+        footer: { label: 'Все Weekly', route: `/weekly?person=${encodeURIComponent(id)}` },
       } : null,
       section(
         'Задачи в работе',
-        inProgressTasks.map((task) => taskItem(task, today)),
-        { footer: { label: 'Все задачи', route: `/tasks?person=${encodeURIComponent(id)}` } },
+        inProgressTasks.map((task) => taskItem(task, today, user)),
+        { footer: { label: 'Все задачи', route: `/tasks?view=team&person=${encodeURIComponent(id)}&status=open` } },
       ),
-      section('Ближайшие встречи', upcomingMeetings.map((meeting) => meetingItem(meeting, user, id))),
+      section('Ближайшие встречи', upcomingMeetings.map((meeting) => personMeetingItem(meeting, user, id))),
       section(
         'Запланированные мероприятия',
         upcomingTechnologyEvents.map(technologyEventItem),
         { footer: { label: 'План мероприятий', route: '/technology' } },
       ),
-      section('Заметки в журнале', notes.map(journalItem), { limit: 5, footer: { label: 'Журнал', route: `/journal` } }),
+      section('Журнал', notes.map(journalItem), { limit: 5, footer: { label: 'Журнал', route: `/journal` } }),
       issues.length
         ? section('Проблемы', issues.map(issueItem), {
           limit: issues.length,
@@ -759,10 +789,9 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
     const projects = visibleItems('projects', user).filter((project) => project.status === 'active');
 
     const loadItems = people.map((person) => {
-      const maxHours = projects
-        .filter((project) => (project.memberIds || []).includes(person.id))
-        .reduce((sum, project) => sum + projectLoadConfig((project.memberLoads || {})[person.id]).max, 0);
-      const level = projectLoadLevel(maxHours);
+      const personProjects = projects.filter((project) => (project.memberIds || []).includes(person.id));
+      const score = personProjects.reduce((sum, project) => sum + projectLoadConfig((project.memberLoads || {})[person.id]).weight, 0) + fragmentationPenalty(personProjects.length);
+      const level = projectLoadLevel(score);
       return {
         title: person.name,
         meta: level.label,
@@ -771,11 +800,11 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
     });
 
     const tasks = visibleItems('tasks', user)
-      .filter((task) => !task.archivedAt && task.status === 'in_progress' && (task.assigneeIds || []).some((id) => teamIds.has(id)))
+      .filter((task) => isActiveTask(task) && task.status === 'in_progress' && (task.assigneeIds || []).some((id) => teamIds.has(id)))
       .sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), 'ru'));
 
     const issues = visibleItems('issues', user)
-      .filter((item) => item.status !== 'resolved' && (item.relatedPersonIds || []).some((id) => teamIds.has(id)))
+      .filter((item) => isActiveIssue(item) && (item.relatedPersonIds || []).some((id) => teamIds.has(id)))
       .sort((a, b) => Number(b.severity === 'high') - Number(a.severity === 'high')
         || String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
 
@@ -784,16 +813,20 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
       .map((item) => ({
         title: peopleById.get(item.personId)?.name || 'Сотрудник',
         meta: String(item.blockers || '').trim(),
-        open: { route: `/checkins?person=${encodeURIComponent(item.personId || '')}` },
+        open: { route: `/weekly?person=${encodeURIComponent(item.personId || '')}` },
       }));
 
     const absences = visibleItems('vacations', user)
       .filter((item) => teamIds.has(item.personId) && dateKey(item.endDate) >= today)
       .sort((a, b) => dateKey(a.startDate).localeCompare(dateKey(b.startDate)))
       .map((item) => ({
+        entityType: 'vacation',
+        entityId: item.id,
         title: peopleById.get(item.personId)?.name || 'Сотрудник',
+        absenceType: item.type || 'vacation',
+        note: item.note || '',
         date: item.startDate || '',
-        dateEnd: item.endDate || '',
+        dateEnd: item.endDate || item.startDate || '',
         open: { route: `/people/${encodeURIComponent(peopleById.get(item.personId)?.slug || item.personId || '')}` },
       }));
 
@@ -809,9 +842,9 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
       signals: [],
       sections: [
         loadItems.length ? { title: 'Загрузка команды', count: loadItems.length, items: loadItems, more: 0 } : null,
-        section('Задачи в работе', tasks.map((task) => taskItem(task, today)), { footer: { label: 'Все задачи', route: '/tasks?project=all' } }),
+        section('Задачи в работе', tasks.map((task) => taskItem(task, today, user)), { footer: { label: 'Все задачи', route: '/tasks?project=all' } }),
         section('Проблемы', issues.map(issueItem), { footer: { label: 'Все проблемы', route: '/issues' } }),
-        section('Блокеры в Check-in', blockers, { footer: { label: 'Все Check-in', route: '/checkins' } }),
+        section('Блокеры в Weekly', blockers, { footer: { label: 'Все Weekly', route: '/weekly' } }),
         section('Запланированные мероприятия', technologyEvents.map(technologyEventItem), { footer: { label: 'План мероприятий', route: '/technology' } }),
         section('Отсутствия', absences, { footer: { label: 'Календарь', route: '/calendar' } }),
       ].filter(Boolean),
@@ -821,10 +854,10 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
   function projectDigest(project, user) {
     const today = todayKey();
     const id = project.id;
-    const tasks = visibleItems('tasks', user).filter((task) => !task.archivedAt && task.projectId === id);
-    const openTasks = tasks.filter((task) => task.status !== 'done');
+    const tasks = visibleItems('tasks', user).filter((task) => isActiveTask(task) && task.projectId === id);
+    const openTasks = tasks.filter(isActiveTask);
     const overdueTasks = openTasks.filter((task) => task.dueDate && dateKey(task.dueDate) < today);
-    const issues = visibleItems('issues', user).filter((item) => item.status !== 'resolved' && (item.projectId === id || (item.relatedProjectIds || []).includes(id)));
+    const issues = visibleItems('issues', user).filter((item) => isActiveIssue(item) && (item.projectId === id || (item.relatedProjectIds || []).includes(id)));
     const meetings = visibleItems('meetings', user).filter((meeting) => meeting.projectId === id && dateKey(meeting.date) >= today)
       .sort((a, b) => dateKey(a.date).localeCompare(dateKey(b.date)));
     const agreements = visibleItems('agreements', user).filter((item) => item.status !== 'done' && item.projectId === id);
@@ -833,7 +866,7 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
     const signals = [];
     if (overdueTasks.length) signals.push({ tone: 'danger', text: `${overdueTasks.length} ${plural(overdueTasks.length, 'просроченная задача', 'просроченные задачи', 'просроченных задач')}` });
     const highIssues = issues.filter((item) => item.severity === 'high');
-    if (highIssues.length) signals.push({ tone: 'danger', text: `${highIssues.length} ${plural(highIssues.length, 'серьёзная проблема', 'серьёзные проблемы', 'серьёзных проблем')}` });
+    if (highIssues.length) signals.push({ tone: 'danger', text: `${highIssues.length} ${plural(highIssues.length, 'важная проблема', 'важные проблемы', 'важных проблем')}` });
     if (!signals.length) signals.push({ tone: 'ok', text: 'Тревожных сигналов нет' });
 
     return {
@@ -842,16 +875,16 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
       subtitle: `${openTasks.length} ${plural(openTasks.length, 'открытая задача', 'открытые задачи', 'открытых задач')}`,
       signals,
       sections: [
-        section('Открытые задачи', openTasks.map((task) => taskItem(task, today))),
-        section('Проблемы', issues.map(issueItem)),
+        section('Открытые задачи', openTasks.map((task) => taskItem(task, today, user)), { footer: { label: 'Все задачи', route: `/tasks?view=team&project=${encodeURIComponent(id)}&status=open` } }),
+        section('Проблемы', issues.map(issueItem), { footer: { label: 'Все проблемы', route: `/issues?project=${encodeURIComponent(id)}` } }),
         section('Ближайшие встречи', meetings.map((meeting) => meetingItem(meeting, user))),
-        section('Договорённости', agreements.map((item) => agreementItem(item, today))),
+        section('Договорённости', agreements.map((item) => agreementItem(item, today)), { footer: { label: 'Все договорённости', route: `/agreements?project=${encodeURIComponent(id)}` } }),
         section('Участники', members.map((person) => ({
           title: person.name, meta: person.role || '',
           open: { route: `/people/${encodeURIComponent(person.slug || person.id)}` },
         }))),
       ].filter(Boolean),
-      footer: { label: 'Открыть проект', route: `/projects/${encodeURIComponent(project.slug || project.id)}` },
+      footer: { label: 'Открыть проект', route: `/projects/${encodeURIComponent(project.projectKey || project.id)}` },
     };
   }
 
@@ -863,7 +896,7 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
 
     // 1. Поработать над задачами — ровно тот же приоритетный алгоритм, который
     // используется выбранной пользователем стратегией на главном экране.
-    const ownTasks = visibleItems('tasks', user).filter((task) => !task.archivedAt && task.status !== 'done'
+    const ownTasks = visibleItems('tasks', user).filter((task) => isActiveTask(task)
       && (!personId || (task.assigneeIds || []).includes(personId)));
     const topTasks = rankTasksByPriority(ownTasks, priorityMode, today);
     const projectsById = new Map(visibleItems('projects', user).map((project) => [project.id, project]));
@@ -878,19 +911,25 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
         taskGroupsMap.set(key, {
           id: key,
           title: project?.name || 'Без проекта',
-          route: project ? `/projects/${encodeURIComponent(project.slug || project.id)}` : '',
+          route: project ? `/projects/${encodeURIComponent(project.projectKey || project.id)}` : '',
           all: [],
         });
       }
       taskGroupsMap.get(key).all.push(task);
     }
-    const taskGroups = Array.from(taskGroupsMap.values()).map((group) => ({
-      title: group.title,
-      ...(group.route ? { route: group.route } : {}),
-      count: group.all.length,
-      items: group.all.slice(0, TODAY_TASKS_PER_PROJECT_LIMIT).map((task) => taskItem(task, today)),
-      more: Math.max(0, group.all.length - TODAY_TASKS_PER_PROJECT_LIMIT),
-    }));
+    const taskGroups = Array.from(taskGroupsMap.values())
+      .sort((a, b) => {
+        if (a.id === '__no_project__') return 1;
+        if (b.id === '__no_project__') return -1;
+        return String(a.title || '').localeCompare(String(b.title || ''), 'ru', { sensitivity: 'base' });
+      })
+      .map((group) => ({
+        title: group.title,
+        ...(group.route ? { route: group.route } : {}),
+        count: group.all.length,
+        items: group.all.slice(0, TODAY_TASKS_PER_PROJECT_LIMIT).map((task) => taskItem(task, today, user)),
+        more: Math.max(0, group.all.length - TODAY_TASKS_PER_PROJECT_LIMIT),
+      }));
 
     // 2. Подготовиться к встречам — только сегодня и завтра. Для сводки по человеку
     // фильтруем его участие; без явного focus берём все доступные пользователю встречи,
@@ -927,7 +966,7 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
 
     // 4. Разобраться с проблемами — только нерешённые, сначала важные.
     const issues = visibleItems('issues', user)
-      .filter((item) => item.status !== 'resolved'
+      .filter((item) => isActiveIssue(item)
         && (!focus || (item.relatedPersonIds || []).includes(personId)))
       .sort((a, b) => Number(b.severity === 'high') - Number(a.severity === 'high')
         || String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
@@ -961,7 +1000,7 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
     const highIssues = issues.filter((item) => item.severity === 'high');
     const signals = [];
     if (overdueTasks.length) signals.push({ tone: 'danger', text: `${overdueTasks.length} ${plural(overdueTasks.length, 'просроченная задача', 'просроченные задачи', 'просроченных задач')}` });
-    if (highIssues.length) signals.push({ tone: 'danger', text: `${highIssues.length} ${plural(highIssues.length, 'серьёзная проблема', 'серьёзные проблемы', 'серьёзных проблем')}` });
+    if (highIssues.length) signals.push({ tone: 'danger', text: `${highIssues.length} ${plural(highIssues.length, 'важная проблема', 'важные проблемы', 'важных проблем')}` });
     if (meetingsWithoutOutcomes.length) signals.push({ tone: 'warning', text: `${meetingsWithoutOutcomes.length} ${plural(meetingsWithoutOutcomes.length, 'встреча без итогов', 'встречи без итогов', 'встреч без итогов')}` });
     if (!signals.length) signals.push({ tone: 'ok', text: 'Тревожных сигналов нет' });
 
@@ -980,14 +1019,14 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
           items: taskGroups.flatMap((group) => group.items),
           groups: taskGroups,
           emptyText: 'Приоритетных задач нет',
-          footer: { label: 'Все мои задачи', route: '/tasks?mine=1&project=all' },
+          footer: { label: 'Все мои задачи', route: focus ? `/tasks?view=team&person=${encodeURIComponent(personId)}&status=open` : '/tasks?view=my&status=open' },
         },
         card('Подготовиться к встречам', meetings.map((meeting) => meetingItem(meeting, user, focus ? personId : null)), null, 'На сегодня и завтра встреч нет', { label: 'Все встречи', route: '/meetings' }),
         card('Подготовиться к мероприятиям', technologyEvents.map(technologyEventItem), null, 'На сегодня и завтра мероприятий нет', { label: 'План мероприятий', route: '/technology' }),
         card('Перенести или заполнить итоги', meetingsWithoutOutcomes.map((meeting) => meetingItem(meeting, user, focus ? personId : null)), TODAY_MISSED_MEETINGS_LIMIT, 'Встреч без итогов нет', { label: 'Все встречи', route: '/meetings' }),
-        card('Проверить заметки', pinnedNotes.map(journalItem), TODAY_NOTES_LIMIT, 'Прикреплённых заметок нет', { label: 'Журнал', route: '/journal' }),
-        card('Разобраться с проблемами', issues.map(issueItem), TODAY_ISSUES_LIMIT, 'Нерешённых проблем нет', { label: 'Все проблемы', route: '/issues' }),
-        card('Актуализировать договорённости', agreements.map((item) => agreementItem(item, today)), TODAY_AGREEMENTS_LIMIT, 'Открытых договорённостей нет', { label: 'Все договорённости', route: '/agreements' }),
+        card('Проверить журнал', pinnedNotes.map(journalItem), TODAY_NOTES_LIMIT, 'Прикреплённых записей нет', { label: 'Журнал', route: '/journal' }),
+        card('Разобраться с проблемами', issues.map(issueItem), TODAY_ISSUES_LIMIT, 'Нерешённых проблем нет', { label: 'Все проблемы', route: focus ? `/issues?person=${encodeURIComponent(personId)}` : '/issues' }),
+        card('Актуализировать договорённости', agreements.map((item) => agreementItem(item, today)), TODAY_AGREEMENTS_LIMIT, 'Открытых договорённостей нет', { label: 'Все договорённости', route: focus ? `/agreements?person=${encodeURIComponent(personId)}` : '/agreements' }),
       ].filter((section) => Array.isArray(section.groups) ? section.groups.some((group) => (group.items || []).length) : (section.items || []).length),
     };
   }
@@ -1014,7 +1053,7 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
         && (focus ? (item.personIds || []).includes(personId) : (!personId || (item.personIds || []).includes(personId) || item.createdByUserId === userId)))
       .sort((a, b) => dateKey(a.plannedDate).localeCompare(dateKey(b.plannedDate)));
     const tasks = visibleItems('tasks', user)
-      .filter((task) => !task.archivedAt && task.status !== 'done' && inWeek(task.dueDate)
+      .filter((task) => isActiveTask(task) && inWeek(task.dueDate)
         && (!personId || (task.assigneeIds || []).includes(personId)))
       .sort((a, b) => dateKey(a.dueDate).localeCompare(dateKey(b.dueDate)));
     const agreements = visibleItems('agreements', user)
@@ -1051,17 +1090,22 @@ module.exports = function createSmartSearch({ db, visibleItems, search, isTeamle
       sections: [
         section('Встречи недели', meetings.map((meeting) => meetingItem(meeting, user, focus ? personId : null)), { footer: { label: 'Календарь', route: '/calendar' } }),
         section('Запланированные мероприятия', technologyEvents.map(technologyEventItem), { footer: { label: 'План мероприятий', route: '/technology' } }),
-        section('Задачи со сроком', tasks.map((task) => taskItem(task, today)), { footer: { label: 'Все мои задачи', route: '/tasks?mine=1&project=all' } }),
+        section('Задачи со сроком', tasks.map((task) => taskItem(task, today, user)), { footer: { label: 'Все мои задачи', route: focus ? `/tasks?view=team&person=${encodeURIComponent(personId)}&status=open` : '/tasks?view=my&status=open' } }),
         section('Договорённости к сроку', agreements.map((item) => agreementItem(item, today))),
         section('Отсутствия', absences.map((item) => ({
+          entityType: 'vacation',
+          entityId: item.id,
           title: personName(item.personId) || 'Сотрудник',
+          absenceType: item.type || 'vacation',
+          note: item.note || '',
           date: item.startDate || '',
-          dateEnd: item.endDate || '',
+          dateEnd: item.endDate || item.startDate || '',
           open: { route: '/calendar' },
         }))),
         section('Дни рождения', birthdays.map((person) => ({
           title: person.name,
-          meta: ruDate(`2000-${String(person.birthday).slice(5, 10)}`),
+          // Дата ближайшего дня рождения, чтобы клиент показал «Завтра» / «через 3 дня».
+          date: `${Number(today.slice(0, 4)) + (String(person.birthday).slice(5, 10) < today.slice(5, 10) ? 1 : 0)}-${String(person.birthday).slice(5, 10)}`,
           open: { route: `/people/${encodeURIComponent(person.slug || person.id)}` },
         }))),
       ].filter(Boolean),

@@ -49,6 +49,15 @@ module.exports = function createRecurringMeetings({ db, isAdmin, isActiveTeamMem
     }
   }
 
+  function removeFuturePersonalMeetings(person, today) {
+    for (const meeting of db.meetings.all()) {
+      const type = String(meeting.type || '').toLowerCase();
+      const isPersonal = type === '1:1' || type === 'pr';
+      const includesPerson = (meeting.participantIds || []).includes(person.id);
+      if (isPersonal && includesPerson && dateOnly(meeting.date) >= today) db.meetings.remove(meeting.id);
+    }
+  }
+
   // An auto-recurring 1:1/PR meeting should only ever have `person` as its
   // sole participant — repair any that drifted (e.g. a manual edit added a
   // co-participant) before recomputing future/past state below.
@@ -68,7 +77,7 @@ module.exports = function createRecurringMeetings({ db, isAdmin, isActiveTeamMem
     const today = now.toISOString().slice(0, 10);
 
     if (!isActiveTeamMember(person)) {
-      removeFutureAutoMeetings(person, today);
+      removeFuturePersonalMeetings(person, today);
       return;
     }
 

@@ -4,11 +4,19 @@ module.exports = function createEntityIdentifiers({ db, nextNumericKey }) {
   const SLUG_COLLECTIONS = {
     people: (item) => item.name,
     projects: (item) => item.name,
-    goals: (item) => item.title,
     kbDocs: (item) => item.title,
   };
 
-  // Транслитерация кириллицы в латиницу для человекочитаемых URL-слагов.
+  const KEY_SPECS = {
+    issues: { field: 'issueKey', prefix: 'ISSUE' },
+    processes: { field: 'processKey', prefix: 'PROCESS' },
+    agreements: { field: 'agreementKey', prefix: 'AGREE' },
+    goals: { field: 'goalKey', prefix: 'GOAL' },
+    journal: { field: 'noteKey', prefix: 'NOTE' },
+    tools: { field: 'toolKey', prefix: 'TOOL' },
+    meetings: { field: 'meetingKey', prefix: 'MEET' },
+  };
+
   const CYRILLIC_TO_LATIN = {
     а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y',
     к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f',
@@ -29,10 +37,7 @@ module.exports = function createEntityIdentifiers({ db, nextNumericKey }) {
   function uniqueSlug(name, label, excludeId) {
     const base = slugify(label);
     const used = new Set(
-      db[name].all()
-        .filter((item) => item.id !== excludeId)
-        .map((item) => item.slug)
-        .filter(Boolean),
+      db[name].all().filter((item) => item.id !== excludeId).map((item) => item.slug).filter(Boolean),
     );
     if (!used.has(base)) return base;
     let n = 2;
@@ -40,217 +45,152 @@ module.exports = function createEntityIdentifiers({ db, nextNumericKey }) {
     return `${base}-${n}`;
   }
 
-  function ensureSlugs() {
-    for (const [name, labelOf] of Object.entries(SLUG_COLLECTIONS)) {
-      for (const item of db[name].all()) {
-        if (!item.slug) db[name].update(item.id, { slug: uniqueSlug(name, labelOf(item), item.id) });
-      }
-    }
+  function findByField(collection, field, ref) {
+    const key = String(ref || '').trim().toUpperCase();
+    return db[collection].all().find((item) => String(item[field] || '').trim().toUpperCase() === key) || null;
   }
 
-  /** Looks up a collection item by whichever public reference the caller has: internal id,
-   * a human-readable entity key (TASK-1, MEET-1, PROCESS-1), or a slug. */
   function resolveEntity(name, ref) {
     const byId = db[name].get(ref);
     if (byId) return byId;
 
-    function findByKey(collection, keyField) {
-      const key = String(ref || '').trim().toUpperCase();
-      return db[collection].all().find((item) => String(item[keyField] || '').toUpperCase() === key) || null;
-    }
-
-    if (name === 'tasks') {
-      return findByKey('tasks', 'taskKey');
+    if (name === 'tasks') return findByField('tasks', 'taskKey', ref);
+    if (name === 'projects') {
+      return findByField('projects', 'projectKey', ref)
+        || db.projects.all().find((item) => item.slug === ref) || null;
     }
     if (name === 'labs') {
-      // Idea-type lab rows never get a labKey (see ensureLabKeys), so a bare
-      // idea can't be resolved by key here — only by id.
       const key = String(ref || '').trim().toUpperCase();
-      return db.labs.all().find((item) => item.entityType !== 'idea' && String(item.labKey || '').toUpperCase() === key) || null;
+      return db.labs.all().find((item) => String(item.entityType === 'idea' ? item.ideaKey : item.blueprintKey || '').toUpperCase() === key) || null;
     }
-    if (name === 'meetings') {
-      return findByKey('meetings', 'meetingKey');
-    }
-    if (name === 'processes') {
-      return findByKey('processes', 'processKey');
-    }
+    if (KEY_SPECS[name]) return findByField(name, KEY_SPECS[name].field, ref);
     if (!SLUG_COLLECTIONS[name]) return null;
     return db[name].all().find((item) => item.slug === ref) || null;
   }
 
-  function normalizeProjectTaskCode(value) {
-    return String(value || '').trim().toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
+  function normalizeProjectKey(value) {
+    return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
   }
 
-  function deriveProjectTaskCode(project) {
+  function deriveProjectKey(project) {
     const translit = slugify(project?.name || project?.slug || '').replace(/[^a-z0-9]/gi, '').toUpperCase();
-    const letters = translit.replace(/[^A-Z]/g, '');
-    return (letters.slice(0, 4) || 'PRJT').padEnd(4, 'X').slice(0, 4);
+    return (translit.slice(0, 4) || 'PRJ').slice(0, 4);
   }
 
-  function uniqueProjectTaskCode(project, excludeId) {
-    const used = new Set(
-      db.projects.all()
-        .filter((item) => item.id !== excludeId)
-        .map((item) => normalizeProjectTaskCode(item.taskCode))
-        .filter(Boolean),
-    );
-    const base = normalizeProjectTaskCode(project?.taskCode) || deriveProjectTaskCode(project);
+  function uniqueProjectKey(project, excludeId) {
+    const used = new Set(db.projects.all()
+      .filter((item) => item.id !== excludeId)
+      .map((item) => normalizeProjectKey(item.projectKey))
+      .filter(Boolean));
+    const requested = normalizeProjectKey(project?.projectKey);
+    const base = requested || deriveProjectKey(project);
     if (!used.has(base)) return base;
-    const stem = base.slice(0, 3);
-    for (const ch of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
-      const candidate = `${stem}${ch}`;
+    for (let n = 2; n < 1000; n += 1) {
+      const suffix = String(n);
+      const candidate = `${base.slice(0, Math.max(1, 4 - suffix.length))}${suffix}`.slice(0, 4);
       if (!used.has(candidate)) return candidate;
     }
-    return 'PRJT';
+    throw new Error('project_key_space_exhausted');
   }
-  /** Normalizes, length-checks and dedupe-checks a project's taskCode. Used by both the
-   * projects POST and PUT handlers in routes/crud.js, which previously duplicated this
-   * logic independently.
-   *
-   * - autoGenerate:false (PUT/update): taskCode must already be a full valid code —
-   *   returns { error, status } on an invalid or duplicate code, else { code }.
-   * - autoGenerate:true (POST/create): an empty/missing taskCode is filled in with a
-   *   freshly derived unique one instead of erroring. */
-  function validateProjectTaskCode(db, payload, excludeId, { autoGenerate = false } = {}) {
-    const requested = normalizeProjectTaskCode(payload?.taskCode);
-    const isDuplicate = (code) => db.projects.all().some(
-      (project) => project.id !== excludeId && normalizeProjectTaskCode(project.taskCode) === code,
+
+  function validateProjectKey(dbRef, payload, excludeId, { autoGenerate = false } = {}) {
+    const raw = String(payload?.projectKey || '').trim();
+    const requested = normalizeProjectKey(raw);
+    const duplicate = (code) => dbRef.projects.all().some(
+      (project) => project.id !== excludeId && normalizeProjectKey(project.projectKey) === code,
     );
-
-    if (autoGenerate) {
-      if (payload?.taskCode && requested.length !== 4) return { error: 'invalid_project_task_code', status: 400 };
-      const code = requested || uniqueProjectTaskCode(payload, excludeId);
-      if (isDuplicate(code)) return { error: 'project_task_code_exists', status: 409 };
-      return { code };
+    if (!raw && autoGenerate) return { code: uniqueProjectKey(payload, excludeId) };
+    if (!requested || requested.length > 4 || requested !== raw.toUpperCase().replace(/\s+/g, '')) {
+      return { error: 'invalid_project_key', status: 400 };
     }
-
-    if (requested.length !== 4) return { error: 'invalid_project_task_code', status: 400 };
-    if (isDuplicate(requested)) return { error: 'project_task_code_exists', status: 409 };
+    if (duplicate(requested)) return { error: 'project_key_exists', status: 409 };
     return { code: requested };
-  }
-
-  function ensureProjectTaskCodes() {
-    for (const project of db.projects.all()) {
-      const current = normalizeProjectTaskCode(project.taskCode);
-      const duplicate = current && db.projects.all().some((other) => other.id !== project.id && normalizeProjectTaskCode(other.taskCode) === current);
-      if (current.length === 4 && !duplicate) continue;
-      db.projects.update(project.id, { taskCode: uniqueProjectTaskCode(project, project.id) });
-    }
   }
 
   function taskKeyPrefix(task) {
     if ((task?.taskType || 'standard') === 'development') return 'IPR';
     if (task?.projectId) {
       const project = db.projects.get(task.projectId);
-      if (project) return normalizeProjectTaskCode(project.taskCode) || deriveProjectTaskCode(project);
+      if (project) return normalizeProjectKey(project.projectKey) || 'GARDEN';
     }
     return 'GARDEN';
   }
 
   function nextTaskKey(prefix) {
-    const cleanPrefix = String(prefix || 'GARDEN').toUpperCase();
-    return nextNumericKey(db.tasks.all(), { prefix: cleanPrefix, readKey: (task) => task.taskKey });
+    return nextNumericKey(db.tasks.all(), { prefix: String(prefix || 'GARDEN').toUpperCase(), readKey: (task) => task.taskKey });
   }
 
-  function assignTaskKey(payload) {
-    return { ...(payload || {}), taskKey: nextTaskKey(taskKeyPrefix(payload)) };
+  function assignTaskKey(payload) { return { ...(payload || {}), taskKey: nextTaskKey(taskKeyPrefix(payload)) }; }
+
+  function allocateSequencedKey({ metaKey, items, prefix, readKey }) {
+    const lastAllocated = db.meta.get(metaKey, '');
+    const source = lastAllocated ? [...items, { __lastAllocatedKey: lastAllocated }] : items;
+    const key = nextNumericKey(source, {
+      prefix,
+      readKey: (item) => item.__lastAllocatedKey || readKey(item),
+    });
+    // Persist the cursor separately from entity rows so deleting the most recent
+    // entity never makes its public identifier available for reuse.
+    db.meta.set(metaKey, key);
+    return key;
   }
 
-  function nextLabKey() {
-    return nextNumericKey(db.labs.all().filter((lab) => lab.entityType !== 'idea'), { prefix: 'LAB', readKey: (lab) => String(lab.labKey || '') });
-  }
-
-  function nextMeetingKey() {
-    return nextNumericKey(db.meetings.all(), { prefix: 'MEET', readKey: (meeting) => String(meeting.meetingKey || '') });
-  }
-
-  function assignMeetingKey(payload) {
-    return { ...(payload || {}), meetingKey: nextMeetingKey() };
-  }
-
-  function nextProcessKey() {
-    return nextNumericKey(db.processes.all(), { prefix: 'PROCESS', readKey: (process) => String(process.processKey || '') });
-  }
-
-  function assignProcessKey(payload) {
-    return { ...(payload || {}), processKey: nextProcessKey() };
-  }
-
-  /** Shared backfill loop for the ensure*Keys functions below: walks `items`,
-   * leaves an already-valid, not-yet-seen key alone, and assigns+persists a
-   * freshly generated one (via `computeNext`) otherwise — so every item ends
-   * up with a unique key. `isValid` defaults to "any non-empty key". */
-  function ensureUniqueKeys(items, { currentKey, computeNext, applyKey, isValid = (key) => Boolean(key) }) {
-    const used = new Set();
-    for (const item of items) {
-      const current = String(currentKey(item) || '').trim().toUpperCase();
-      if (isValid(current) && !used.has(current)) {
-        used.add(current);
-        continue;
-      }
-      const key = computeNext(item);
-      applyKey(item, key);
-      used.add(key);
-    }
-  }
-
-  function ensureLabKeys() {
-    ensureUniqueKeys(db.labs.all().filter((lab) => lab.entityType !== 'idea'), {
-      currentKey: (lab) => lab.labKey,
-      isValid: (key) => /^LAB-\d{4,}$/.test(key),
-      computeNext: () => nextLabKey(),
-      applyKey: (lab, labKey) => db.labs.update(lab.id, { labKey }),
+  function nextCollectionKey(name) {
+    const spec = KEY_SPECS[name];
+    if (!spec) throw new Error(`unknown_key_collection_${name}`);
+    return allocateSequencedKey({
+      metaKey: `public-key-sequence:${spec.prefix}`,
+      items: db[name].all(),
+      prefix: spec.prefix,
+      readKey: (item) => item[spec.field],
     });
   }
 
-  function ensureTaskKeys() {
-    ensureUniqueKeys(db.tasks.all(), {
-      currentKey: (task) => task.taskKey,
-      computeNext: (task) => nextTaskKey(taskKeyPrefix(task)),
-      applyKey: (task, taskKey) => db.tasks.update(task.id, { taskKey }),
-    });
+  function assignCollectionKey(name, payload) {
+    const spec = KEY_SPECS[name];
+    return { ...(payload || {}), [spec.field]: nextCollectionKey(name) };
   }
 
-  function ensureMeetingKeys() {
-    ensureUniqueKeys(db.meetings.all(), {
-      currentKey: (meeting) => meeting.meetingKey,
-      isValid: (key) => /^MEET-\d{4,}$/.test(key),
-      computeNext: () => nextMeetingKey(),
-      applyKey: (meeting, meetingKey) => db.meetings.update(meeting.id, { meetingKey }),
+  function nextIdeaKey() {
+    return allocateSequencedKey({
+      metaKey: 'public-key-sequence:IDEA',
+      items: db.labs.all().filter((item) => item.entityType === 'idea'),
+      prefix: 'IDEA',
+      readKey: (item) => item.ideaKey,
     });
+  }
+  function nextBlueprintKey() {
+    return allocateSequencedKey({
+      metaKey: 'public-key-sequence:BLUEPRINT',
+      items: db.labs.all().filter((item) => item.entityType !== 'idea'),
+      prefix: 'BLUEPRINT',
+      readKey: (item) => item.blueprintKey,
+    });
+  }
+  function assignLabKey(payload) {
+    return payload?.entityType === 'idea'
+      ? { ...(payload || {}), ideaKey: nextIdeaKey() }
+      : { ...(payload || {}), blueprintKey: nextBlueprintKey() };
   }
 
-  function ensureProcessKeys() {
-    ensureUniqueKeys(db.processes.all(), {
-      currentKey: (process) => process.processKey,
-      isValid: (key) => /^PROCESS-\d{4,}$/.test(key),
-      computeNext: () => nextProcessKey(),
-      applyKey: (process, processKey) => db.processes.update(process.id, { processKey }),
-    });
-  }
+
 
   return {
     SLUG_COLLECTIONS,
+    KEY_SPECS,
     slugify,
     uniqueSlug,
     resolveEntity,
-    normalizeProjectTaskCode,
-    uniqueProjectTaskCode,
-    validateProjectTaskCode,
-    ensureSlugs,
-    ensureProjectTaskCodes,
+    normalizeProjectKey,
+    uniqueProjectKey,
+    validateProjectKey,
     taskKeyPrefix,
     nextTaskKey,
     assignTaskKey,
-    nextLabKey,
-    ensureLabKeys,
-    ensureTaskKeys,
-    nextMeetingKey,
-    assignMeetingKey,
-    ensureMeetingKeys,
-    nextProcessKey,
-    assignProcessKey,
-    ensureProcessKeys,
+    nextCollectionKey,
+    assignCollectionKey,
+    nextIdeaKey,
+    nextBlueprintKey,
+    assignLabKey,
   };
 };

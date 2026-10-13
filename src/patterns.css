@@ -1,0 +1,186 @@
+/* Shared interaction and section primitives. Keep this file authoritative for reusable patterns. */
+.ui-section-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 14px;
+}
+.ui-section-header-copy { min-width: 0; }
+.ui-section-header-title {
+  margin: 0;
+  color: hsl(var(--foreground));
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 20px;
+  letter-spacing: -.008em;
+}
+.ui-section-header-description {
+  margin: 4px 0 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 13px;
+  line-height: 20px;
+}
+.ui-section-header-actions { flex: 0 0 auto; }
+.ui-section-header.is-compact { margin-bottom: 10px; }
+.ui-section-header.is-compact .ui-section-header-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  letter-spacing: 0;
+}
+
+.ui-tabs {
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+  gap: 22px;
+  overflow-x: auto;
+  border-bottom: 1px solid hsl(var(--border));
+  scrollbar-width: none;
+}
+.ui-tabs::-webkit-scrollbar { display: none; }
+.ui-tab {
+  position: relative;
+  display: inline-flex;
+  min-height: 38px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+.ui-tab:hover { color: hsl(var(--foreground)); }
+.ui-tab:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; }
+.ui-tab.is-active {
+  border-bottom-color: hsl(var(--primary));
+  color: hsl(var(--foreground));
+}
+.ui-tab-count {
+  display: inline-flex;
+  min-width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: hsl(var(--muted) / .72);
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+.ui-tab.is-active .ui-tab-count {
+  background: hsl(var(--primary) / .11);
+  color: hsl(var(--primary));
+}
+.ui-tab-count.is-warning {
+  background: rgb(245 158 11 / .1);
+  color: rgb(180 83 9);
+}
+html.dark .ui-tab-count.is-warning { color: rgb(252 211 77); }
+
+/* Detail-page responsive contract. Three breakpoints only: desktop, compact desktop/tablet, mobile. */
+.page-container.narrow.task-detail-page {
+  width: min(calc(100% - 48px), 1120px);
+  max-width: 1120px;
+}
+.task-detail-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  align-items: start;
+  gap: 42px;
+  width: 100%;
+}
+.task-properties-column {
+  min-width: 0;
+  margin: 0;
+  margin-top: 28px;
+  padding: 0;
+}
+.task-properties-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  width: 100%;
+}
+.task-property-row {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  min-height: 34px;
+  align-items: center;
+  gap: 10px;
+}
+.task-property-label {
+  color: hsl(var(--muted-foreground));
+  font-size: 13px;
+  line-height: 16px;
+}
+.task-context-heading { margin-bottom: 10px; }
+.task-properties-title { margin-bottom: 12px; }
+.task-context-tabs { width: 100%; }
+.task-detail-content-card .task-detail-tab-content { padding: 18px 0 20px; }
+.person-tabs { width: 100%; }
+.person-development-tab-body { padding-top: 16px; }
+.person-relations-body { padding-top: 14px; }
+
+/* An open right detail rail reserves space instead of translating content under the left navigation. */
+@media (min-width: 901px) and (max-width: 1540px) {
+  .page-container.narrow.detail-page-shell.has-detail-sidebar {
+    left: 0;
+    width: min(980px, calc(100% - 330px));
+    margin-left: auto;
+    margin-right: 318px;
+  }
+}
+@media (min-width: 1541px) {
+  .page-container.narrow.detail-page-shell.has-detail-sidebar {
+    left: -145px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+@media (max-width: 1040px) {
+  .page-container.narrow.task-detail-page { width: min(calc(100% - 32px), 900px); }
+  .task-detail-workspace-grid {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  .task-properties-column {
+    order: -1;
+    margin-top: 0;
+    padding: 0;
+  }
+  .task-properties-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 24px;
+  }
+}
+@media (max-width: 900px) {
+  .page-container.narrow.detail-page-shell.has-detail-sidebar {
+    left: 0;
+    width: min(100% - 32px, 900px);
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+@media (max-width: 640px) {
+  .page-container.narrow.task-detail-page { width: calc(100% - 24px); }
+  .task-properties-list { grid-template-columns: 1fr; }
+  .ui-tabs { gap: 18px; }
+  .ui-tab { min-height: 36px; }
+}
+
+/* Shared focus indicator for custom clickable elements that don't have their own
+   :focus-visible rule. The global reset in styles.css disables the native outline;
+   every custom interactive element needs one of these back. */
+.ui-focus-ring:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.ui-focus-ring-within:focus-within { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; }

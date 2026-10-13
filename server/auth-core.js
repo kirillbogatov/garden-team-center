@@ -23,11 +23,11 @@ module.exports = function createAuthCore({ db, crypto }) {
     { id:'issues', label:'Проблемы' },
     { id:'agreements', label:'Договорённости' },
     { id:'journal', label:'Журнал' },
-    { id:'labs', label:'The Labs' },
+    { id:'labs', label:'Мастерская' },
     { id:'knowledge', label:'База знаний' },
     { id:'processes', label:'Процессы' },
     { id:'vacations', label:'Отсутствия' },
-    { id:'checkins', label:'Check-in' },
+    { id:'checkins', label:'Weekly' },
   ];
   // Default policy: teamleads and admins manage everything; a plain member
   // sees everything but only manages their own records.
@@ -49,7 +49,7 @@ module.exports = function createAuthCore({ db, crypto }) {
     'knowledge.manage_all': 'Управление знаниями и документами',
     'processes.manage': 'Управление процессами',
     'vacations.manage_all': 'Управление отсутствиями',
-    'checkins.manage_all': 'Управление чек-инами',
+    'checkins.manage_all': 'Управление Weekly',
   };
 
 

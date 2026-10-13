@@ -77,30 +77,31 @@ test('demo opens as teamlead with assistant home mode', async () => {
 
   const settings = await requestAs(demoLogin.cookie, '/api/settings');
   assert.equal(settings.response.status, 200);
-  assert.equal(settings.body.overviewHomeMode, 'assistant');
 });
 
-test('Labs project gets stable LAB-XXXX key and resolves by key', async () => {
+test('Workshop projects and ideas get stable public keys and resolve by key', async () => {
   const created = await request('/api/labs', {
     method: 'POST',
-    body: { title: 'Refactor Lab', entityType: 'project', projectType: 'pet', status: 'idea', private: false },
+    body: { title: 'Refactor Lab', entityType: 'project', projectType: 'pet', status: 'idea', visibility: 'team' },
   });
   assert.equal(created.response.status, 201);
-  assert.match(created.body.labKey, /^LAB-\d{4,}$/);
+  assert.match(created.body.blueprintKey, /^BLUEPRINT-[0-9A-Z]{4}$/);
 
-  const fetched = await request('/api/labs/' + encodeURIComponent(created.body.labKey));
+  const fetched = await request('/api/labs/' + encodeURIComponent(created.body.blueprintKey));
   assert.equal(fetched.response.status, 200);
   assert.equal(fetched.body.id, created.body.id);
 });
 
 test('Lab ideas attach to a project and comments can be created', async () => {
   const project = (await request('/api/labs', {
-    method: 'POST', body: { title: 'Parent', entityType: 'project', status: 'idea', private: false },
+    method: 'POST', body: { title: 'Parent', entityType: 'project', status: 'idea', visibility: 'team' },
   })).body;
   const idea = await request('/api/labs', {
-    method: 'POST', body: { title: 'Idea', entityType: 'idea', labProjectId: project.id, status: 'idea', private: false },
+    method: 'POST', body: { title: 'Idea', entityType: 'idea', labProjectId: project.id, status: 'idea', visibility: 'team' },
   });
   assert.equal(idea.response.status, 201);
+  assert.match(project.blueprintKey, /^BLUEPRINT-[0-9A-Z]{4}$/);
+  assert.match(idea.body.ideaKey, /^IDEA-[0-9A-Z]{4}$/);
   assert.equal(idea.body.labProjectId, project.id);
 
   const comment = await request(`/api/comments/lab/${project.id}`, { method: 'POST', body: { text: 'Hello' } });
@@ -110,6 +111,22 @@ test('Lab ideas attach to a project and comments can be created', async () => {
   assert.equal(comments.response.status, 200);
   assert.equal(comments.body.length, 1);
   assert.equal(comments.body[0].text, 'Hello');
+});
+
+test('idea can link to a work project via projectId and take the rejected status', async () => {
+  const project = (await request('/api/projects', {
+    method: 'POST', body: { name: 'Ideas Target Project', status: 'active', projectKey: 'IDPJ' },
+  })).body;
+  const idea = await request('/api/labs', {
+    method: 'POST', body: { title: 'Linked idea', entityType: 'idea', projectId: project.id, status: 'idea', visibility: 'team' },
+  });
+  assert.equal(idea.response.status, 201);
+  assert.equal(idea.body.projectId, project.id);
+  assert.equal(idea.body.labProjectId, undefined);
+
+  const rejected = await request(`/api/labs/${encodeURIComponent(idea.body.ideaKey)}`, { method: 'PUT', body: { status: 'rejected' } });
+  assert.equal(rejected.response.status, 200);
+  assert.equal(rejected.body.status, 'rejected');
 });
 
 test('workspace is isolated at SQLite query level', () => {
@@ -122,7 +139,7 @@ test('workspace is isolated at SQLite query level', () => {
 
 test('version history records edits and can restore an earlier Labs project version', async () => {
   const created = await request('/api/labs', {
-    method: 'POST', body: { title: 'Version one', entityType: 'project', projectType: 'pet', status: 'idea', private: false },
+    method: 'POST', body: { title: 'Version one', entityType: 'project', projectType: 'pet', status: 'idea', visibility: 'team' },
   });
   assert.equal(created.response.status, 201);
   const id = created.body.id;
@@ -194,9 +211,9 @@ test('task discussion comments are a separate thread from the sticky task notes'
 test('person development profile returns Labs projects but not Labs ideas', async () => {
   const person = await request('/api/people', { method: 'POST', body: { name: 'Labs Author', type: 'team', status: 'active' } });
   assert.equal(person.response.status, 201);
-  const project = await request('/api/labs', { method: 'POST', body: { title: 'Visible project', entityType: 'project', authorId: person.body.id, status: 'idea', private: false } });
+  const project = await request('/api/labs', { method: 'POST', body: { title: 'Visible project', entityType: 'project', authorId: person.body.id, status: 'idea', visibility: 'team' } });
   assert.equal(project.response.status, 201);
-  const idea = await request('/api/labs', { method: 'POST', body: { title: 'Hidden idea', entityType: 'idea', authorId: person.body.id, labProjectId: project.body.id, status: 'idea', private: false } });
+  const idea = await request('/api/labs', { method: 'POST', body: { title: 'Hidden idea', entityType: 'idea', authorId: person.body.id, labProjectId: project.body.id, status: 'idea', visibility: 'team' } });
   assert.equal(idea.response.status, 201);
 
   const profile = await request(`/api/people/${person.body.id}/profile`);
@@ -233,21 +250,80 @@ test('historical versions can be deleted but the current version is protected', 
   assert.equal(protectedDelete.body.error, 'current_version_cannot_be_deleted');
 });
 
-test('project startDate is stripped from create and update payloads', async () => {
+test('archived projects are excluded from the default project list but stay reachable directly', async () => {
   const created = await request('/api/projects', {
-    method: 'POST',
-    body: { name: 'No start date project', status: 'active', startDate: '2026-08-01', memberIds: [] },
+    method: 'POST', body: { name: 'Archivable Project', status: 'active', projectKey: 'ARCP' },
   });
   assert.equal(created.response.status, 201);
-  assert.equal(Object.hasOwn(created.body, 'startDate'), false);
-  assert.equal(Object.hasOwn(db.projects.get(created.body.id), 'startDate'), false);
+  const id = created.body.id;
 
-  const updated = await request(`/api/projects/${created.body.id}`, {
-    method: 'PUT', body: { startDate: '2026-09-01', description: 'Updated' },
+  const archived = await request(`/api/projects/${id}`, { method: 'PUT', body: { archivedAt: new Date().toISOString() } });
+  assert.equal(archived.response.status, 200);
+  assert.ok(archived.body.archivedAt);
+
+  const list = await request('/api/projects');
+  assert.equal(list.response.status, 200);
+  assert.ok(!list.body.some((p) => p.id === id), 'archived project should not appear in the default list');
+
+  const direct = await request(`/api/projects/${id}`);
+  assert.equal(direct.response.status, 200);
+  assert.equal(direct.body.id, id);
+
+  const restored = await request(`/api/projects/${id}`, { method: 'PUT', body: { archivedAt: null } });
+  assert.equal(restored.response.status, 200);
+  assert.equal(restored.body.archivedAt, null);
+
+  const listAfterRestore = await request('/api/projects');
+  assert.ok(listAfterRestore.body.some((p) => p.id === id), 'restored project should reappear in the default list');
+});
+
+test('project updates are versioned and project history can restore the prior state, including archiving', async () => {
+  const created = await request('/api/projects', {
+    method: 'POST', body: { name: 'Project version one', status: 'active', projectKey: 'PJV1' },
+  });
+  assert.equal(created.response.status, 201);
+  const id = created.body.id;
+
+  const edited = await request(`/api/projects/${id}`, { method: 'PUT', body: { name: 'Project version two', status: 'paused' } });
+  assert.equal(edited.response.status, 200);
+  assert.equal(edited.body.name, 'Project version two');
+
+  const history = await request(`/api/versions/projects/${id}`);
+  assert.equal(history.response.status, 200);
+  const original = history.body.find((entry) => entry.data.name === 'Project version one');
+  assert.ok(original);
+
+  const restored = await request(`/api/versions/projects/${id}/${original.version}/restore`, { method: 'POST', body: {} });
+  assert.equal(restored.response.status, 200);
+  assert.equal(restored.body.name, 'Project version one');
+  assert.equal(restored.body.projectKey, created.body.projectKey);
+
+  const archivedForHistory = await request(`/api/projects/${id}`, { method: 'PUT', body: { archivedAt: new Date().toISOString() } });
+  assert.equal(archivedForHistory.response.status, 200);
+  const historyAfterArchive = await request(`/api/versions/projects/${id}`);
+  assert.equal(historyAfterArchive.response.status, 200);
+  assert.ok(historyAfterArchive.body[0].data.archivedAt, 'latest version should record the archived timestamp');
+});
+
+test('project keeps attributes that are not rendered by the current client', async () => {
+  const created = await request('/api/projects', {
+    method: 'POST',
+    body: { name: 'Preserved project model', projectKey: 'PRSV', status: 'active', startDate: '2026-08-01', color: '#5E6AD2', customHiddenAttribute: { source: 'database' }, memberIds: [] },
+  });
+  assert.equal(created.response.status, 201);
+  assert.equal(created.body.projectKey, 'PRSV');
+  assert.equal(created.body.startDate, '2026-08-01');
+  assert.equal(created.body.color, '#5E6AD2');
+  assert.deepEqual(created.body.customHiddenAttribute, { source: 'database' });
+
+  const updated = await request(`/api/projects/${created.body.projectKey}`, {
+    method: 'PUT', body: { description: 'Updated without touching hidden fields' },
   });
   assert.equal(updated.response.status, 200);
-  assert.equal(Object.hasOwn(updated.body, 'startDate'), false);
-  assert.equal(Object.hasOwn(db.projects.get(created.body.id), 'startDate'), false);
+  assert.equal(updated.body.startDate, '2026-08-01');
+  assert.equal(updated.body.color, '#5E6AD2');
+  assert.deepEqual(updated.body.customHiddenAttribute, { source: 'database' });
+  assert.deepEqual(db.projects.get(created.body.id).customHiddenAttribute, { source: 'database' });
 });
 
 test('meeting updates are versioned and can restore a prior version', async () => {
@@ -412,112 +488,117 @@ test('admin can delete or edit any comment; a non-author, non-admin user cannot'
   assert.equal(adminDelete.response.status, 204);
 });
 
-test('project taskCode validation still rejects invalid/duplicate codes and accepts a valid unique one', async () => {
-  const first = await request('/api/projects', { method: 'POST', body: { name: 'Task Code Project One', status: 'active', taskCode: 'ABCD' } });
-  assert.equal(first.response.status, 201);
-  assert.equal(first.body.taskCode, 'ABCD');
+test('public identifiers are assigned to core entities and work as CRUD references', async () => {
+  const cases = [
+    ['issues', 'issueKey', /^ISSUE-[0-9A-Z]{4}$/, { title: 'Public issue', status: 'open', severity: 'medium' }],
+    ['processes', 'processKey', /^PROCESS-[0-9A-Z]{4}$/, { title: 'Public process', status: 'active' }],
+    ['agreements', 'agreementKey', /^AGREE-[0-9A-Z]{4}$/, { text: 'Public agreement', status: 'active' }],
+    ['goals', 'goalKey', /^GOAL-[0-9A-Z]{4}$/, { title: 'Public goal', status: 'active' }],
+    ['tools', 'toolKey', /^TOOL-[0-9A-Z]{4}$/, { name: 'Public tool', url: 'https://example.com' }],
+    ['meetings', 'meetingKey', /^MEET-[0-9A-Z]{4}$/, { title: 'Public meeting', type: 'other', date: '2026-09-15', participantIds: [] }],
+  ];
 
-  const invalid = await request('/api/projects', { method: 'POST', body: { name: 'Task Code Project Bad', status: 'active', taskCode: 'AB' } });
-  assert.equal(invalid.response.status, 400);
-  assert.equal(invalid.body.error, 'invalid_project_task_code');
+  for (const [collection, field, pattern, payload] of cases) {
+    const created = await request(`/api/${collection}`, { method: 'POST', body: { ...payload, hiddenDatabaseField: { keep: true } } });
+    assert.equal(created.response.status, 201, `${collection} create`);
+    assert.match(created.body[field], pattern, `${collection} key`);
+    assert.deepEqual(created.body.hiddenDatabaseField, { keep: true });
 
-  const duplicate = await request('/api/projects', { method: 'POST', body: { name: 'Task Code Project Dup', status: 'active', taskCode: 'ABCD' } });
-  assert.equal(duplicate.response.status, 409);
-  assert.equal(duplicate.body.error, 'project_task_code_exists');
+    const key = created.body[field];
+    const fetched = await request(`/api/${collection}/${encodeURIComponent(key)}`);
+    assert.equal(fetched.response.status, 200, `${collection} get by public key`);
+    assert.equal(fetched.body.id, created.body.id);
 
-  const second = await request('/api/projects', { method: 'POST', body: { name: 'Task Code Project Two', status: 'active', taskCode: 'WXYZ' } });
-  assert.equal(second.response.status, 201);
-
-  const updateDuplicate = await request(`/api/projects/${second.body.id}`, { method: 'PUT', body: { taskCode: 'ABCD' } });
-  assert.equal(updateDuplicate.response.status, 409);
-  assert.equal(updateDuplicate.body.error, 'project_task_code_exists');
-
-  const updateOk = await request(`/api/projects/${second.body.id}`, { method: 'PUT', body: { taskCode: 'wxyz' } });
-  assert.equal(updateOk.response.status, 200);
-  assert.equal(updateOk.body.taskCode, 'WXYZ');
+    const updated = await request(`/api/${collection}/${encodeURIComponent(key)}`, { method: 'PUT', body: { description: 'Updated through public key' } });
+    assert.equal(updated.response.status, 200, `${collection} update by public key`);
+    assert.equal(updated.body[field], key, `${collection} public key stays stable`);
+    assert.deepEqual(updated.body.hiddenDatabaseField, { keep: true }, `${collection} hidden field stays intact`);
+  }
 });
 
-test('journal is personal: a problem/idea/agreement created there also appears in its own section, and the raw journal note is not visible to other members', async () => {
+test('Workshop comments resolve a blueprint public identifier', async () => {
+  const project = await request('/api/labs', {
+    method: 'POST', body: { title: 'Comment by blueprint key', entityType: 'project', status: 'idea', visibility: 'team' },
+  });
+  assert.equal(project.response.status, 201);
+  const ref = project.body.blueprintKey;
+  const comment = await request(`/api/comments/lab/${encodeURIComponent(ref)}`, { method: 'POST', body: { text: 'Public ref comment' } });
+  assert.equal(comment.response.status, 201);
+  const list = await request(`/api/comments/lab/${encodeURIComponent(ref)}`);
+  assert.equal(list.response.status, 200);
+  assert.equal(list.body.at(-1).text, 'Public ref comment');
+});
+
+test('project public key accepts 1-4 latin letters/digits, is unique, and resolves as the project identifier', async () => {
+  const first = await request('/api/projects', { method: 'POST', body: { name: 'Public Key Project One', status: 'active', projectKey: 'AB' } });
+  assert.equal(first.response.status, 201);
+  assert.equal(first.body.projectKey, 'AB');
+
+  const fetched = await request(`/api/projects/${first.body.projectKey}`);
+  assert.equal(fetched.response.status, 200);
+  assert.equal(fetched.body.id, first.body.id);
+
+  const invalid = await request('/api/projects', { method: 'POST', body: { name: 'Public Key Project Bad', status: 'active', projectKey: 'ABCDE' } });
+  assert.equal(invalid.response.status, 400);
+  assert.equal(invalid.body.error, 'invalid_project_key');
+
+  const invalidAlphabet = await request('/api/projects', { method: 'POST', body: { name: 'Public Key Project Cyrillic', status: 'active', projectKey: 'КОД' } });
+  assert.equal(invalidAlphabet.response.status, 400);
+
+  const duplicate = await request('/api/projects', { method: 'POST', body: { name: 'Public Key Project Dup', status: 'active', projectKey: 'AB' } });
+  assert.equal(duplicate.response.status, 409);
+  assert.equal(duplicate.body.error, 'project_key_exists');
+
+  const second = await request('/api/projects', { method: 'POST', body: { name: 'Public Key Project Two', status: 'active', projectKey: 'WXYZ' } });
+  assert.equal(second.response.status, 201);
+
+  const updateDuplicate = await request(`/api/projects/${second.body.projectKey}`, { method: 'PUT', body: { projectKey: 'AB' } });
+  assert.equal(updateDuplicate.response.status, 409);
+  assert.equal(updateDuplicate.body.error, 'project_key_exists');
+
+  const updateOk = await request(`/api/projects/${second.body.projectKey}`, { method: 'PUT', body: { projectKey: 'WX9' } });
+  assert.equal(updateOk.response.status, 200);
+  assert.equal(updateOk.body.projectKey, 'WX9');
+});
+
+test('journal remains private while preserving legacy and hidden attributes', async () => {
   const personA = (await request('/api/people', { method: 'POST', body: { name: 'Journal Owner', type: 'team', status: 'active' } })).body;
   const personB = (await request('/api/people', { method: 'POST', body: { name: 'Journal Bystander', type: 'team', status: 'active' } })).body;
   const userA = await request('/api/admin/users', { method: 'POST', body: { username: 'journal-owner', displayName: 'Journal Owner', roles: ['member'], personId: personA.id } });
-  assert.equal(userA.response.status, 201);
   const userB = await request('/api/admin/users', { method: 'POST', body: { username: 'journal-bystander', displayName: 'Journal Bystander', roles: ['member'], personId: personB.id } });
-  assert.equal(userB.response.status, 201);
-  const loginA = await requestAs('', '/api/auth/login', { method: 'POST', body: { username: 'journal-owner', password: userA.body.temporaryPassword } });
-  const cookieA = loginA.cookie;
-  const loginB = await requestAs('', '/api/auth/login', { method: 'POST', body: { username: 'journal-bystander', password: userB.body.temporaryPassword } });
-  const cookieB = loginB.cookie;
+  const cookieA = (await requestAs('', '/api/auth/login', { method: 'POST', body: { username: 'journal-owner', password: userA.body.temporaryPassword } })).cookie;
+  const cookieB = (await requestAs('', '/api/auth/login', { method: 'POST', body: { username: 'journal-bystander', password: userB.body.temporaryPassword } })).cookie;
 
-  const problemEntry = await requestAs(cookieA, '/api/journal', { method: 'POST', body: { text: 'У нас проблема с деплоем', kind: 'problem', createdAt: new Date().toISOString() } });
-  assert.equal(problemEntry.response.status, 201);
-  assert.ok(problemEntry.body.issueId, 'ожидаем автосвязь с разделом «Проблемы»');
-  const linkedIssue = await requestAs(cookieA, `/api/issues/${problemEntry.body.issueId}`);
-  assert.equal(linkedIssue.response.status, 200);
-  assert.match(linkedIssue.body.title, /деплоем/);
+  const beforeIssues = (await requestAs(cookieA, '/api/issues')).body.length;
+  const beforeLabs = (await requestAs(cookieA, '/api/labs')).body.length;
+  const beforeAgreements = (await requestAs(cookieA, '/api/agreements')).body.length;
+  const note = await requestAs(cookieA, '/api/journal', { method: 'POST', body: {
+    text: 'Обычная личная заметка', kind: 'problem', issueId: 'legacy', agreementId: 'legacy', labId: 'legacy', private: true,
+  } });
+  assert.equal(note.response.status, 201);
+  assert.match(note.body.noteKey, /^NOTE-[0-9A-Z]{4}$/);
+  for (const field of ['kind', 'issueId', 'agreementId', 'labId', 'private']) assert.equal(Object.hasOwn(note.body, field), true);
+  assert.equal(note.body.kind, 'problem');
+  assert.equal(note.body.issueId, 'legacy');
+  assert.equal((await requestAs(cookieA, '/api/issues')).body.length, beforeIssues);
+  assert.equal((await requestAs(cookieA, '/api/labs')).body.length, beforeLabs);
+  assert.equal((await requestAs(cookieA, '/api/agreements')).body.length, beforeAgreements);
 
-  // По умолчанию доступ member = "все данные, управление своими" — раньше это давало
-  // просмотр вообще всего журнала. Теперь журнал личный: другой сотрудник не увидит
-  // ни сам список, ни конкретную запись автора.
   const bystanderList = await requestAs(cookieB, '/api/journal');
-  assert.equal(bystanderList.response.status, 200);
-  assert.ok(!bystanderList.body.some((j) => j.id === problemEntry.body.id), 'запись журнала не должна быть видна другому сотруднику');
-  const bystanderGet = await requestAs(cookieB, `/api/journal/${problemEntry.body.id}`);
-  assert.equal(bystanderGet.response.status, 403);
-
-  // Связанная проблема при этом остаётся видна всем как обычно — приватность
-  // журнала не прячет то, что уже вынесено в командный раздел.
-  const bystanderIssue = await requestAs(cookieB, `/api/issues/${problemEntry.body.issueId}`);
-  assert.equal(bystanderIssue.response.status, 200);
+  assert.ok(!bystanderList.body.some((entry) => entry.id === note.body.id));
+  assert.equal((await requestAs(cookieB, `/api/journal/${note.body.id}`)).response.status, 403);
 });
 
-test('an idea created in the Journal is auto-published to The Labs, respecting the chosen public/private visibility', async () => {
-  const author = (await request('/api/people', { method: 'POST', body: { name: 'Idea Author', type: 'team', status: 'active' } })).body;
-  const other = (await request('/api/people', { method: 'POST', body: { name: 'Idea Onlooker', type: 'team', status: 'active' } })).body;
-  const authorUser = await request('/api/admin/users', { method: 'POST', body: { username: 'idea-author', displayName: 'Idea Author', roles: ['member'], personId: author.id } });
-  const otherUser = await request('/api/admin/users', { method: 'POST', body: { username: 'idea-onlooker', displayName: 'Idea Onlooker', roles: ['member'], personId: other.id } });
-  const authorLogin = await requestAs('', '/api/auth/login', { method: 'POST', body: { username: 'idea-author', password: authorUser.body.temporaryPassword } });
-  const authorCookie = authorLogin.cookie;
-  const otherLogin = await requestAs('', '/api/auth/login', { method: 'POST', body: { username: 'idea-onlooker', password: otherUser.body.temporaryPassword } });
-  const otherCookie = otherLogin.cookie;
-
-  const publicIdea = await requestAs(authorCookie, '/api/journal', { method: 'POST', body: { text: 'Публичная идея про виджет', kind: 'idea', private: false, createdAt: new Date().toISOString() } });
-  assert.equal(publicIdea.response.status, 201);
-  assert.ok(publicIdea.body.labId, 'публичная идея должна сразу попасть в The Labs');
-  const publicLabsView = await requestAs(otherCookie, `/api/labs/${publicIdea.body.labId}`);
-  assert.equal(publicLabsView.response.status, 200, 'публичная идея видна всем');
-
-  const privateIdea = await requestAs(authorCookie, '/api/journal', { method: 'POST', body: { text: 'Секретная идея', kind: 'idea', private: true, createdAt: new Date().toISOString() } });
-  assert.equal(privateIdea.response.status, 201);
-  assert.ok(privateIdea.body.labId);
-  const privateLabsListForOther = await requestAs(otherCookie, '/api/labs');
-  assert.ok(!privateLabsListForOther.body.some((l) => l.id === privateIdea.body.labId), 'приватная идея не должна попадать в список другого сотрудника');
-  const privateLabsGetForOther = await requestAs(otherCookie, `/api/labs/${privateIdea.body.labId}`);
-  assert.equal(privateLabsGetForOther.response.status, 403);
-  const privateLabsGetForAuthor = await requestAs(authorCookie, `/api/labs/${privateIdea.body.labId}`);
-  assert.equal(privateLabsGetForAuthor.response.status, 200);
-  const privateLabsGetForAdmin = await request(`/api/labs/${privateIdea.body.labId}`);
-  assert.equal(privateLabsGetForAdmin.response.status, 200, 'администратор видит приватную идею как техническое исключение');
-});
-
-test('creating an idea directly in The Labs (not via Journal) syncs it back into the author\'s Journal', async () => {
-  const author = (await request('/api/people', { method: 'POST', body: { name: 'Direct Lab Author', type: 'team', status: 'active' } })).body;
-  const authorUser = await request('/api/admin/users', { method: 'POST', body: { username: 'direct-lab-author', displayName: 'Direct Lab Author', roles: ['member'], personId: author.id } });
-  const authorLogin = await requestAs('', '/api/auth/login', { method: 'POST', body: { username: 'direct-lab-author', password: authorUser.body.temporaryPassword } });
-  const authorCookie = authorLogin.cookie;
-
-  const idea = await requestAs(authorCookie, '/api/labs', { method: 'POST', body: { entityType: 'idea', title: 'Идея, заведённая прямо в The Labs', authorId: author.id, private: false } });
+test('ideas created directly in Мастерская do not create shadow Journal records', async () => {
+  const before = (await request('/api/journal')).body.map((entry) => entry.id);
+  const idea = await request('/api/labs', { method: 'POST', body: { entityType: 'idea', title: 'Самостоятельная идея', visibility: 'team', status: 'idea' } });
   assert.equal(idea.response.status, 201);
-
-  const journalList = await requestAs(authorCookie, '/api/journal');
-  assert.equal(journalList.response.status, 200);
-  const linked = journalList.body.find((j) => j.labId === idea.body.id);
-  assert.ok(linked, 'прямое создание идеи в The Labs должно завести запись в Журнале');
-  assert.equal(linked.kind, 'idea');
-  assert.match(linked.text, /Идея, заведённая прямо в The Labs/);
+  const after = (await request('/api/journal')).body;
+  assert.deepEqual(after.map((entry) => entry.id), before);
+  assert.ok(!after.some((entry) => entry.labId === idea.body.id));
 });
 
-test('an existing private Labs project is actually hidden from other members now (previously the checkbox had no server-side effect)', async () => {
+test('a Labs project visible only to its owner is hidden from other members', async () => {
   const owner = (await request('/api/people', { method: 'POST', body: { name: 'Private Project Owner', type: 'team', status: 'active' } })).body;
   const other = (await request('/api/people', { method: 'POST', body: { name: 'Private Project Onlooker', type: 'team', status: 'active' } })).body;
   const ownerUser = await request('/api/admin/users', { method: 'POST', body: { username: 'private-project-owner', displayName: 'Private Project Owner', roles: ['member'], personId: owner.id } });
@@ -527,7 +608,7 @@ test('an existing private Labs project is actually hidden from other members now
   const otherLogin = await requestAs('', '/api/auth/login', { method: 'POST', body: { username: 'private-project-onlooker', password: otherUser.body.temporaryPassword } });
   const otherCookie = otherLogin.cookie;
 
-  const project = await requestAs(ownerCookie, '/api/labs', { method: 'POST', body: { entityType: 'project', title: 'Секретный пет-проект', authorId: owner.id, private: true, status: 'idea' } });
+  const project = await requestAs(ownerCookie, '/api/labs', { method: 'POST', body: { entityType: 'project', title: 'Секретный пет-проект', authorId: owner.id, visibility: 'me', status: 'idea' } });
   assert.equal(project.response.status, 201);
 
   const otherGet = await requestAs(otherCookie, `/api/labs/${project.body.id}`);
@@ -536,20 +617,6 @@ test('an existing private Labs project is actually hidden from other members now
   assert.ok(!otherList.body.some((l) => l.id === project.body.id));
   const ownerGet = await requestAs(ownerCookie, `/api/labs/${project.body.id}`);
   assert.equal(ownerGet.response.status, 200);
-});
-
-test('deleting a problem directly keeps its Journal note but clears the now-dangling issueId link', async () => {
-  const created = await request('/api/journal', { method: 'POST', body: { text: 'Проблема для проверки отвязки', kind: 'problem', createdAt: new Date().toISOString() } });
-  assert.equal(created.response.status, 201);
-  assert.ok(created.body.issueId);
-
-  const del = await request(`/api/issues/${created.body.issueId}`, { method: 'DELETE' });
-  assert.equal(del.response.status, 204);
-
-  const journalAfter = await request(`/api/journal/${created.body.id}`);
-  assert.equal(journalAfter.response.status, 200, 'note itself must survive — deleting the issue must not silently delete the journal entry');
-  assert.equal(journalAfter.body.issueId, null, 'the dangling link must be cleared so "Открыть" does not point at a deleted issue');
-  assert.match(journalAfter.body.text, /Проблема для проверки отвязки/);
 });
 
 test('legacy idea visibility default is ignored by user settings', async () => {
@@ -639,4 +706,36 @@ test('server-side knowledge base sanitizer neutralizes dangerous href/src scheme
   assert.match(clean, /href="#anchor"/);
   assert.match(clean, /src="https:\/\/ok\.example\/img\.png"/);
   assert.match(clean, /src="data:image\/png;base64,AAAA"/);
+});
+
+test('technology events can be planned, edited, completed and linked to a meeting', async () => {
+  const event = await request('/api/technologyEvents', {
+    method: 'POST',
+    body: { plannedDate: '2026-10-14', topic: 'Product thinking workshop', hours: 2, personIds: [], completed: false },
+  });
+  assert.equal(event.response.status, 201);
+  assert.equal(event.body.topic, 'Product thinking workshop');
+  assert.equal(event.body.completed, false);
+
+  const updated = await request(`/api/technologyEvents/${event.body.id}`, {
+    method: 'PUT',
+    body: { topic: 'Product thinking lecture', completed: true },
+  });
+  assert.equal(updated.response.status, 200);
+  assert.equal(updated.body.topic, 'Product thinking lecture');
+  assert.equal(updated.body.completed, true);
+
+  const meeting = await request('/api/meetings', {
+    method: 'POST',
+    body: {
+      type: 'club', date: '2026-10-14', title: 'Product thinking lecture', participantIds: [], projectId: null,
+      notes: '', actionItems: [], prepNotes: '', documentLinks: [], sourceTechnologyEventId: event.body.id,
+    },
+  });
+  assert.equal(meeting.response.status, 201);
+  assert.equal(meeting.body.sourceTechnologyEventId, event.body.id);
+
+  const list = await request('/api/technologyEvents');
+  assert.equal(list.response.status, 200);
+  assert.ok(list.body.some((item) => item.id === event.body.id));
 });

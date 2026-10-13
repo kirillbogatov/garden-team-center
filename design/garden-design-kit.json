@@ -1,0 +1,34 @@
+{
+  "$schema": "https://design-tokens.github.io/community-group/format/",
+  "name": "Garden Team Center — extracted design kit",
+  "source": ["src/styles.css", "src/components/ui.jsx", "src/components/page.jsx"],
+  "font": {"ui": "Golos Text", "display": "Noto Serif"},
+  "color": {
+    "canvas": {"value": "#F1F1F4", "role": "application background"},
+    "surface": {"value": "#FFFFFF", "role": "sheets, cards, dialogs"},
+    "text": {"value": "#1D1D24", "role": "primary text"},
+    "muted": {"value": "#777984", "role": "secondary text"},
+    "border": {"value": "#E0E1E7", "role": "quiet divider"},
+    "primary": {"value": "#5E6AD2", "role": "selected state and primary action"},
+    "success": {"value": "#1A6B35", "role": "positive status"},
+    "warning": {"value": "#A13D17", "role": "attention status"},
+    "danger": {"value": "#BC3943", "role": "destructive action"}
+  },
+  "space": {"4": 4, "8": 8, "12": 12, "16": 16, "24": 24, "32": 32, "44": 44, "64": 64},
+  "radius": {"sm": 8, "md": 12, "lg": 16, "pill": 999},
+  "type": {
+    "page-title": {"family": "Noto Serif", "size": 32, "lineHeight": 1.2, "weight": 500},
+    "section-title": {"family": "Noto Serif", "size": 22, "lineHeight": 1.25, "weight": 500},
+    "body": {"family": "Golos Text", "size": 14, "lineHeight": 1.45, "weight": 400},
+    "meta": {"family": "Golos Text", "size": 12, "lineHeight": 1.35, "weight": 400}
+  },
+  "components": {
+    "Button": ["primary", "secondary", "outline", "ghost", "destructive"],
+    "Input": ["default", "focus", "disabled", "error"],
+    "Badge": ["default", "muted", "success", "warning", "danger"],
+    "Catalog": ["toolbar", "row", "card-grid"],
+    "Detail": ["header", "properties", "right-context-rail"],
+    "Dialog": ["form", "confirm-destructive"],
+    "Navigation": ["primary rail", "secondary rail", "collapsed"]
+  }
+}

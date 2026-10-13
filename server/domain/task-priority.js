@@ -21,12 +21,19 @@ function daysBetween(fromKey, toKey) {
   return Math.round((to - from) / 86400000);
 }
 
+function taskStatusTier(task, mode = 'balanced') {
+  if (task?.status === 'done' || task?.archivedAt) return 0;
+  if (task?.status === 'paused' || task?.status === 'blocked') return 1;
+  // In the balanced strategy review is deliberately a waiting state, not active work.
+  // A review can sit for weeks, so it must not outrank a new or in-progress task.
+  if (mode === 'balanced' && task?.status === 'in_review') return 2;
+  return mode === 'balanced' ? 3 : 2;
+}
+
 function taskPriorityRank(task, mode = 'balanced', today = new Date().toISOString().slice(0, 10)) {
   const weights = TASK_PRIORITY_WEIGHTS[mode] || TASK_PRIORITY_WEIGHTS.balanced;
   const due = dateKey(task?.dueDate);
-  const tier = (task?.status === 'done' || task?.archivedAt) ? 0
-    : (task?.status === 'paused' || task?.status === 'blocked') ? 1
-      : 2;
+  const tier = taskStatusTier(task, mode);
   let score = tier === 0 ? 0 : (task?.priority === 'high' ? weights.important : 0);
   const days = due ? daysBetween(today, due) : null;
   if (tier > 0 && days !== null) {
@@ -52,4 +59,4 @@ function rankTasksByPriority(tasks, mode = 'balanced', today = new Date().toISOS
   return [...(tasks || [])].sort((a, b) => compareTaskPriority(a, b, mode, today));
 }
 
-module.exports = { TASK_PRIORITY_WEIGHTS, taskPriorityRank, compareTaskPriority, rankTasksByPriority };
+module.exports = { TASK_PRIORITY_WEIGHTS, taskStatusTier, taskPriorityRank, compareTaskPriority, rankTasksByPriority };

@@ -5,25 +5,7 @@ const { createSearchRanker } = require('../domain/search-ranking');
 
 module.exports = function registerSearchRoutes(app, { db, visibleItems, normalizeUserSettings }) {
 // ---------- Нормализация и нечёткое сравнение текста ----------
-function norm(s) {
-  return (s || '').toString().toLowerCase().replace(/ё/g, 'е').replace(/@(?=[a-zа-я0-9])/gi, '').trim();
-}
-
-function stemRu(word) {
-  return norm(word).replace(/(ами|ями|ого|ему|ому|ыми|ими|ов|ев|ей|ах|ях|ью|ям|ам|а|я|ы|и|у|ю|е|ь)$/i, '');
-}
-
-// Экранирование спецсимволов regex перед подстановкой пользовательской/словарной
-// фразы в шаблон. Используется по всему разбору команд поиска.
-function escapeRe(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-// Фраза встречается в тексте как отдельное слово/словосочетание, а не как
-// подстрока внутри другого слова.
-function containsPhrase(text, phrase) {
-  return new RegExp(`(^|\\s)${escapeRe(phrase)}(?=\\s|$)`, 'i').test(text);
-}
+const { escapeRe, containsPhrase, norm, stemRu } = require('../domain/text-match');
 
 // Как containsPhrase, но сравнивает не точную форму слова, а стем каждого
 // слова фразы («задач» находит «задачи», «задача», «задачам», «задачах» —
@@ -238,11 +220,14 @@ const MATERIAL_SEARCH_TYPE_ALIASES = Object.entries(MATERIAL_KIND_ALIASES)
   .flatMap(([materialKind, aliases]) => aliases.map((alias) => [alias, { group: 'links', materialKind }]));
 
 const SEARCH_TYPE_ALIASES = [
+  ['проекты мастерской', { group: 'labs', labEntityType: 'project' }], ['проект мастерской', { group: 'labs', labEntityType: 'project' }],
+  ['мастерская', { group: 'labs', labEntityType: 'project' }], ['мастерскую', { group: 'labs', labEntityType: 'project' }], ['мастерской', { group: 'labs', labEntityType: 'project' }],
+  // Legacy aliases remain searchable so old phrasing/bookmarks keep working.
   ['проекты the labs', { group: 'labs', labEntityType: 'project' }], ['the labs', { group: 'labs', labEntityType: 'project' }],
   ['пет-проекты', { group: 'labs', labEntityType: 'project' }], ['пет-проект', { group: 'labs', labEntityType: 'project' }],
-  ['эксперименты', { group: 'labs' }], ['эксперимент', { group: 'labs' }],
-  ['лаборатория', { group: 'labs' }], ['лабы', { group: 'labs' }], ['лаба', { group: 'labs' }], ['labs', { group: 'labs' }],
-  ['инициатива', { group: 'labs' }],
+  ['эксперименты', { group: 'labs', labEntityType: 'project' }], ['эксперимент', { group: 'labs', labEntityType: 'project' }],
+  ['лаборатория', { group: 'labs', labEntityType: 'project' }], ['лабы', { group: 'labs', labEntityType: 'project' }], ['лаба', { group: 'labs', labEntityType: 'project' }], ['labs', { group: 'labs', labEntityType: 'project' }],
+  ['инициатива', { group: 'labs', labEntityType: 'project' }],
   // Тип задачи — отдельное доменное поле, а не текст в названии.
   // Длинные алиасы стоят раньше общего «задачи», чтобы «задачи по развитию»
   // не деградировали до полнотекстового поиска по слову «развитие».
@@ -264,10 +249,10 @@ const SEARCH_TYPE_ALIASES = [
   ['задача техна', { group: 'tasks', taskType: 'development' }],
   ['проектные задачи', { group: 'tasks', taskType: 'standard' }],
   ['проектная задача', { group: 'tasks', taskType: 'standard' }],
-  ['заметки', { group: 'journal', journalKind: 'note' }],
-  ['заметка', { group: 'journal', journalKind: 'note' }],
-  ['наблюдения', { group: 'journal', journalKind: 'note' }],
-  ['наблюдение', { group: 'journal', journalKind: 'note' }],
+  ['заметки', { group: 'journal' }],
+  ['заметка', { group: 'journal' }],
+  ['наблюдения', { group: 'journal' }],
+  ['наблюдение', { group: 'journal' }],
   ['идеи the labs', { group: 'labs', labEntityType: 'idea' }],
   ['идея the labs', { group: 'labs', labEntityType: 'idea' }],
   ['идеи', { group: 'labs', labEntityType: 'idea' }],
@@ -324,6 +309,7 @@ const SEARCH_TYPE_ALIASES = [
   ['инструменты', { group: 'tools' }], ['инструмент', { group: 'tools' }],
   ['процессы', { group: 'processes' }], ['процесс', { group: 'processes' }],
   ['состояние команды', { group: 'checkins' }], ['статусы команды', { group: 'checkins' }], ['статус команды', { group: 'checkins' }],
+  ['weekly', { group: 'checkins' }], ['викли', { group: 'checkins' }], ['виклик', { group: 'checkins' }], ['дейли', { group: 'checkins' }], ['дейлик', { group: 'checkins' }],
   ['check-in', { group: 'checkins' }], ['checkin', { group: 'checkins' }], ['чекины', { group: 'checkins' }], ['чекин', { group: 'checkins' }], ['чек-ин', { group: 'checkins' }],
   ['отсутствия', { group: 'vacations' }], ['отсутствие', { group: 'vacations' }],
   ['отпуска', { group: 'vacations', vacationType: 'vacation' }], ['отпуск', { group: 'vacations', vacationType: 'vacation' }],
@@ -411,7 +397,7 @@ const SEARCH_MODIFIERS = [
   ['закрытые', 'done'], ['закрытый', 'done'], ['закрытая', 'done'], ['выполненные', 'done'], ['выполненный', 'done'], ['выполненная', 'done'], ['готовые', 'done'], ['готовый', 'done'], ['готовая', 'done'], ['решенные', 'done'], ['решённые', 'done'], ['решенный', 'done'], ['решённый', 'done'],
   ['открытые', 'open'], ['открытый', 'open'], ['открытая', 'open'], ['активные', 'active'], ['активный', 'active'], ['активная', 'active'], ['текущие', 'active'], ['текущий', 'active'], ['текущая', 'active'],
   ['незавершенные', 'open'], ['незавершённые', 'open'], ['незавершенный', 'open'], ['незавершённый', 'open'], ['приостановленные', 'paused'], ['приостановленный', 'paused'], ['приостановлена', 'paused'], ['приостановлено', 'paused'], ['на паузе', 'paused'], ['отложенные', 'paused'], ['отложенный', 'paused'], ['отложенная', 'paused'], ['отложена', 'paused'], ['отложено', 'paused'],
-  ['заблокированные', 'blocked'], ['заблокированный', 'blocked'], ['заблокирована', 'blocked'], ['на ревью', 'in_review'], ['на проверке', 'in_review'], ['проверяется', 'in_review'], ['в работе', 'in_progress'], ['в процессе', 'in_progress'], ['выполняется', 'in_progress'], ['к выполнению', 'todo'], ['не начатые', 'todo'], ['не начатый', 'todo'],
+  ['заблокированные', 'blocked'], ['заблокированный', 'blocked'], ['заблокирована', 'blocked'], ['на ревью', 'in_review'], ['на проверке', 'in_review'], ['проверяется', 'in_review'], ['в работе', 'in_progress'], ['в процессе', 'in_progress'], ['выполняется', 'in_progress'], ['новая', 'todo'], ['новые', 'todo'], ['к выполнению', 'todo'], ['не начатые', 'todo'], ['не начатый', 'todo'],
   ['последних', 'latest'], ['последние', 'latest'], ['последний', 'latest'], ['последняя', 'latest'], ['последнее', 'latest'], ['последнего', 'latest'], ['последней', 'latest'],
   ['следующая', 'upcoming'], ['следующий', 'upcoming'], ['следующие', 'upcoming'], ['ближайшая', 'upcoming'], ['ближайший', 'upcoming'], ['ближайшие', 'upcoming'], ['предстоящие', 'upcoming'], ['предстоящая', 'upcoming'], ['будущие', 'upcoming'],
   ['предыдущая', 'past'], ['предыдущий', 'past'], ['прошлая', 'past'], ['прошлый', 'past'], ['прошедшие', 'past'], ['прошедшая', 'past'], ['прошедший', 'past'], ['прошлые', 'past'],
@@ -471,7 +457,7 @@ function stripProjectFromRemainder(text, project) {
   return value.replace(/\s+/g, ' ').trim();
 }
 
-// ---------- Вложения встреч и The Labs как «ссылки»/«документы» ----------
+// ---------- Вложения встреч и Мастерская как «ссылки»/«документы» ----------
 
 function meetingHasOutcomeRecordsSearch(meeting) {
   const hasNotes = String(meeting?.notes || '').trim().length > 0;
@@ -547,7 +533,7 @@ function embeddedLinks(user) {
         url,
         sourceType: 'labs',
         sourceId: lab.id,
-        sourceTitle: lab.title || 'The Labs',
+        sourceTitle: lab.title || (lab.entityType === 'idea' ? 'Идея' : 'Мастерская'),
         sourceDate: lab.updatedAt || lab.createdAt || '',
         personIds: lab.authorId ? [lab.authorId] : [],
         projectId: null,
@@ -563,6 +549,7 @@ const LINK_SOURCE_ALIASES = [
   ['со встреч', 'meeting'], ['со встречи', 'meeting'],
   ['с встреч', 'meeting'], ['с встречи', 'meeting'],
   ['встречи', 'meeting'], ['встреча', 'meeting'], ['встреч', 'meeting'],
+  ['в мастерской', 'labs'], ['из мастерской', 'labs'], ['мастерская', 'labs'],
   ['в the labs', 'labs'], ['из the labs', 'labs'], ['the labs', 'labs'],
 ].sort((a, b) => b[0].length - a[0].length);
 
@@ -747,10 +734,11 @@ function peopleWithContext(people, user) {
   return people.map((p) => {
     const id = p.id;
     return {
+      ...p,
       person: p,
       tasks: visibleItems('tasks', user).filter((t) => (t.assigneeIds || []).includes(id)),
       meetings: visibleItems('meetings', user).filter((m) => (m.participantIds || []).includes(id)),
-      journal: visibleItems('journal', user).filter((entry) => !entry.kind || entry.kind === 'note').filter((j) => (j.mentions || []).some((m) => m.id === id)),
+      journal: visibleItems('journal', user).filter((j) => (j.mentions || []).some((m) => m.id === id)),
       agreements: visibleItems('agreements', user).filter((a) => (a.withPersonIds || []).includes(id) || (a.mentions || []).some((m) => m.id === id)),
       projects: visibleItems('projects', user).filter((pr) => (pr.memberIds || []).includes(id)),
       vacations: visibleItems('vacations', user).filter((v) => v.personId === id),
@@ -784,11 +772,10 @@ function filterByPerson(group, items, person) {
   }
   if (group === 'tools') return [];
   if (group === 'goals') {
-    const goalIds = new Set();
-    db.tasks.all().filter((x) => !x.archivedAt && (x.assigneeIds || []).includes(id) && x.goalId).forEach((x) => goalIds.add(x.goalId));
-    db.issues.all().filter((x) => (x.relatedPersonIds || []).includes(id) && x.goalId).forEach((x) => goalIds.add(x.goalId));
-    const projectIds = new Set(db.projects.all().filter((x) => (x.memberIds || []).includes(id)).map((x) => x.id));
-    return items.filter((x) => goalIds.has(x.id) || (x.projectIds || []).some((v) => projectIds.has(v)));
+    const goalKeys = new Set();
+    db.tasks.all().filter((x) => !x.archivedAt && (x.assigneeIds || []).includes(id) && x.goalKey).forEach((x) => goalKeys.add(x.goalKey));
+    db.issues.all().filter((x) => (x.relatedPersonIds || []).includes(id) && x.goalKey).forEach((x) => goalKeys.add(x.goalKey));
+    return items.filter((x) => goalKeys.has(x.goalKey));
   }
   return items;
 }
@@ -797,7 +784,6 @@ function filterByProject(group, items, project) {
   if (!project) return items;
   const id = project.id;
   if (['tasks', 'issues', 'meetings', 'agreements', 'links', 'documents'].includes(group)) return items.filter((x) => x.projectId === id);
-  if (group === 'goals') return items.filter((x) => (x.projectIds || []).includes(id));
   if (group === 'projects') return items.filter((x) => x.id === id);
   return items;
 }
@@ -826,6 +812,7 @@ function filterByModifier(group, items, modifiers) {
       return !!key && key >= monthStart && key < nextMonthStart;
     }
     if (mod === 'high') return group === 'issues' ? x.severity === 'high' : true;
+    if (mod === 'important' && group === 'issues') return x.severity === 'high';
 
     if (group === 'tasks') {
       if (mod === 'done') return x.status === 'done';
@@ -897,7 +884,7 @@ function commandSearch(command, user, options = {}) {
     tasks: visibleItems('tasks', user, { includeArchived: true }),
     issues: visibleItems('issues', user),
     meetings: visibleItems('meetings', user),
-    journal: visibleItems('journal', user).filter((entry) => !entry.kind || entry.kind === 'note'),
+    journal: visibleItems('journal', user),
     goals: visibleItems('goals', user),
     agreements: visibleItems('agreements', user),
     links: embeddedLinks(user),
@@ -914,7 +901,6 @@ function commandSearch(command, user, options = {}) {
   if (command.group === 'links' && command.sourceMeetingType) items = items.filter((x) => norm(x.sourceMeetingType) === norm(command.sourceMeetingType));
   if (command.taskType) items = items.filter((x) => (x.taskType || 'standard') === command.taskType);
   if (command.meetingType) items = items.filter((x) => norm(x.type) === norm(command.meetingType));
-  if (command.journalKind) items = items.filter((x) => x.kind === command.journalKind);
   if (command.vacationType) items = items.filter((x) => x.type === command.vacationType);
   if (command.peopleType) items = items.filter((x) => x.type === command.peopleType);
   if (command.labEntityType) items = items.filter((x) => x.entityType === command.labEntityType);
@@ -958,7 +944,7 @@ function commandSearch(command, user, options = {}) {
   }
   if (command.textRemainder) {
     const q = command.textRemainder;
-    items = items.filter((x) => fuzzyTextMatch(q, [x.name, x.title, x.text, x.description, x.notes, x.url, x.note, x.did, x.willDo, x.blockers].filter(Boolean).join(' ')));
+    items = items.filter((x) => fuzzyTextMatch(q, [x.name, x.title, x.text, x.description, x.notes, x.url, x.note, x.did, x.willDo, x.blockers, x.taskKey, x.projectKey, x.issueKey, x.processKey, x.agreementKey, x.goalKey, x.noteKey, x.toolKey, x.meetingKey, x.ideaKey, x.blueprintKey].filter(Boolean).join(' ')));
   }
   items = searchRanker.rankGroup(command.group, items, command.textRemainder || '', {
     user,
@@ -1010,7 +996,6 @@ function parseQuery(rawQuery, user) {
       ...(command.dateRange ? { dateRange: command.dateRange } : {}),
       ...(command.meetingType ? { meetingType: command.meetingType } : {}),
       ...(command.labEntityType ? { labEntityType: command.labEntityType } : {}),
-      ...(command.journalKind ? { journalKind: command.journalKind } : {}),
       ...(command.peopleType ? { peopleType: command.peopleType } : {}),
       ...(command.vacationType ? { vacationType: command.vacationType } : {}),
     },
@@ -1062,18 +1047,18 @@ function runSearch(rawQuery, user, parsedQuery = null, options = {}) {
 
   const groups = {
     people: peopleWithContext(matchedGroup('people', visibleItems('people', user), (p) => match(p.name) || match(p.role) || match(p.tags && p.tags.join(' '))), user),
-    projects: matchedGroup('projects', visibleItems('projects', user), (p) => match(p.name) || match(p.description)),
-    tasks: matchedGroup('tasks', visibleItems('tasks', user, { includeArchived: true }), (t) => match(t.title) || match(t.description), { taskPriorityMode: options.taskPriorityMode || 'balanced' }),
-    issues: matchedGroup('issues', visibleItems('issues', user), (i) => match(i.title) || match(i.description)),
-    meetings: matchedGroup('meetings', visibleItems('meetings', user), (m) => match(m.title) || match(m.notes)),
-    journal: matchedGroup('journal', visibleItems('journal', user).filter((entry) => !entry.kind || entry.kind === 'note'), (j) => match(j.text)),
-    goals: matchedGroup('goals', visibleItems('goals', user), (g) => match(g.title) || match(g.description)),
-    agreements: matchedGroup('agreements', visibleItems('agreements', user), (a) => match(a.text)),
+    projects: matchedGroup('projects', visibleItems('projects', user), (p) => match(p.projectKey) || match(p.name) || match(p.description)),
+    tasks: matchedGroup('tasks', visibleItems('tasks', user, { includeArchived: true }), (t) => match(t.taskKey) || match(t.title) || match(t.description), { taskPriorityMode: options.taskPriorityMode || 'balanced' }),
+    issues: matchedGroup('issues', visibleItems('issues', user), (i) => match(i.issueKey) || match(i.title) || match(i.description)),
+    meetings: matchedGroup('meetings', visibleItems('meetings', user), (m) => match(m.meetingKey) || match(m.title) || match(m.notes)),
+    journal: matchedGroup('journal', visibleItems('journal', user), (j) => match(j.noteKey) || match(j.text)),
+    goals: matchedGroup('goals', visibleItems('goals', user), (g) => match(g.goalKey) || match(g.title) || match(g.description)),
+    agreements: matchedGroup('agreements', visibleItems('agreements', user), (a) => match(a.agreementKey) || match(a.text)),
     links: matchedGroup('links', embeddedLinks(user), (link) => match(link.title) || match(link.url) || match(link.sourceTitle)),
     documents: matchedGroup('documents', visibleItems('kbDocs', user), (d) => match(d.title) || match(d.url)),
-    tools: matchedGroup('tools', visibleItems('tools', user), (d) => match(d.title) || match(d.url)),
-    labs: matchedGroup('labs', visibleItems('labs', user), (d) => match(d.title) || match(d.description)),
-    processes: matchedGroup('processes', visibleItems('processes', user), (p) => match(p.title) || match(p.expectedBehavior) || match(p.currentBehavior) || match(p.description) || match(p.brokenNote) || (p.fixOptions || []).some((option) => match(option.text))),
+    tools: matchedGroup('tools', visibleItems('tools', user), (d) => match(d.toolKey) || match(d.title) || match(d.url)),
+    labs: matchedGroup('labs', visibleItems('labs', user), (d) => match(d.ideaKey) || match(d.blueprintKey) || match(d.title) || match(d.description)),
+    processes: matchedGroup('processes', visibleItems('processes', user), (p) => match(p.processKey) || match(p.title) || match(p.expectedBehavior) || match(p.currentBehavior) || match(p.description) || match(p.brokenNote) || (p.fixOptions || []).some((option) => match(option.text))),
     vacations: matchedGroup('vacations', visibleItems('vacations', user), (v) => match(v.note) || match(v.type)),
     checkins: matchedGroup('checkins', visibleItems('checkins', user), (c) => match(c.did) || match(c.willDo) || match(c.blockers)),
   };
