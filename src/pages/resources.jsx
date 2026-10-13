@@ -236,18 +236,18 @@ function FixOptionsField({ options, onChange }) {
   </div>;
 }
 
-function ResourceCrudDialog({ resource, item, open, onOpenChange, onSaved, projects = [], people = [], folders = [], showDeleteAction = true }) {
+function ResourceCrudDialog({ resource, item, open, onOpenChange, onSaved, projects = [], people = [], folders = [], showDeleteAction = true, preset = null }) {
   const config = RESOURCE_CONFIG[resource];
   const { isEdit, draft, field, saving, error, save, remove, confirmOpen, setConfirmOpen } = useCrudDialogForm({
     resource, open, item, onOpenChange, onSaved,
     resolveId: (current) => resourceRef(resource, current),
-    buildDraft: (current) => {
+    buildDraft: (current) => { const base = buildBase(current); return current ? base : { ...base, ...(preset || {}) }; function buildBase(current) {
       if (resource === 'issues') return { title: current?.title || '', description: current?.description || '', status: current?.status || 'open', severity: current?.severity || 'normal', projectId: current?.projectId || 'none', affectedTarget: issueAffectedValue(current) };
       if (resource === 'processes') return { title: current?.title || '', status: current?.status || 'ok', expectedBehavior: current?.expectedBehavior || '', currentBehavior: current?.currentBehavior || '', fixOptions: (current?.fixOptions || []).map((x, index) => normalizeSolutionOption(x, index)) };
       if (resource === 'goals') return { title: current?.title || '', description: current?.description || '', dueDate: current?.dueDate || '', status: current?.status || 'active' };
       if (resource === 'agreements') return { text: current?.text || '', status: current?.status || 'open', date: current?.date || '', dueDate: current?.dueDate || '', projectId: current?.projectId || 'none' };
       return { title: current?.title || '', url: current?.url || '', folderId: current?.folderId || 'none', scope: current?.scope || '' };
-    },
+    } },
     validate: (d) => {
       const title = resource === 'agreements' ? String(d.text || '').trim() : String(d.title || '').trim();
       if (!title) return resource === 'agreements' ? 'Укажите текст договорённости' : 'Укажите название';
@@ -259,7 +259,7 @@ function ResourceCrudDialog({ resource, item, open, onOpenChange, onSaved, proje
       if (resource === 'issues') return { title, description: String(d.description || '').trim(), status: d.status, severity: d.severity, projectId: d.projectId === 'none' ? null : d.projectId, affectsTeam: d.affectedTarget === 'team', affectedPersonId: !['none', 'team'].includes(d.affectedTarget) ? d.affectedTarget : null };
       if (resource === 'processes') return { title, status: d.status, expectedBehavior: String(d.expectedBehavior || '').trim(), currentBehavior: String(d.currentBehavior || '').trim(), fixOptions: (d.fixOptions || []).map((option) => ({ ...option, text: String(option.text || '').trim() })).filter((option) => option.text) };
       if (resource === 'goals') return { title, description: String(d.description || '').trim(), dueDate: d.dueDate || null, status: d.status };
-      if (resource === 'agreements') return { text: title, status: d.status, date: d.date || null, dueDate: d.dueDate || null, projectId: d.projectId === 'none' ? null : d.projectId };
+      if (resource === 'agreements') return { text: title, status: d.status, date: d.date || null, dueDate: d.dueDate || null, projectId: d.projectId === 'none' ? null : d.projectId, ...(d.withPersonIds ? { withPersonIds: d.withPersonIds } : {}) };
       return { title, url: String(d.url || '').trim(), folderId: d.folderId === 'none' ? null : d.folderId, scope: String(d.scope || '').trim() || null };
     },
   });
@@ -705,6 +705,7 @@ export function PersonDetailPage({ user }) {
   const [activeTab, setActiveTab] = React.useState('tasks');
   const [taskCreate, setTaskCreate] = React.useState(null);
   const [meetingCreate, setMeetingCreate] = React.useState(null);
+  const [resourceCreate, setResourceCreate] = React.useState(null);
   const [sidebarOpen, setSidebarOpen] = useDetailSidebarState(`garden-person-detail-sidebar:${id}`, false);
   const addStickyRef = React.useRef(null);
   const stickyPreview = useEndpoint(`/api/comments/person/${encodeURIComponent(id)}`, [id]);
@@ -769,10 +770,10 @@ export function PersonDetailPage({ user }) {
   ];
 
   const tabBody = () => {
-    if (activeTab === 'tasks') return <TaskList items={regularTasks} empty="Нет задач" navigate={navigate} onStatusChanged={state.reload} people={allPeople.data} projects={allProjects.data}/>;
-    if (activeTab === 'meetings') return <MeetingList items={meetings} empty="Нет встреч" navigate={navigate} people={allPeople.data} projects={allProjects.data}/>;
-    if (activeTab === 'issues') return <div className="surface overflow-hidden">{openIssues.length ? openIssues.map((item)=><EntityRow key={item.id} className="task-entity-row" onOpen={()=>navigate(`/issues/${encodeURIComponent(resourceRef('issues', item))}`)} leading={<IssueStatusIcon issue={item} onChanged={state.reload}/>} title={<span className="flex min-w-0 items-center gap-2"><TaskPriorityIcon priority={item.severity === 'high' ? 'high' : 'normal'}/><span className="min-w-0 truncate"><MentionText text={titleOf(item)} onNavigate={(kind, mentionId)=>navigate(kind === 'project' ? `/projects/${encodeURIComponent(mentionId)}` : `/people/${encodeURIComponent(mentionId)}`)}/></span></span>}/>) : <div className="p-4 text-sm text-muted-foreground">Нет проблем</div>}</div>;
-    if (activeTab === 'agreements') return <CompactList items={openAgreements} empty="Нет договорённостей" href={(item)=>`/agreements/${encodeURIComponent(resourceRef('agreements', item))}`} leading={(item)=><AgreementStatusCheckbox agreement={item} onChanged={state.reload}/>} meta={(item)=>item.dueDate?`До ${formatDate(item.dueDate)}`:null}/>;
+    if (activeTab === 'tasks') return <TaskList items={regularTasks} empty="Нет задач" onAdd={()=>createTask()} addLabel="Добавить задачу" navigate={navigate} onStatusChanged={state.reload} people={allPeople.data} projects={allProjects.data}/>;
+    if (activeTab === 'meetings') return <MeetingList items={meetings} empty="Нет встреч" onAdd={()=>scheduleMeeting()} addLabel="Добавить встречу" navigate={navigate} people={allPeople.data} projects={allProjects.data}/>;
+    if (activeTab === 'issues') return <div className="surface overflow-hidden">{openIssues.length ? openIssues.map((item)=><EntityRow key={item.id} className="task-entity-row" onOpen={()=>navigate(`/issues/${encodeURIComponent(resourceRef('issues', item))}`)} leading={<IssueStatusIcon issue={item} onChanged={state.reload}/>} title={<span className="flex min-w-0 items-center gap-2"><TaskPriorityIcon priority={item.severity === 'high' ? 'high' : 'normal'}/><span className="min-w-0 truncate"><MentionText text={titleOf(item)} onNavigate={(kind, mentionId)=>navigate(kind === 'project' ? `/projects/${encodeURIComponent(mentionId)}` : `/people/${encodeURIComponent(mentionId)}`)}/></span></span>}/>) : <EmptyList empty="Нет проблем" onAdd={()=>setResourceCreate({ resource: 'issues', preset: { affectedTarget: person.id } })} addLabel="Добавить проблему"/>}</div>;
+    if (activeTab === 'agreements') return <CompactList items={openAgreements} empty="Нет договорённостей" onAdd={()=>setResourceCreate({ resource: 'agreements', preset: { withPersonIds: [person.id] } })} addLabel="Добавить договорённость" href={(item)=>`/agreements/${encodeURIComponent(resourceRef('agreements', item))}`} leading={(item)=><AgreementStatusCheckbox agreement={item} onChanged={state.reload}/>} meta={(item)=>item.dueDate?`До ${formatDate(item.dueDate)}`:null}/>;
     if (activeTab === 'journal') return <CompactList className="person-journal-relations" items={journal} empty="Нет связанных записей" href={(item)=>`/journal?entry=${encodeURIComponent(item.noteKey || item.id)}`} meta={(item)=>formatDate(item.createdAt)}/>;
     return null;
   };
@@ -818,7 +819,7 @@ export function PersonDetailPage({ user }) {
           </section>
 
           <section className="person-card">
-            <SectionHeader title={<><span>Загрузка</span><span className="person-load-inline-separator"> — </span><span className="person-load-inline-status">{String(summary.level.label || '').toLowerCase()}</span></>} compact/>
+            <SectionHeader title={<><span>Загрузка</span><span className="person-load-inline-separator"> — </span><span className="person-load-inline-status" data-tone={summary.level.tone}>{String(summary.level.label || '').toLowerCase()}</span></>} compact/>
             {summary.projects.length ? <PersonLoadBreakdown summary={summary} personId={person.id} onOpenProject={(project)=>{ setSelectedLoadProjectId(project.id); setLoadOpen(true); }}/> : <div className="person-card-empty"><div className="person-card-empty-title">Проектной загрузки нет</div><div className="person-card-empty-copy">Для сотрудника пока не настроена загрузка по проектам.</div><Button variant="outline" size="sm" className="mt-3" onClick={()=>setLoadOpen(true)}>Добавить проекты</Button></div>}
           </section>
         </div>
@@ -869,6 +870,7 @@ export function PersonDetailPage({ user }) {
 
     {isTeam&&<PersonLoadDialog open={loadOpen} person={person} projects={allProjects.data} highlightProjectId={selectedLoadProjectId} onOpenChange={(next)=>{ setLoadOpen(next); if (!next) setSelectedLoadProjectId(null); }} onSaved={()=>{allProjects.reload();state.reload();}}/>}
     <CreateTaskDialog open={!!taskCreate} onOpenChange={(open)=>{if(!open)setTaskCreate(null);}} people={allPeople.data} projects={allProjects.data} initialAssignee={isTeam ? person.id : 'none'} initialProject={taskCreate?.projectId || 'none'} onCreated={()=>state.reload()}/>
+    <ResourceCrudDialog resource={resourceCreate?.resource || 'issues'} item={null} preset={resourceCreate?.preset} open={!!resourceCreate} onOpenChange={(open)=>{if(!open)setResourceCreate(null);}} projects={allProjects.data} people={allPeople.data} showDeleteAction={false} onSaved={()=>state.reload()}/>
     <CreateMeetingDialog open={!!meetingCreate} onOpenChange={(open)=>{if(!open)setMeetingCreate(null);}} preset={meetingCreate || {}} people={allPeople.data} projects={allProjects.data} onSaved={()=>state.reload()}/>
     <PersonCrudDialog type={person.type} item={person} open={editOpen} focusField={editFocus} onOpenChange={(open)=>{setEditOpen(open);if(!open)setEditFocus(null);}} onSaved={state.reload} people={allPeople.data} projects={allProjects.data} showDeleteAction={false}/>
     <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen} title={`Удалить ${person?.name} из списка?`} onConfirm={removePerson} busy={deleting}/>
@@ -1041,6 +1043,8 @@ export function ProjectDetailPage() {
   const [historyOpen, setHistoryOpen] = React.useState(false);
   const [sidebarOpen, setSidebarOpen] = useDetailSidebarState('garden-project-detail-sidebar');
   const [contextTab, setContextTab] = React.useState('team');
+  const [taskCreateOpen, setTaskCreateOpen] = React.useState(false);
+  const [issueCreateOpen, setIssueCreateOpen] = React.useState(false);
   const [linkName, setLinkName] = React.useState('');
   const [linkUrl, setLinkUrl] = React.useState('');
   const [linkError, setLinkError] = React.useState('');
@@ -1082,9 +1086,9 @@ export function ProjectDetailPage() {
       </div>;
     }) : <div className="task-relations-empty">Команда проекта не задана.</div>}</div></div>;
 
-    if (contextTab === 'tasks') return <div className="task-detail-tab-content"><TaskList items={activeTasks} empty="Нет активных задач" navigate={navigate} onStatusChanged={state.reload} people={people.data} projects={allProjectsForMentions.data}/></div>;
+    if (contextTab === 'tasks') return <div className="task-detail-tab-content"><TaskList items={activeTasks} empty="Нет активных задач" onAdd={()=>setTaskCreateOpen(true)} addLabel="Добавить задачу" navigate={navigate} onStatusChanged={state.reload} people={people.data} projects={allProjectsForMentions.data}/></div>;
 
-    if (contextTab === 'issues') return <div className="task-detail-tab-content"><CompactList items={openIssues} empty="Нет открытых проблем" href={(item)=>`/issues/${encodeURIComponent(resourceRef('issues', item))}`} meta={(item)=><StatusBadge value={item.status} kind="issue"/>}/></div>;
+    if (contextTab === 'issues') return <div className="task-detail-tab-content"><CompactList items={openIssues} empty="Нет открытых проблем" onAdd={()=>setIssueCreateOpen(true)} addLabel="Добавить проблему" href={(item)=>`/issues/${encodeURIComponent(resourceRef('issues', item))}`} meta={(item)=><StatusBadge value={item.status} kind="issue"/>}/></div>;
 
     if (contextTab === 'links') return <div className="task-detail-tab-content">
       {externalLinks.length ? <div className="task-relations-list">{externalLinks.map((link,index)=><div key={`${link.url}:${index}`} className="task-relation-row"><a href={link.url} target="_blank" rel="noreferrer" className="task-relation-main"><Link2 className="h-4 w-4 shrink-0 text-muted-foreground"/><span className="task-relation-title">{link.name || link.title || link.url}</span><ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground"/></a><Button variant="ghost" size="icon-sm" aria-label="Удалить ссылку" onClick={()=>removeExternalLink(index)} disabled={linkBusy}><Trash2 className="h-3.5 w-3.5"/></Button></div>)}</div> : <div className="task-relations-empty">Внешних ссылок пока нет.</div>}
@@ -1100,6 +1104,7 @@ export function ProjectDetailPage() {
     <div className="mb-7 flex items-center justify-between">
       <Button variant="ghost" size="sm" onClick={()=>navigate('/projects')}><ArrowLeft className="h-4 w-4"/>Проекты</Button>
       <div className="detail-page-header-actions">
+        <Button variant="outline" size="sm" onClick={()=>setTaskCreateOpen(true)}><Plus className="h-4 w-4"/>Задача</Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label="Действия"><MoreHorizontal className="h-4 w-4"/></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="end">
@@ -1168,6 +1173,8 @@ export function ProjectDetailPage() {
 
     <VersionHistoryDialog open={historyOpen} onOpenChange={setHistoryOpen} entityType="projects" entityId={project.id} onRestored={(restored)=>state.setData({ ...state.data, project: restored })}/>
     <ProjectLoadDialog open={loadOpen} project={project} people={people.data.filter(isWorkloadEligiblePerson)} onOpenChange={setLoadOpen} onSaved={()=>state.reload()}/>
+    <CreateTaskDialog open={taskCreateOpen} onOpenChange={setTaskCreateOpen} people={people.data} projects={allProjectsForMentions.data} initialProject={project.id} onCreated={()=>state.reload()}/>
+    <ResourceCrudDialog resource="issues" item={null} preset={{ projectId: project.id }} open={issueCreateOpen} onOpenChange={setIssueCreateOpen} projects={allProjectsForMentions.data} people={people.data} showDeleteAction={false} onSaved={()=>state.reload()}/>
     <PersonLoadDialog open={Boolean(loadPerson)} person={loadPerson} projects={allProjectsForMentions.data} onOpenChange={(open)=>{ if (!open) setLoadPerson(null); }} onSaved={()=>{allProjectsForMentions.reload();state.reload();}}/>
   </Page>;
 }
@@ -1232,6 +1239,8 @@ export function GoalDetailPage() {
   const issuesState = useResource('issues');
   const [sidebarOpen, setSidebarOpen] = useDetailSidebarState(`garden-goal-detail-sidebar:${goalRef}`, false);
   const [detailTab, setDetailTab] = React.useState('tasks');
+  const [goalTaskOpen, setGoalTaskOpen] = React.useState(false);
+  const [goalIssueOpen, setGoalIssueOpen] = React.useState(false);
   const [linkOpen, setLinkOpen] = React.useState(false);
   const [linkTitle, setLinkTitle] = React.useState('');
   const [linkUrl, setLinkUrl] = React.useState('');
@@ -1295,8 +1304,8 @@ export function GoalDetailPage() {
               {value:'links',label:'Ссылки',count:links.length},
             ]}/>
             <div className="task-detail-tab-panel">
-              {detailTab==='tasks' && <div className="task-detail-tab-content"><TaskList items={tasks} empty="Нет связанных задач" navigate={navigate} onStatusChanged={tasksState.reload} people={peopleState.data} projects={projectState.data}/></div>}
-              {detailTab==='issues' && <div className="task-detail-tab-content"><CompactList items={issues} empty="Нет связанных проблем" href={(item)=>`/issues/${encodeURIComponent(resourceRef('issues',item))}`} meta={(item)=><StatusBadge value={item.status} kind="issue"/>}/></div>}
+              {detailTab==='tasks' && <div className="task-detail-tab-content"><TaskList items={tasks} empty="Нет связанных задач" onAdd={()=>setGoalTaskOpen(true)} addLabel="Добавить задачу" navigate={navigate} onStatusChanged={tasksState.reload} people={peopleState.data} projects={projectState.data}/></div>}
+              {detailTab==='issues' && <div className="task-detail-tab-content"><CompactList items={issues} empty="Нет связанных проблем" onAdd={()=>setGoalIssueOpen(true)} addLabel="Добавить проблему" href={(item)=>`/issues/${encodeURIComponent(resourceRef('issues',item))}`} meta={(item)=><StatusBadge value={item.status} kind="issue"/>}/></div>}
               {detailTab==='links' && <div className="task-detail-tab-content">
                 <div className="task-tab-toolbar"><span className="task-tab-subtitle">Ссылки</span><Button variant="ghost" size="sm" onClick={openLinkDialog}><Plus className="h-4 w-4"/>Добавить ссылку</Button></div>
                 {links.length ? <div className="task-relations-list">{links.map((entry)=><div key={entry.url} className="task-relation-row"><a href={entry.url} target="_blank" rel="noreferrer" className="task-relation-main"><MaterialServiceIcon url={entry.url}/><div className="min-w-0"><div className="task-relation-title">{entry.title || entry.url}</div></div><ExternalLink className="h-3.5 w-3.5 text-muted-foreground"/></a><div className="flex items-center gap-1"><Button variant="ghost" size="icon-sm" aria-label="Редактировать ссылку" title="Редактировать ссылку" onClick={()=>editLink(entry)}><Pencil className="h-3.5 w-3.5"/></Button><Button variant="ghost" size="icon-sm" aria-label="Удалить ссылку" title="Удалить ссылку" onClick={()=>removeLink(entry.url)}><X className="h-4 w-4"/></Button></div></div>)}</div> : <button type="button" onClick={openLinkDialog} className="task-relations-empty">Добавить первую ссылку</button>}
@@ -1318,6 +1327,9 @@ export function GoalDetailPage() {
       <StickyNotes entityType="goal" entityId={goal.goalKey} notesPrefix={goal.title || goal.name || ''} addButtonRef={addStickyRef}/>
     </DetailSidebar>
 
+    <CreateTaskDialog open={goalTaskOpen} onOpenChange={setGoalTaskOpen} people={peopleState.data} projects={projectState.data} onCreated={async (task)=>{ if (task?.id) await patch({ taskIds: [...goalTaskIds, task.id] }); tasksState.reload(); }}/>
+    <ResourceCrudDialog resource="issues" item={null} open={goalIssueOpen} onOpenChange={setGoalIssueOpen} projects={projectState.data} people={peopleState.data} showDeleteAction={false} onSaved={async (issue)=>{ if (issue?.id) await patch({ issueIds: [...goalIssueIds, issue.id] }); issuesState.reload(); }}/>
+
     <Dialog open={linkOpen} onOpenChange={(open)=>{setLinkOpen(open);if(!open)resetLinkDialog();}}>
       <DialogContent>
         <DialogHeader><DialogTitle>{linkEditingUrl ? 'Редактировать ссылку' : 'Добавить ссылку'}</DialogTitle></DialogHeader>
@@ -1332,29 +1344,34 @@ export function GoalDetailPage() {
   </Page>;
 }
 
-function TaskList({ items = [], empty, navigate, onStatusChanged, people = [], projects = [] }) {
+function EmptyList({ empty, onAdd, addLabel }) {
+  if (onAdd) return <button type="button" onClick={onAdd} className="task-relations-empty"><Plus className="mr-1.5 inline h-3.5 w-3.5 align-[-2px]"/>{addLabel}</button>;
+  return <div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">{empty}</div>;
+}
+
+function TaskList({ items = [], empty, onAdd, addLabel, navigate, onStatusChanged, people = [], projects = [] }) {
   const settings = useEndpoint('/api/settings');
   const sortedItems = React.useMemo(
     () => rankTasksByPriority(items, settings.data?.taskPriorityMode || 'balanced'),
     [items, settings.data?.taskPriorityMode],
   );
-  if (!sortedItems.length) return <div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">{empty}</div>;
+  if (!sortedItems.length) return <EmptyList empty={empty} onAdd={onAdd} addLabel={addLabel}/>;
   const person=(id)=>people.find((item)=>item.id===id);
   const project=(id)=>projects.find((item)=>item.id===id);
   return <div className="surface overflow-hidden">{sortedItems.map((item)=><TaskEntityRow key={item.id} task={item} person={person} project={project} onStatusChanged={onStatusChanged} onOpen={()=>navigate(`/tasks/${encodeURIComponent(item.taskKey || item.id)}`)}/>)}</div>;
 }
 
-function MeetingList({ items = [], empty, navigate, people = [], projects = [] }) {
-  if (!items.length) return <div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">{empty}</div>;
+function MeetingList({ items = [], empty, onAdd, addLabel, navigate, people = [], projects = [] }) {
+  if (!items.length) return <EmptyList empty={empty} onAdd={onAdd} addLabel={addLabel}/>;
   const person=(id)=>people.find((item)=>item.id===id);
   const project=(id)=>projects.find((item)=>item.id===id);
   return <div className="surface overflow-hidden">{items.map((item)=>{const participants=(item.participantIds||[]).map(person).filter(Boolean);return <MeetingEntityRow key={item.id} typeLabel={MEETING_TYPE_LABEL[item.type] || 'Другое'} title={meetingDisplayTitle(item, participants)} projectName={project(item.projectId)?.name || ''} dateLabel={formatDate(item.date)} participants={participants.map((p)=>({id:p.id,avatar:<Avatar person={p} size="xs" className="ring-2 ring-card"/>}))} onOpen={()=>navigate(`/meetings/${encodeURIComponent(item.meetingKey || item.id)}`)}/>;})}</div>;
 }
 
-function CompactList({ items = [], empty, href, meta, leading, className }) {
+function CompactList({ items = [], empty, onAdd, addLabel, href, meta, leading, className }) {
   const navigate = useNavigate();
   const mentionNavigate = (kind, mentionId) => { const route = mentionRoute(kind, mentionId); if (route) navigate(route); };
-  if (!items.length) return <div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">{empty}</div>;
+  if (!items.length) return <EmptyList empty={empty} onAdd={onAdd} addLabel={addLabel}/>;
   return <div className={cn("surface overflow-hidden", className)}>{items.map((item)=>{
     const target = href ? href(item) : null;
     return <EntityRow key={item.id} onOpen={target?()=>navigate(target):undefined} leading={leading?leading(item):null} title={<MentionText text={titleOf(item)} onNavigate={mentionNavigate}/>} meta={meta?[meta(item)]:[]}/>;

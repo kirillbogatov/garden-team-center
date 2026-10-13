@@ -6684,9 +6684,12 @@ input:disabled, textarea:disabled, select:disabled {
   font-weight: 600;
 }
 .person-load-inline-status {
-  color: rgb(16 185 129);
+  color: hsl(var(--muted-foreground));
   font-weight: 600;
 }
+.person-load-inline-status[data-tone="danger"] { color: rgb(239 68 68); }
+.person-load-inline-status[data-tone="success"] { color: rgb(16 185 129); }
+.person-load-inline-status[data-tone="warning"] { color: rgb(217 119 6); }
 html .person-detail-page .person-load-breakdown {
   display: flex;
   flex-direction: column;
