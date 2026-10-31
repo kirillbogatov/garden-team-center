@@ -1,3 +1,4 @@
+import { PeopleAvatars } from '@/components/people-avatars';
 import { usePersistentFilter } from '@/hooks/use-persistent-filter';
 import * as React from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -166,7 +167,7 @@ function IssueAffectedAvatar({ item, people = [], size = "xs", showLabel = false
   if (value === 'none') return null;
   if (value === 'team') {
     const team = people.filter((person)=>person.type==='team').slice(0,3);
-    return <span className={cn('inline-flex min-w-0 items-center gap-2', !showLabel && 'justify-center')} title="Команда целиком"><span className="flex shrink-0 -space-x-1.5">{team.length ? team.map((person)=><Avatar key={person.id} person={person} size={size} className="ring-2 ring-background"/>) : <span className={cn('grid shrink-0 place-items-center rounded-full bg-muted text-muted-foreground', size==='sm' ? 'h-8 w-8' : 'h-6 w-6')}><Users className={size==='sm' ? 'h-4 w-4' : 'h-3.5 w-3.5'}/></span>}</span>{showLabel&&<span className="truncate">Команда целиком</span>}</span>;
+    return <span className={cn('inline-flex min-w-0 items-center gap-2', !showLabel && 'justify-center')} title="Команда целиком"><span className="flex shrink-0 -space-x-1.5">{team.length ? <PeopleAvatars people={team} size={size}/> : <span className={cn('grid shrink-0 place-items-center rounded-full bg-muted text-muted-foreground', size==='sm' ? 'h-8 w-8' : 'h-6 w-6')}><Users className={size==='sm' ? 'h-4 w-4' : 'h-3.5 w-3.5'}/></span>}</span>{showLabel&&<span className="truncate">Команда целиком</span>}</span>;
   }
   const person = people.find((candidate)=>candidate.id===value);
   if (!person) return null;
@@ -670,7 +671,7 @@ function ProjectCard({ project, people, onOpen, onLoad }) {
   const members = (project.memberIds || []).map((id)=>people.find((person)=>person.id===id)).filter(Boolean);
   const cardClick = (event) => { if (event.target.closest?.('button,a,input,select,textarea')) return; onOpen(); };
   const cardKeyDown = (event) => { if (['Enter',' '].includes(event.key)) { event.preventDefault(); onOpen(); } };
-  return <div role="button" tabIndex={0} onClick={cardClick} onKeyDown={cardKeyDown} className="entity-card cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20"><div className="flex items-center justify-between gap-3"><h3 className="entity-card-title min-w-0 flex-1 truncate">{project.name}</h3><StatusBadge value={project.status} kind="project"/></div><div className="mt-4 flex items-center justify-between gap-3"><div className="flex -space-x-1.5">{members.slice(0,5).map((person)=><Avatar key={person.id} person={person} size="sm" className="ring-2 ring-card"/>)}</div><Button variant="ghost" size="sm" onClick={(event)=>{event.stopPropagation();onLoad();}}><Gauge className="h-4 w-4"/>Загрузка</Button></div></div>;
+  return <div role="button" tabIndex={0} onClick={cardClick} onKeyDown={cardKeyDown} className="entity-card cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20"><div className="flex items-center justify-between gap-3"><h3 className="entity-card-title min-w-0 flex-1 truncate">{project.name}</h3><StatusBadge value={project.status} kind="project"/></div><div className="mt-4 flex items-center justify-between gap-3"><PeopleAvatars people={members}/><Button variant="ghost" size="sm" onClick={(event)=>{event.stopPropagation();onLoad();}}><Gauge className="h-4 w-4"/>Загрузка</Button></div></div>;
 }
 
 function ProjectListRow({ project, people, onOpen, onLoad }) {
@@ -678,7 +679,7 @@ function ProjectListRow({ project, people, onOpen, onLoad }) {
   return <EntityRow
     onOpen={onOpen}
     title={project.name}
-    trailing={<div className="flex items-center gap-3"><div className="hidden -space-x-1.5 sm:flex">{members.slice(0,4).map((person)=><Avatar key={person.id} person={person} size="xs" className="ring-2 ring-card"/>)}</div><StatusBadge value={project.status} kind="project"/><Button variant="ghost" size="sm" onClick={onLoad}><Gauge className="h-4 w-4"/><span className="hidden lg:inline">Загрузка</span></Button></div>}
+    trailing={<div className="flex items-center gap-3"><PeopleAvatars people={members} limit={4}/><StatusBadge value={project.status} kind="project"/><Button variant="ghost" size="sm" onClick={onLoad}><Gauge className="h-4 w-4"/><span className="hidden lg:inline">Загрузка</span></Button></div>}
   />;
 }
 
@@ -1365,7 +1366,7 @@ function MeetingList({ items = [], empty, onAdd, addLabel, navigate, people = []
   if (!items.length) return <EmptyList empty={empty} onAdd={onAdd} addLabel={addLabel}/>;
   const person=(id)=>people.find((item)=>item.id===id);
   const project=(id)=>projects.find((item)=>item.id===id);
-  return <div className="surface overflow-hidden">{items.map((item)=>{const participants=(item.participantIds||[]).map(person).filter(Boolean);return <MeetingEntityRow key={item.id} typeLabel={MEETING_TYPE_LABEL[item.type] || 'Другое'} title={meetingDisplayTitle(item, participants)} projectName={project(item.projectId)?.name || ''} dateLabel={formatDate(item.date)} participants={participants.map((p)=>({id:p.id,avatar:<Avatar person={p} size="xs" className="ring-2 ring-card"/>}))} onOpen={()=>navigate(`/meetings/${encodeURIComponent(item.meetingKey || item.id)}`)}/>;})}</div>;
+  return <div className="surface overflow-hidden">{items.map((item)=>{const participants=(item.participantIds||[]).map(person).filter(Boolean);return <MeetingEntityRow key={item.id} typeLabel={MEETING_TYPE_LABEL[item.type] || 'Другое'} title={meetingDisplayTitle(item, participants)} projectName={project(item.projectId)?.name || ''} dateLabel={formatDate(item.date)} participants={participants} onOpen={()=>navigate(`/meetings/${encodeURIComponent(item.meetingKey || item.id)}`)}/>;})}</div>;
 }
 
 function CompactList({ items = [], empty, onAdd, addLabel, href, meta, leading, className }) {

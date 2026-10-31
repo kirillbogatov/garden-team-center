@@ -1,3 +1,4 @@
+import { PeopleAvatars } from '@/components/people-avatars';
 import { usePersistentFilter } from '@/hooks/use-persistent-filter';
 import * as React from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -221,7 +222,7 @@ function TechnologyRow({ item, people, meeting, busy, canEdit, canCreateMeeting,
     <td className="cell-frame p-2"><Input value={draft.topic} disabled={busy || !canEdit} onChange={(e) => setDraft((d) => ({ ...d, topic: e.target.value }))} onBlur={() => save('topic')} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} className="cell-input technology-inline-input h-8 bg-transparent px-2 font-normal shadow-none"/></td>
     <td className="cell-frame p-2"><Input type="number" min="1" step="1" value={draft.hours} disabled={busy || !canEdit} onChange={(e) => setDraft((d) => ({ ...d, hours: e.target.value }))} onBlur={() => save('hours')} className="cell-input technology-inline-input h-8 bg-transparent px-2 text-center shadow-none"/></td>
     <td className="p-2"><button type="button" disabled={!canEdit} onClick={onPeople} className="ui-focus-ring flex min-h-8 w-full items-center justify-center rounded-md px-2 text-center hover:bg-muted/50">
-      {selectedPeople.length ? <div className="flex -space-x-1.5">{selectedPeople.slice(0, 4).map((person) => <Tooltip key={person.id} content={person.name}><span className="inline-flex rounded-full"><Avatar person={person} size="xs" className="ring-2 ring-card"/></span></Tooltip>)}{selectedPeople.length > 4 && <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] text-muted-foreground ring-2 ring-card">+{selectedPeople.length - 4}</span>}</div> : <span className="text-xs text-muted-foreground">Добавить…</span>}
+      {selectedPeople.length ? <PeopleAvatars people={selectedPeople} limit={4}/> : <span className="text-xs text-muted-foreground">Добавить…</span>}
     </button></td>
     <td className="p-2 text-center"><div className="inline-flex items-center gap-2"><Switch checked={Boolean(item.completed)} disabled={busy || !canEdit} onCheckedChange={(checked) => onPatch(item, { completed: Boolean(checked) })}/></div></td>
     <td className="p-2 text-right"><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="Действия"><MoreHorizontal className="h-4 w-4"/></Button></DropdownMenuTrigger><DropdownMenuContent align="end">

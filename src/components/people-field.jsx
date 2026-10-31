@@ -71,14 +71,14 @@ export function PeopleField({ people, value, onChange, label, placeholder = 'Н�
         onClick={() => { inputRef.current?.focus(); setOpen(true); }}
       >
         {selectedPeople.map((person) => (
-          <span key={person.id} className="inline-flex items-center gap-1.5 rounded-full bg-muted py-0.5 pl-1 pr-2 text-[12px]">
+          <span key={person.id} title={person.name} className="group relative inline-flex rounded-full">
             <Avatar person={person} size="xs"/>
-            <span className="max-w-[140px] truncate">{person.name}</span>
             <button
               type="button"
               onClick={(event) => { event.stopPropagation(); removePerson(person.id); }}
               aria-label={`Убрать ${person.name}`}
-              className="text-muted-foreground hover:text-foreground"
+              title={`Убрать ${person.name}`}
+              className="absolute -right-1 -top-1 grid h-4 w-4 place-items-center rounded-full border bg-background text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             ><X className="h-3 w-3"/></button>
           </span>
         ))}

@@ -1,5 +1,6 @@
+import { PeopleAvatars } from '@/components/people-avatars';
 import * as React from 'react';
-import { Avatar, Badge } from '@/components/ui';
+import { Badge } from '@/components/ui';
 import { TaskStatusIcon } from '@/components/status';
 import { TASK_TYPE_LABEL } from '@/lib/domain';
 import { cn, formatEventDate, isOverdue } from '@/lib/utils';
@@ -46,6 +47,7 @@ export function TaskEntityRow({ task, onOpen, onStatusChanged, person, project, 
   const resolvedAssignee = assigneePersonProp ?? (task.assigneeIds?.length && person ? person(task.assigneeIds[0]) : null);
   const fallbackAssignee = !resolvedAssignee && assigneeNameProp ? { name: assigneeNameProp } : null;
   const assignee = resolvedAssignee || fallbackAssignee;
+  const assignees = person ? (task.assigneeIds || []).map(person).filter(Boolean) : [];
   const projectName = projectNameProp ?? (project ? project(task.projectId)?.name : '') ?? '';
   const effectiveProject = projectName || (task.taskType === 'development' ? TASK_TYPE_LABEL.development : '');
   const overdue = overdueProp ?? isOverdue(task.dueDate, task.status);
@@ -62,7 +64,7 @@ export function TaskEntityRow({ task, onOpen, onStatusChanged, person, project, 
       due ? <span className={overdue ? 'is-overdue' : ''}>{due}</span> : null,
       hideProject ? null : (effectiveProject || null),
     ]}
-    trailing={assignee ? <span title={assignee.name || assigneeNameProp || 'Исполнитель'}><Avatar person={assignee} size="xs"/></span> : null}
+    trailing={<PeopleAvatars people={assignees.length ? assignees : assignee ? [assignee] : []}/>}
   />;
 }
 
@@ -73,6 +75,6 @@ export function MeetingEntityRow({ typeLabel, title, projectName, dateLabel, mis
     leading={<span className="meeting-entity-row-date">{dateLabel}</span>}
     title={<span className="truncate">{title || 'Без названия'}</span>}
     meta={[<Badge key="type" variant="muted">{typeLabel || 'Другое'}</Badge>, projectName || null, missed ? <span className="text-amber-700 dark:text-amber-300">нет итогов</span> : null]}
-    trailing={participants.length ? <div className="flex -space-x-1.5">{participants.slice(0,5).map((item)=><span key={item.id} className="contents">{item.avatar}</span>)}</div> : null}
+    trailing={<PeopleAvatars people={participants}/>}
   />;
 }

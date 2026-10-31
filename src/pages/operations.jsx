@@ -1,3 +1,4 @@
+import { PeopleAvatars } from '@/components/people-avatars';
 import { usePersistentFilter } from '@/hooks/use-persistent-filter';
 import * as React from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -196,7 +197,7 @@ function MeetingRow({ meeting, navigate, person, project, today }) {
     typeLabel={MEETING_TYPE_LABEL[meeting.type]||'Другое'}
     projectName={projectName}
     missed={missed}
-    participants={participants.map((item)=>({id:item.id, avatar:<Avatar person={item} size="xs" className="ring-2 ring-card"/>}))}
+    participants={participants}
     onOpen={()=>navigate(`/meetings/${encodeURIComponent(meeting.meetingKey || meeting.id)}`)}
     className={missed?'bg-amber-500/[.035]':''}
   />;
@@ -282,7 +283,7 @@ export function MeetingDetailPage() {
           aria-label="Дата встречи"
         />
       </label>
-      {participants.map((p)=><Link key={p.id} to={`/people/${encodeURIComponent(p.id)}`} className="meeting-header-person"><Avatar person={p} size="xs"/><span>{p.name}</span></Link>)}
+      <PeopleAvatars people={participants} linked/>
     </>}/>
 
     <div className="task-detail-layout py-7">
