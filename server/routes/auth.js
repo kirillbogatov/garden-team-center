@@ -60,6 +60,7 @@ module.exports = function registerAuthRoutes(app, deps) {
     db.withWorkspace('demo', () => {
       db.versions.clearWorkspace();
       for (const name of COLLECTIONS) db[name].replaceAll(seed[name] || []);
+      db.comments.replaceAll(seed.comments || []);
     });
     createSession(user.id, res);
     res.json({ user: safeUser(user) });

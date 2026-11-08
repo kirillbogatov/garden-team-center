@@ -529,6 +529,23 @@ module.exports = {
       "id": "tsk_demo_michael_program",
       "title": "Утвердить программу церемонии «Данди»",
       "description": "Выбрать порядок номинаций и ведущего. Красная дорожка — по итогам бюджета.",
+      "planItems": [
+        {
+          "id": "plan_demo_dundies_nominations",
+          "text": "Собрать список номинаций у команды",
+          "done": true
+        },
+        {
+          "id": "plan_demo_dundies_order",
+          "text": "Согласовать порядок вручения наград",
+          "done": false
+        },
+        {
+          "id": "plan_demo_dundies_host",
+          "text": "Подтвердить ведущего и назначить репетицию",
+          "done": false
+        }
+      ],
       "projectId": "prj_demo_dundies",
       "assigneeIds": [
         "ppl_demo_michael",
@@ -1392,6 +1409,28 @@ module.exports = {
       "did": "Собрала референсы и черновики наград «Данди».",
       "willDo": "Сделать три визуальных направления.",
       "blockers": "Нужно понять лимит бюджета."
+    }
+  ],
+  "comments": [
+    {
+      "id": "cmt_demo_dundies_budget",
+      "entityType": "task",
+      "entityId": "tsk_demo_michael_program",
+      "createdByUserId": "usr_demo",
+      "authorPersonId": "ppl_demo_michael",
+      "authorDisplayName": "Майкл Скотт · Демо",
+      "text": "Уточнить у Оскара бюджет на красную дорожку до утверждения программы.",
+      "color": "yellow"
+    },
+    {
+      "id": "cmt_demo_dundies_finale",
+      "entityType": "task",
+      "entityId": "tsk_demo_michael_program",
+      "createdByUserId": "usr_demo",
+      "authorPersonId": "ppl_demo_michael",
+      "authorDisplayName": "Майкл Скотт · Демо",
+      "text": "Оставить пять минут в конце церемонии на общее фото.",
+      "color": "blue"
     }
   ],
   "technologyEvents": [
