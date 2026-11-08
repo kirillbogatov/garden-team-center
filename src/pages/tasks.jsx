@@ -1,4 +1,4 @@
-import { PeopleField } from '@/components/people-field';
+import { TaskAssigneeSelect } from '@/components/task-assignee-select';
 import { usePersistentFilter } from '@/hooks/use-persistent-filter';
 import * as React from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -422,7 +422,7 @@ export function CreateTaskDialog({ open, onOpenChange, people, projects, taskTyp
     buildPayload: (d) => ({ title: d.title.trim(), status:'todo', priority:'normal', taskType, assigneeIds: d.assignee==='none'?[]:[d.assignee], projectId: taskType==='development'?null:(d.project==='none'?null:d.project), dueDate: d.dueDate||null }),
   });
   const create = async (event) => { event?.preventDefault?.(); if (!draft.title?.trim() || saving) return; await save(); };
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><form onSubmit={create}><DialogHeader><DialogTitle>Создать задачу</DialogTitle></DialogHeader><div className="mt-5 space-y-4"><div className="space-y-1.5"><Label>Название</Label><MentionEditor autoFocus value={draft.title||''} onChange={(value)=>field('title',value)} people={people} projects={[]} placeholder="Что нужно сделать?" singleLine submitOnEnter onSubmit={create} editorClassName="task-create-title-mention" ariaLabel="Название задачи"/></div><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-1.5"><Label>Исполнитель</Label><Select value={draft.assignee||'none'} onValueChange={(value)=>field('assignee',value)}><SelectTrigger className="w-full"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="none">Не назначен</SelectItem>{people.filter((person)=>person.type==='team').map((person)=><SelectItem key={person.id} value={person.id}>{person.name}</SelectItem>)}</SelectContent></Select></div>{taskType==='standard'&&<div className="space-y-1.5"><Label>Проект</Label><Select value={draft.project||'none'} onValueChange={(value)=>field('project',value)}><SelectTrigger className="w-full"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="none">Без проекта</SelectItem>{projects.map((item)=><SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></div>}</div><div className="space-y-1.5"><Label>Срок</Label><Input type="date" value={draft.dueDate||''} onChange={(event)=>field('dueDate',event.target.value)}/><QuickDeadlineSuggestions onPick={(value)=>field('dueDate',value)}/></div></div><DialogFooter><Button type="button" variant="outline" onClick={()=>onOpenChange(false)}>Отмена</Button><Button type="submit" disabled={saving||!draft.title?.trim()}>{saving&&<Loader2 className="h-4 w-4 animate-spin"/>}Создать</Button></DialogFooter></form></DialogContent></Dialog>;
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><form onSubmit={create}><DialogHeader><DialogTitle>Создать задачу</DialogTitle></DialogHeader><div className="mt-5 space-y-4"><div className="space-y-1.5"><Label>Название</Label><MentionEditor autoFocus value={draft.title||''} onChange={(value)=>field('title',value)} people={people} projects={[]} placeholder="Что нужно сделать?" singleLine submitOnEnter onSubmit={create} editorClassName="task-create-title-mention" ariaLabel="Название задачи"/></div><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-1.5"><Label>Исполнитель</Label><TaskAssigneeSelect people={people} value={draft.assignee} onChange={(value)=>field('assignee',value)} className="w-full"/></div>{taskType==='standard'&&<div className="space-y-1.5"><Label>Проект</Label><Select value={draft.project||'none'} onValueChange={(value)=>field('project',value)}><SelectTrigger className="w-full"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="none">Без проекта</SelectItem>{projects.map((item)=><SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></div>}</div><div className="space-y-1.5"><Label>Срок</Label><Input type="date" value={draft.dueDate||''} onChange={(event)=>field('dueDate',event.target.value)}/><QuickDeadlineSuggestions onPick={(value)=>field('dueDate',value)}/></div></div><DialogFooter><Button type="button" variant="outline" onClick={()=>onOpenChange(false)}>Отмена</Button><Button type="submit" disabled={saving||!draft.title?.trim()}>{saving&&<Loader2 className="h-4 w-4 animate-spin"/>}Создать</Button></DialogFooter></form></DialogContent></Dialog>;
 }
 
 function TaskTitleEditor({ value, onChange, onBlur, people = [] }) {
@@ -448,6 +448,7 @@ export function TaskDetailPage() {
   const issues = useResource('issues');
   const comments = useEndpoint(`/api/comments/task-discussion/${encodeURIComponent(id)}`, [id]);
   const [saving, setSaving] = React.useState(false);
+  const [assigneeError, setAssigneeError] = React.useState('');
   const [comment, setComment] = React.useState('');
   const [relationOpen, setRelationOpen] = React.useState(false);
   const [historyOpen, setHistoryOpen] = React.useState(false);
@@ -488,6 +489,14 @@ export function TaskDetailPage() {
     ? task.planItems.map((item, index)=>typeof item === 'string' ? { id:`legacy-${index}`, text:item, done:false } : item).filter((item)=>item?.text)
     : [];
   const patch = async (body) => { if (!task) return null; setSaving(true); try { const updated = await api.resource('tasks').update(task.id, body); taskState.setData(updated); return updated; } finally { setSaving(false); } };
+  const changeAssignee = async (value) => {
+    setAssigneeError('');
+    try {
+      await patch({ assigneeId: value === 'none' ? null : value });
+    } catch {
+      setAssigneeError('Не удалось сохранить исполнителя. Попробуйте ещё раз.');
+    }
+  };
   const addComment = async (e) => { e.preventDefault(); if (!comment.trim()) return; await api.post(`/api/comments/task-discussion/${task.id}`, { text: comment.trim() }); setComment(''); comments.reload(); };
   const remove = async () => { if (!confirm('Удалить задачу?')) return; await api.resource('tasks').remove(task.id); navigate('/tasks'); };
   const toggleArchive = async () => patch({ archivedAt: task.archivedAt ? null : new Date().toISOString() });
@@ -676,7 +685,19 @@ export function TaskDetailPage() {
           <div className="task-property-row"><span className="task-property-label">Тип</span><div className="task-attribute-item"><Select value={task.taskType || 'standard'} onValueChange={(v)=>patch({taskType:v})}><SelectTrigger className="things-task-meta-select is-quiet task-meta-compact"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="standard">Проектная</SelectItem><SelectItem value="development">Технологизация</SelectItem></SelectContent></Select></div></div>
           <div className="task-property-row"><span className="task-property-label">Приоритет</span><div className="task-attribute-item"><Select value={task.priority || 'normal'} onValueChange={(v)=>patch({priority:v})}><SelectTrigger className="things-task-meta-select is-quiet task-meta-compact"><TaskPriorityIcon priority={task.priority || 'normal'}/><SelectValue/></SelectTrigger><SelectContent><SelectItem value="high">Важная</SelectItem><SelectItem value="normal">Обычный</SelectItem><SelectItem value="low">Низкий</SelectItem></SelectContent></Select></div></div>
           <div className="task-property-row"><span className="task-property-label">Проект</span><div className="task-attribute-item"><Select value={task.projectId || 'none'} onValueChange={(v)=>patch({projectId:v==='none'?null:v})}><SelectTrigger className="things-task-meta-select is-quiet"><SelectValue placeholder="Без проекта"/></SelectTrigger><SelectContent><SelectItem value="none">Без проекта</SelectItem>{projects.data.map((p)=><SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent></Select></div></div>
-          <div className="task-property-row"><span className="task-property-label">Исполнитель</span><div className="task-attribute-item"><PeopleField people={people.data.filter((p)=>p.type==='team')} value={task.assigneeIds || []} onChange={(ids)=>patch({assigneeIds:ids})} placeholder="Без исполнителя"/></div></div>
+          <div className="task-property-row">
+            <span className="task-property-label">Исполнитель</span>
+            <div className="task-attribute-item">
+              <TaskAssigneeSelect
+                people={people.data}
+                value={task.assigneeIds?.[0]}
+                onChange={changeAssignee}
+                disabled={saving || people.loading}
+                className="things-task-meta-select is-quiet"
+              />
+            </div>
+            {assigneeError && <p role="alert" className="col-start-2 text-xs text-destructive">{assigneeError}</p>}
+          </div>
         </div>
       </aside>
     </div>

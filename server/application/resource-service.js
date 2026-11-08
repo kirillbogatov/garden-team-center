@@ -262,8 +262,17 @@ function createResourceService(deps) {
     let payload = hooks(name).prepareUpdate?.(current, { ...input }, user) || { ...input };
     if (OWNER_COLLECTIONS.includes(name)) payload.createdByUserId = current.createdByUserId || user.id;
     if (name === 'tasks') {
-      const expanded = updateTaskCopies(current, payload, user);
-      if (expanded) return expanded;
+      if (Object.hasOwn(payload, 'assigneeId')) {
+        const { assigneeId, ...rest } = payload;
+        if (assigneeId !== null && (typeof assigneeId !== 'string' || !assigneeId.trim())) {
+          fail(400, 'invalid_assignee');
+        }
+        // Editing a single task is independent of legacy bulk assignment.
+        payload = { ...rest, assigneeIds: assigneeId === null ? [] : [assigneeId], taskGroupId: null };
+      } else {
+        const expanded = updateTaskCopies(current, payload, user);
+        if (expanded) return expanded;
+      }
     }
     return db.transaction(() => {
       const item = db[name].update(current.id, payload);

@@ -10,6 +10,7 @@ import {
 } from '@/components/ui';
 import { MentionEditor, MentionText, mentionStorageToPlainText, mentionStorageToQueryText } from '@/components/mention-editor';
 import { PeopleField } from '@/components/people-field';
+import { TaskAssigneeSelect } from '@/components/task-assignee-select';
 import { AgreementStatusIcon, IssueStatusIcon, ProcessStatusIcon, TaskStatusIcon } from '@/components/status';
 import { TaskEntityRow, EntityRow, TaskPriorityIcon } from '@/components/entity-row';
 import { useResource } from '@/hooks/use-resource';
@@ -430,7 +431,7 @@ function AssistantCreateDialog({ spec, user, people, projects, labs, open, onOpe
     <div className="mt-5 space-y-4">
       {target === 'tasks' && <>
         <Field label="Название"><MentionEditor autoFocus value={form.title || ''} onChange={(value) => set('title', value)} people={people} projects={[]} singleLine ariaLabel="Название задачи"/></Field>
-        <div className="grid gap-4 sm:grid-cols-2"><Field label="Исполнитель"><Select value={form.assigneeId || 'none'} onValueChange={(value) => set('assigneeId', value)}><SelectTrigger className="w-full"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="none">Не назначен</SelectItem>{people.filter((p) => p.type === 'team').map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent></Select></Field><Field label="Проект"><ProjectSelect value={form.projectId} onChange={(value) => set('projectId', value)} projects={projects}/></Field></div>
+        <div className="grid gap-4 sm:grid-cols-2"><Field label="Исполнитель"><TaskAssigneeSelect people={people} value={form.assigneeId} onChange={(value) => set('assigneeId', value)} className="w-full"/></Field><Field label="Проект"><ProjectSelect value={form.projectId} onChange={(value) => set('projectId', value)} projects={projects}/></Field></div>
         <div className="grid gap-4 sm:grid-cols-2"><Field label="Срок"><Input type="date" value={form.dueDate || ''} onChange={(event) => set('dueDate', event.target.value)}/></Field><Field label="Приоритет"><Select value={form.priority || 'normal'} onValueChange={(value) => set('priority', value)}><SelectTrigger className="w-full"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="normal">Обычный</SelectItem><SelectItem value="high">Высокий</SelectItem></SelectContent></Select></Field></div>
       </>}
       {target === 'meetings' && <>
