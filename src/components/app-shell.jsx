@@ -82,7 +82,7 @@ export function AppShell({ user, onLogout, children }) {
   const [searchPaletteOpen, setSearchPaletteOpen] = React.useState(false);
   const [currentPerson, setCurrentPerson] = React.useState(null);
   const [unreadCount, setUnreadCount] = React.useState(0);
-  const compactEmbed = window.self !== window.top && window.matchMedia('(max-width: 1440px)').matches;
+  const compactEmbed = window.self !== window.top && window.matchMedia('(max-width: 1600px)').matches;
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(() => {
     if (compactEmbed) return true;
     try {
