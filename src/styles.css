@@ -5589,6 +5589,39 @@ h3,
   }
 }
 
+/* Compact embedded workspaces have less usable width than their browser viewport:
+   keep task actions and row metadata inside the visible canvas. */
+@media (max-width: 1600px) {
+  .app-shell-content[data-compact-embed="true"] .page-container.tasks-page {
+    padding-right: 28px !important;
+    padding-left: 28px !important;
+  }
+  .app-shell-content[data-compact-embed="true"] .tasks-view-header {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+  }
+  .app-shell-content[data-compact-embed="true"] .tasks-view-header-copy {
+    flex: 1 1 220px;
+  }
+  .app-shell-content[data-compact-embed="true"] .unified-entity-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 9px;
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+  .app-shell-content[data-compact-embed="true"] .unified-entity-row-meta {
+    grid-column: 2 / -1;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+  .app-shell-content[data-compact-embed="true"] .unified-entity-row-trailing {
+    grid-column: 3;
+    grid-row: 1;
+  }
+}
+
 
 /* Layout refinement: softer navigation, stable primary profile. */
 :root {
