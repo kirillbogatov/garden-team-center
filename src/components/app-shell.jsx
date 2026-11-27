@@ -82,7 +82,9 @@ export function AppShell({ user, onLogout, children }) {
   const [searchPaletteOpen, setSearchPaletteOpen] = React.useState(false);
   const [currentPerson, setCurrentPerson] = React.useState(null);
   const [unreadCount, setUnreadCount] = React.useState(0);
+  const compactEmbed = window.self !== window.top && window.matchMedia('(max-width: 1440px)').matches;
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(() => {
+    if (compactEmbed) return true;
     try {
       const stored = window.localStorage.getItem('garden:sidebar-collapsed');
       return stored == null ? false : stored === '1';
@@ -97,8 +99,9 @@ export function AppShell({ user, onLogout, children }) {
     setMenuSectionId(null);
   }, [location.pathname]);
   React.useEffect(() => {
+    if (compactEmbed) return;
     try { window.localStorage.setItem('garden:sidebar-collapsed', sidebarCollapsed ? '1' : '0'); } catch {}
-  }, [sidebarCollapsed]);
+  }, [compactEmbed, sidebarCollapsed]);
 
   React.useEffect(() => {
     const isEditable = (node) => Boolean(node && (node.isContentEditable || ['INPUT','TEXTAREA','SELECT'].includes(node.tagName)));
